@@ -27,6 +27,8 @@ import { exportLbx } from './lbxExport';
 import { importLbx } from './lbxImport';
 import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
+import { fileToBase64, guessMimeType, getImageDimensions } from './imageUtils';
+import { getImageBitmap } from './imageBitmapCache';
 
 type LabelNode = Node<LabelNodeData, LabelLayer, LabelPose>;
 
@@ -55,19 +57,24 @@ function drawLabelNode(node: LabelNode, pose: LabelPose, _view: View): DrawComma
         ...(data.fillColor ? { fill: { fill: 'solid', color: data.fillColor } } : {}),
       }];
     case 'line':
-      // For now just a stroked rect; proper line rendering would use a Path
       return [{
         kind: 'path',
         path: rectPath(x, y, width, Math.max(height, 0.5)),
         stroke: { paint: { color: data.strokeStyle }, width: data.strokeWidth },
       }];
-    case 'image':
+    case 'image': {
+      const bmp = getImageBitmap(data.src, data.mimeType);
+      if (bmp) {
+        return [{ kind: 'image', image: bmp, x, y, w: width, h: height }];
+      }
+      // Placeholder while loading
       return [{
         kind: 'path',
         path: rectPath(x, y, width, height),
-        fill: { fill: 'solid', color: '#e8e8e8' },
-        stroke: { paint: { color: '#bbbbbb' }, width: 0.5 },
+        fill: { fill: 'solid', color: '#f0f0f0' },
+        stroke: { paint: { color: '#cccccc' }, width: 0.5 },
       }];
+    }
     default:
       return [];
   }
@@ -162,6 +169,48 @@ export function App() {
     selection.set([id]);
   }, [scene, selection, paperHeight]);
 
+  const addImageFromFile = useCallback(async (file: File) => {
+    const mimeType = guessMimeType(file.name);
+    const base64 = await fileToBase64(file);
+    const dims = await getImageDimensions(base64, mimeType, paperWidth - 20, paperHeight - 10);
+
+    const id = genNodeId();
+    scene.add({
+      kind: 'leaf',
+      id,
+      layer: 'objects' as LabelLayer,
+      pose: { x: 10, y: 5, width: dims.width, height: dims.height },
+      data: {
+        kind: 'image',
+        src: base64,
+        originalName: file.name,
+        mimeType,
+      },
+    });
+    selection.set([id]);
+  }, [scene, selection, paperWidth, paperHeight]);
+
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImagePick = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) addImageFromFile(file);
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  }, [addImageFromFile]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) {
+      addImageFromFile(file);
+    }
+  }, [addImageFromFile]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
+
   // --- Export ---
   const handleExport = useCallback(async () => {
     const nodes: { id: string; data: LabelNodeData; pose: LabelPose }[] = [];
@@ -222,6 +271,7 @@ export function App() {
               onTapeSizeChange={setTapeSize}
               autoLength={autoLength}
               onAutoLengthChange={setAutoLength}
+              onAddImage={() => imageInputRef.current?.click()}
               labelLength={labelLength}
               onLabelLengthChange={setLabelLength}
               onExport={handleExport}
@@ -237,8 +287,19 @@ export function App() {
               style={{ display: 'none' }}
               onChange={handleImport}
             />
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={handleImagePick}
+            />
             <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-              <div style={{ flex: 1, position: 'relative', background: '#e0e0e0' }}>
+              <div
+                style={{ flex: 1, position: 'relative', background: '#e0e0e0' }}
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+              >
                 <SceneCanvas<LabelNodeData, LabelLayer, LabelPose>
                   width={800}
                   height={600}

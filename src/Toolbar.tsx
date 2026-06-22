@@ -12,6 +12,7 @@ interface ToolbarProps {
   onAddText: () => void;
   onAddRect: () => void;
   onAddLine: () => void;
+  onAddImage: () => void;
 }
 
 export function Toolbar({
@@ -26,6 +27,7 @@ export function Toolbar({
   onAddText,
   onAddRect,
   onAddLine,
+  onAddImage,
 }: ToolbarProps) {
   return (
     <div style={{
@@ -80,6 +82,7 @@ export function Toolbar({
       <button onClick={onAddText} title="Add text object">T</button>
       <button onClick={onAddRect} title="Add rectangle">▢</button>
       <button onClick={onAddLine} title="Add line">―</button>
+      <button onClick={onAddImage} title="Add image">IMG</button>
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />

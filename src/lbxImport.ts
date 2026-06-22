@@ -93,6 +93,7 @@ function lbxObjectToNode(obj: LabelObject): ImportedNode | null {
           kind: 'image',
           src,
           originalName: obj.originalName ?? 'image.bmp',
+          mimeType: 'image/bmp',
         },
       };
     }

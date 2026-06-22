@@ -32,9 +32,10 @@ export interface LabelLineData {
 
 export interface LabelImageData {
   kind: 'image';
-  /** Base64-encoded BMP or PNG data */
+  /** Base64-encoded image data */
   src: string;
   originalName: string;
+  mimeType: string;
 }
 
 export type LabelNodeData = LabelTextData | LabelRectData | LabelLineData | LabelImageData;
