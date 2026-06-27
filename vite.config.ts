@@ -6,6 +6,8 @@ import { weaselAliases } from '../weasel/scripts/vite-aliases';
 const weaselRoot = resolve(__dirname, '../weasel');
 
 export default defineConfig({
+  // Served from https://orochi235.github.io/lbx-editor/ on Pages; root locally.
+  base: process.env.GITHUB_ACTIONS ? '/lbx-editor/' : '/',
   plugins: [react()],
   resolve: {
     alias: weaselAliases(weaselRoot, [
