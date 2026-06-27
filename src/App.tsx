@@ -8,6 +8,7 @@ import {
   SelectionContextProvider,
   asNodeId,
   rectPath,
+  polygonFromPoints,
   zoomAt,
   fitViewToBounds,
   meanScale,
@@ -198,16 +199,42 @@ export function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- Paper background layer ---
-  const paperLayer = useMemo<RenderLayer<unknown>>(() => ({
-    id: 'paper',
-    label: 'Label tape',
-    draw: () => [{
-      kind: 'path',
-      path: rectPath(0, 0, paperWidth, paperHeight),
-      fill: { fill: 'solid', color: '#ffffff' },
-      stroke: { paint: { color: '#cccccc' }, width: 0.5 },
-    }],
-  }), [paperWidth, paperHeight]);
+  // The tape is drawn as a solid black "raised brick": its rectangle extruded
+  // down-right by `depth` into a single filled silhouette, so the offset shadow
+  // is connected to the tape by diagonal side edges instead of floating behind
+  // it. The white tape face (with a black border) sits on top. Everything is in
+  // world units so it scales and pans with the paper; `depth` is keyed to the
+  // tape width to stay proportional across tape sizes.
+  const paperLayer = useMemo<RenderLayer<unknown>>(() => {
+    const depth = paperHeight * 0.08;
+    // Outer silhouette of the extruded block (front face top + right, then the
+    // two diagonals to the back face, around its bottom + left, back up).
+    const brick = polygonFromPoints([
+      { x: 0, y: 0 },
+      { x: paperWidth, y: 0 },
+      { x: paperWidth + depth, y: depth },
+      { x: paperWidth + depth, y: paperHeight + depth },
+      { x: depth, y: paperHeight + depth },
+      { x: 0, y: paperHeight },
+    ]);
+    return {
+      id: 'paper',
+      label: 'Label tape',
+      draw: () => [
+        {
+          kind: 'path',
+          path: brick,
+          fill: { fill: 'solid', color: '#000000' },
+        },
+        {
+          kind: 'path',
+          path: rectPath(0, 0, paperWidth, paperHeight),
+          fill: { fill: 'solid', color: '#ffffff' },
+          stroke: { paint: { color: '#000000' }, width: 0.5 },
+        },
+      ],
+    };
+  }, [paperWidth, paperHeight]);
 
   // --- Object creation ---
   const addText = useCallback(() => {
