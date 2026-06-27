@@ -9,10 +9,10 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: weaselAliases(weaselRoot, [
-      // brother-lbx local source
+      // bil-lbx local source
       {
-        find: 'brother-lbx',
-        replacement: resolve(__dirname, '../brother-lbx/src/index.ts'),
+        find: 'bil-lbx',
+        replacement: resolve(__dirname, '../bil-lbx/src/index.ts'),
       },
     ]),
   },

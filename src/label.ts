@@ -1,5 +1,5 @@
 /**
- * Label-specific types bridging the weasel scene graph and the brother-lbx
+ * Label-specific types bridging the weasel scene graph and the bil-lbx
  * serialization format. Each scene node carries one of these as its `data`.
  */
 

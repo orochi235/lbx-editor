@@ -1,7 +1,7 @@
 /**
- * Import .lbx files using the brother-lbx parser, then map to editor scene nodes.
+ * Import .lbx files using the bil-lbx parser, then map to editor scene nodes.
  */
-import { parseLbx, type LabelConfig, type LabelObject } from 'brother-lbx';
+import { parseLbx, type LabelConfig, type LabelObject } from 'bil-lbx';
 import type { LabelNodeData, LabelPose, TapeSize } from './label';
 
 interface ImportedNode {

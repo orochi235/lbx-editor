@@ -1,8 +1,8 @@
 /**
- * Convert the editor's scene graph into a brother-lbx LabelConfig and build
+ * Convert the editor's scene graph into a bil-lbx LabelConfig and build
  * the .lbx file.
  */
-import { buildLbx, TAPE, type LabelConfig, type LabelObject as LbxObject } from 'brother-lbx';
+import { buildLbx, TAPE, type LabelConfig, type LabelObject as LbxObject } from 'bil-lbx';
 import type { LabelNodeData, LabelPose, TapeSize } from './label';
 
 interface SceneNode {

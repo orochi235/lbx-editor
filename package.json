@@ -1,5 +1,5 @@
 {
-  "name": "brother-lbx-editor",
+  "name": "lbx-editor",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@weasel-js/core": "file:../weasel",
-    "brother-lbx": "file:../brother-lbx",
+    "bil-lbx": "file:../bil-lbx",
+    "fast-xml-parser": "^5.9.3",
     "jszip": "^3.10.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

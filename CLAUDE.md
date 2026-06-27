@@ -1,4 +1,4 @@
-# brother-lbx-editor
+# lbx-editor
 
 Web-based visual editor for Brother P-touch label files (.lbx).
 
@@ -6,7 +6,7 @@ Web-based visual editor for Brother P-touch label files (.lbx).
 
 Standalone Vite + React app consuming:
 - `@weasel-js/core` (linked from `../weasel`) — 2D scene graph, canvas rendering, tools
-- `brother-lbx` (linked from `../brother-lbx`) — .lbx serialization/parsing
+- `bil-lbx` (linked from `../bil-lbx`) — .lbx serialization/parsing
 
 ## Local development
 
@@ -15,7 +15,7 @@ npm install
 npm run dev    # starts on http://localhost:5180
 ```
 
-Requires sibling repos: `~/src/weasel` and `~/src/brother-lbx`.
+Requires sibling repos: `~/src/weasel` and `~/src/bil-lbx`.
 
 ## Weasel integration
 

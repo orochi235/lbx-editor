@@ -45,8 +45,8 @@
       "tools/*": ["../weasel/src/tools/*"],
       "canvas/*": ["../weasel/src/canvas/*"],
       "debug/*": ["../weasel/src/debug/*"],
-      "brother-lbx": ["../brother-lbx/src/index.ts"],
-      "brother-lbx/*": ["../brother-lbx/src/*"]
+      "bil-lbx": ["../bil-lbx/src/index.ts"],
+      "bil-lbx/*": ["../bil-lbx/src/*"]
     }
   },
   "include": ["src"]
