@@ -1,0 +1,87 @@
+name: Deploy to GitHub Pages
+
+# Manual-only for now: run from the Actions tab or `gh workflow run deploy.yml`.
+# To deploy automatically on every push to main, uncomment the `push` trigger.
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; don't cancel an in-progress run.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # The editor builds against the *source* of two sibling repos (resolved
+      # by the Vite aliases / tsconfig paths), so all three are checked out as
+      # siblings: ../weasel and ../bil-lbx relative to the editor.
+      - name: Checkout lbx-editor
+        uses: actions/checkout@v4
+        with:
+          path: lbx-editor
+
+      - name: Checkout weasel (kit source)
+        uses: actions/checkout@v4
+        with:
+          repository: orochi235/weasel
+          # TODO: switch to `main` once this branch merges.
+          ref: chore/remove-adapter-kindof-escape-hatch
+          path: weasel
+
+      - name: Checkout bil-lbx (.lbx parser)
+        uses: actions/checkout@v4
+        with:
+          repository: orochi235/bil-lbx
+          ref: main
+          path: bil-lbx
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # weasel and bil-lbx are bundled from source; install their runtime deps
+      # so Vite can resolve them (earcut/polygon-clipping, fast-xml-parser/jszip).
+      - name: Install weasel deps
+        working-directory: weasel
+        run: npm ci
+
+      - name: Install bil-lbx deps
+        working-directory: bil-lbx
+        run: npm ci
+
+      - name: Install editor deps
+        working-directory: lbx-editor
+        run: npm ci
+
+      - name: Build
+        working-directory: lbx-editor
+        run: npm run build
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: lbx-editor/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
