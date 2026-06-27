@@ -11,7 +11,7 @@ import {
   zoomAt,
   fitViewToBounds,
   meanScale,
-  type Node,
+  type SceneNode,
   type DrawCommand,
   type View,
   type RenderLayer,
@@ -33,7 +33,7 @@ import { PropertyPanel } from './PropertyPanel';
 import { fileToBase64, guessMimeType, getImageDimensions } from './imageUtils';
 import { getImageBitmap } from './imageBitmapCache';
 
-type LabelNode = Node<LabelNodeData, LabelLayer, LabelPose>;
+type LabelNode = SceneNode<LabelNodeData, LabelLayer, LabelPose>;
 
 let nextNodeId = 1;
 function genNodeId(): NodeId {
@@ -316,7 +316,7 @@ export function App() {
       nodes.push({ id: node.id, data: node.data, pose: node.pose });
     }
     const buf = await exportLbx(nodes, tapeSize, autoLength, labelLength);
-    const blob = new Blob([buf], { type: 'application/octet-stream' });
+    const blob = new Blob([buf as BlobPart], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

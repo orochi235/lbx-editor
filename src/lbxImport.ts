@@ -98,6 +98,7 @@ function lbxObjectToNode(obj: LabelObject): ImportedNode | null {
       };
     }
   }
+  return null;
 }
 
 export async function importLbx(file: File | ArrayBuffer): Promise<ImportResult> {
