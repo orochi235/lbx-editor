@@ -17,7 +17,13 @@ import {
   type View,
   type RenderLayer,
   type NodeId,
+  type ToolsApi,
+  type InsertNodeFactory,
 } from '@weasel-js/core';
+// Subpath import (not the `@weasel-js/ui` barrel) so tsc/vite only pull in the
+// ToolPalette module, not sibling components like DataGrid that trip a
+// duplicate-@types/react mismatch under this app's slightly newer React types.
+import { ToolPalette } from '@weasel-js/ui/components/ToolPalette';
 import {
   TAPE_SIZES,
   DEFAULT_TAPE,
@@ -236,14 +242,49 @@ export function App() {
     };
   }, [paperWidth, paperHeight]);
 
-  // --- Object creation ---
-  const addText = useCallback(() => {
-    const id = genNodeId();
-    scene.add({
-      kind: 'leaf',
-      id,
-      layer: 'objects' as LabelLayer,
-      pose: { x: 10, y: 5, width: 60, height: 20 },
+  // --- Object creation via weasel tools ---
+  // The palette activates weasel's built-in rect/line/text tools; their drag
+  // gestures route through the `insert` action, which materializes nodes via
+  // these per-kind factories. Each returns a `LabelNode`'s data + pose in the
+  // app's own shape (matching `drawLabelNode` / PropertyPanel / export) rather
+  // than the kit's default `{ path, fill }` node. `tools` is the live ToolsApi
+  // that drives the palette.
+  const [tools, setTools] = useState<ToolsApi | null>(null);
+
+  const insertNodeFactories = useMemo<Record<string, InsertNodeFactory>>(() => ({
+    rect: (b) => ({
+      pose: { x: b.x, y: b.y, width: b.width, height: b.height },
+      data: {
+        kind: 'rect',
+        rounded: false,
+        roundness: 0,
+        strokeStyle: '#000000',
+        strokeWidth: 0.8,
+        fillColor: null,
+      } satisfies LabelNodeData,
+    }),
+    line: (b, extras) => {
+      // The line tool passes its endpoints in `extras`; fall back to the AABB
+      // diagonal. Height floors at the stroke width so the pose stays pickable.
+      const e = extras as { a?: { x: number; y: number }; b?: { x: number; y: number } };
+      const a = e.a ?? { x: b.x, y: b.y };
+      const c = e.b ?? { x: b.x + b.width, y: b.y + b.height };
+      return {
+        pose: {
+          x: Math.min(a.x, c.x),
+          y: Math.min(a.y, c.y),
+          width: Math.max(Math.abs(c.x - a.x), 1),
+          height: Math.max(Math.abs(c.y - a.y), 0.5),
+        },
+        data: {
+          kind: 'line',
+          strokeStyle: '#000000',
+          strokeWidth: 0.5,
+        } satisfies LabelNodeData,
+      };
+    },
+    text: (b) => ({
+      pose: { x: b.x, y: b.y, width: Math.max(b.width, 40), height: Math.max(b.height, 12) },
       data: {
         kind: 'text',
         text: 'Text',
@@ -254,45 +295,9 @@ export function App() {
         horizontalAlignment: 'LEFT',
         verticalAlignment: 'CENTER',
         color: '#000000',
-      },
-    });
-    selection.set([id]);
-  }, [scene, selection]);
-
-  const addRect = useCallback(() => {
-    const id = genNodeId();
-    scene.add({
-      kind: 'leaf',
-      id,
-      layer: 'objects' as LabelLayer,
-      pose: { x: 10, y: 5, width: 30, height: paperHeight - 10 },
-      data: {
-        kind: 'rect',
-        rounded: false,
-        roundness: 0,
-        strokeStyle: '#000000',
-        strokeWidth: 0.8,
-        fillColor: null,
-      },
-    });
-    selection.set([id]);
-  }, [scene, selection, paperHeight]);
-
-  const addLine = useCallback(() => {
-    const id = genNodeId();
-    scene.add({
-      kind: 'leaf',
-      id,
-      layer: 'objects' as LabelLayer,
-      pose: { x: 10, y: paperHeight / 2, width: 80, height: 0.5 },
-      data: {
-        kind: 'line',
-        strokeStyle: '#000000',
-        strokeWidth: 0.5,
-      },
-    });
-    selection.set([id]);
-  }, [scene, selection, paperHeight]);
+      } satisfies LabelNodeData,
+    }),
+  }), []);
 
   const addImageFromFile = useCallback(async (file: File) => {
     const mimeType = guessMimeType(file.name);
@@ -401,9 +406,6 @@ export function App() {
               onLabelLengthChange={setLabelLength}
               onExport={handleExport}
               onImport={() => fileInputRef.current?.click()}
-              onAddText={addText}
-              onAddRect={addRect}
-              onAddLine={addLine}
               zoomPercent={zoomPercent}
               onZoomIn={handleZoomIn}
               onZoomOut={handleZoomOut}
@@ -426,6 +428,9 @@ export function App() {
               onChange={handleImagePick}
             />
             <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+              {tools && (
+                <ToolPalette tools={tools} orientation="vertical" />
+              )}
               <div
                 ref={canvasContainerRef}
                 style={{ flex: 1, position: 'relative', overflow: 'hidden', background: '#e0e0e0', lineHeight: 0 }}
@@ -439,15 +444,21 @@ export function App() {
                     scene={scene}
                     selection={selection}
                     selectionMode="multi"
-                    toolBundle="standard"
+                    defaultTools={['select', 'hand', 'rect', 'line', 'text']}
+                    insertNodeFactories={insertNodeFactories}
+                    onToolsCreated={setTools}
                     selectTool={{ rotate: false }}
+                    // Truthy `viewport` registers the hand (pan) tool so it
+                    // appears in the palette. Wheel pan + zoom are on by default
+                    // regardless; this doesn't change them.
+                    viewport={{}}
                     view={view}
                     onViewChange={setView}
                     layers={layers}
                   />
                 )}
               </div>
-              <PropertyPanel scene={scene} />
+              <PropertyPanel scene={scene} selection={selection} />
             </div>
           </div>
         </SelectionContextProvider>

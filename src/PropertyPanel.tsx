@@ -1,14 +1,17 @@
 import { useCallback } from 'react';
-import { useSelection, asNodeId, type Scene, type NodeId } from '@weasel-js/core';
+import { asNodeId, type Scene, type NodeId, type SelectionApi } from '@weasel-js/core';
 import type { LabelNodeData, LabelLayer, LabelPose } from './label';
 
 interface PropertyPanelProps {
   scene: Scene<LabelNodeData, LabelLayer, LabelPose>;
+  /** The same selection instance the canvas mutates — reading `.current`
+   *  (not a fresh `useSelection()`) keeps the panel in sync with clicks and
+   *  tool-created objects. */
+  selection: SelectionApi;
 }
 
-export function PropertyPanel({ scene }: PropertyPanelProps) {
-  const selection = useSelection();
-  const selectedIds = selection.get();
+export function PropertyPanel({ scene, selection }: PropertyPanelProps) {
+  const selectedIds = selection.current;
 
   if (selectedIds.length !== 1) {
     return (

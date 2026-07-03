@@ -27,9 +27,6 @@ interface ToolbarProps {
   onLabelLengthChange: (len: number) => void;
   onExport: () => void;
   onImport: () => void;
-  onAddText: () => void;
-  onAddRect: () => void;
-  onAddLine: () => void;
   onAddImage: () => void;
   zoomPercent: number;
   onZoomIn: () => void;
@@ -48,9 +45,6 @@ export function Toolbar({
   onLabelLengthChange,
   onExport,
   onImport,
-  onAddText,
-  onAddRect,
-  onAddLine,
   onAddImage,
   zoomPercent,
   onZoomIn,
@@ -108,10 +102,7 @@ export function Toolbar({
       {/* Separator */}
       <div style={{ width: '1px', height: '24px', background: '#ddd' }} />
 
-      {/* Object creation */}
-      <button onClick={onAddText} title="Add text object">T</button>
-      <button onClick={onAddRect} title="Add rectangle">▢</button>
-      <button onClick={onAddLine} title="Add line">―</button>
+      {/* Image import (no weasel tool — images come from a file, not a drag) */}
       <button onClick={onAddImage} title="Add image">IMG</button>
 
       {/* Separator */}
