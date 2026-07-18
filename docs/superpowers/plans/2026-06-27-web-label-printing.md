@@ -880,7 +880,9 @@ git commit -m "Add PT-P710BT profile and print job orchestrator"
 - Create: `/Users/mike/src/lbx-editor/src/printing/labelRender.ts`
 - Create: `/Users/mike/src/lbx-editor/src/printing/index.ts`
 
-This module is DOM-dependent (uses an off-screen `<canvas>`), so it is verified manually in Task 8 rather than unit-tested. It renders label nodes to a clean white bitmap at print resolution — no zoom, brick background, or selection chrome. Text renders as a filled box (matching the current editor behavior of treating text as bounding boxes); refine when weasel gains MSDF text. `DOTS_PER_PT = dpi / 72`.
+This module is DOM-dependent (uses an off-screen `<canvas>`), so it is verified manually in Task 8 rather than unit-tested. It renders label nodes to a clean white bitmap at print resolution — no zoom, brick background, or selection chrome. Text renders as a stroked outline of its bounding box (matching the current editor behavior of treating text as bounding boxes, which itself draws an outline, not a fill — see `drawLabelNode` in `App.tsx`); refine when weasel gains MSDF text. `DOTS_PER_PT = dpi / 72`.
+
+Image nodes originally fell back to an opaque filled box unconditionally — a placed logo printed as a black slab. A whole-branch review caught this: the editor already decodes and caches real bitmaps via `getImageBitmap`/`imageBitmapCache.ts` for on-screen rendering (`drawLabelNode`'s `'image'` case), so the print path should reuse that instead of introducing its own decoding. `RenderArgs` gained an optional `getImageBitmap?: (node: LabelNode) => ImageBitmap | undefined` resolver — a callback rather than importing the cache directly, keeping `labelRender.ts` decoupled from `App.tsx`/cache internals. The image branch calls it and `ctx.drawImage`s the bitmap when present (rasterCore's luminance-threshold monochroming handles the rest); the filled-box path is now explicitly the no-bitmap fallback (resolver omitted, or image not yet decoded — the cache returns `null` synchronously until `base64ToImageBitmap` resolves).
 
 `src/label.ts`'s `LabelNodeData` already uses `kind` as its discriminant (`'text' | 'rect' | 'line' | 'image'`) with `fillColor`/`strokeWidth` on `LabelRectData`, matching the draft below. Weasel's `SceneNode<TData, TLayer, TPose>` (`Node<TData, TLayer, TPose>` in `src/core/scene/types.ts`) is a plain discriminated union exposing `.data` and `.pose` directly — no forced casting needed, so the implemented version drops the draft's `poseOf`/`dataOf` `as unknown as` helpers and imports `LabelLayer` to build the concrete `LabelNode = SceneNode<LabelNodeData, LabelLayer, LabelPose>` alias (mirroring `App.tsx`).
 
@@ -903,6 +905,8 @@ interface RenderArgs {
   tapeWidthPt: number // full tape width in pt — see vertical-scale note below
   printableDots: number
   dpi: number
+  /** Resolve a decoded bitmap for an image node; undefined falls back to a filled box. */
+  getImageBitmap?: (node: LabelNode) => ImageBitmap | undefined
 }
 
 export function renderLabelToRgba({
@@ -911,6 +915,7 @@ export function renderLabelToRgba({
   tapeWidthPt,
   printableDots,
   dpi,
+  getImageBitmap,
 }: RenderArgs): RgbaImage {
   const dotsPerPt = dpi / 72
   const widthDots = Math.max(1, Math.round(labelLengthPt * dotsPerPt))
@@ -918,8 +923,10 @@ export function renderLabelToRgba({
   const verticalScale = fullHeightDots > 0 ? printableDots / fullHeightDots : 1
   // ... canvas setup, white background, per-node switch on data.kind
   // (image/rect/line/text), each scaling x/w by dotsPerPt and y/h by
-  // dotsPerPt * verticalScale. See src/printing/labelRender.ts for the
-  // full implementation.
+  // dotsPerPt * verticalScale. 'image' calls getImageBitmap?.(node) and
+  // ctx.drawImage()s the result, falling back to ctx.fillRect() when no
+  // bitmap is available. See src/printing/labelRender.ts for the full
+  // implementation.
 }
 ```
 
@@ -1011,6 +1018,12 @@ const handlePrint = useCallback(async () => {
       tapeWidthPt: paperHeight, // full tape height in pt, TAPE_SIZES[tapeSize].width
       printableDots: profile.media.printableDots,
       dpi: profile.media.dpi,
+      // Same lookup drawLabelNode uses for on-screen rendering; the cache
+      // returns null (not yet decoded) rather than undefined.
+      getImageBitmap: (node) =>
+        node.data.kind === 'image'
+          ? getImageBitmap(node.data.src, node.data.mimeType) ?? undefined
+          : undefined,
     })
     const raster = rgbaToRaster(rgba, profile.media)
     const status = await printRaster(raster, {

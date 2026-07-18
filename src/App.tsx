@@ -419,6 +419,12 @@ export function App() {
         tapeWidthPt: paperHeight,
         printableDots: profile.media.printableDots,
         dpi: profile.media.dpi,
+        // Same lookup drawLabelNode uses for on-screen rendering; the cache
+        // returns null (not yet decoded) rather than undefined.
+        getImageBitmap: (node) =>
+          node.data.kind === 'image'
+            ? getImageBitmap(node.data.src, node.data.mimeType) ?? undefined
+            : undefined,
       });
       const raster = rgbaToRaster(rgba, profile.media);
       const status = await printRaster(raster, {

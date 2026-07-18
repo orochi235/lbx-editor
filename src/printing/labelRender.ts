@@ -12,6 +12,14 @@ interface RenderArgs {
   tapeWidthPt: number
   printableDots: number
   dpi: number
+  /**
+   * Resolve a decoded bitmap for an image node, reusing the editor's own
+   * bitmap cache (keyed off the node, since the cache itself keys off
+   * `data.src`/`data.mimeType` internally — this keeps `labelRender` decoupled
+   * from that cache's implementation). Return undefined (bitmap not yet
+   * decoded, or resolver omitted) to fall back to a filled box.
+   */
+  getImageBitmap?: (node: LabelNode) => ImageBitmap | undefined
 }
 
 /**
@@ -33,6 +41,7 @@ export function renderLabelToRgba({
   tapeWidthPt,
   printableDots,
   dpi,
+  getImageBitmap,
 }: RenderArgs): RgbaImage {
   const dotsPerPt = dpi / 72
   const widthDots = Math.max(1, Math.round(labelLengthPt * dotsPerPt))
@@ -59,10 +68,18 @@ export function renderLabelToRgba({
     const h = pose.height * dotsPerPt * verticalScale
 
     switch (data.kind) {
-      case 'image':
-        // images: drawn opaque-black as a filled box for v1 (bitmap compositing comes later)
-        ctx.fillRect(x, y, w, h)
+      case 'image': {
+        const bitmap = getImageBitmap?.(node)
+        if (bitmap) {
+          // rasterCore's luminance<128 threshold turns this into monochrome dots
+          ctx.drawImage(bitmap, x, y, w, h)
+        } else {
+          // No-bitmap fallback (not yet decoded, or no resolver supplied): a
+          // filled box so the printed label still shows something is there.
+          ctx.fillRect(x, y, w, h)
+        }
         break
+      }
       case 'rect':
         if (data.fillColor && data.fillColor !== 'transparent') {
           // Use the rect's actual fill color (not the default black) so a
