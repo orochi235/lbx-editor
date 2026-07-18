@@ -1049,3 +1049,11 @@ git commit -m "Wire Print button to Web Serial label printing"
     deliberately out of v1 acceptance.
 - **Hardware-independent vs. dependent:** Tasks 1–6 are fully unit-tested and need no printer.
   Tasks 7–8 require the device + OS pairing and are verified manually.
+- **Follow-ups:**
+  - Vertical print fidelity — `labelRender`'s squeeze-to-fit vertical scale distorts 16.7% on
+    12mm tape, ~25% on 6mm/24mm, and worse (~50%) for widths that fall through to the 128-dot
+    printhead fallback. Replace with 1:1 vertical scale + center offset, and constrain the
+    editor's authorable area (or draw margin guides) to the printable band so nodes can't be
+    placed where they'd be clipped. Related: line nodes currently print as a horizontal
+    centerline through the pose box (matching how the editor draws them) — fine for
+    near-horizontal lines, but should be revisited alongside this fidelity work.

@@ -64,7 +64,15 @@ export function renderLabelToRgba({
         ctx.fillRect(x, y, w, h)
         break
       case 'rect':
-        if (data.fillColor && data.fillColor !== 'transparent') ctx.fillRect(x, y, w, h)
+        if (data.fillColor && data.fillColor !== 'transparent') {
+          // Use the rect's actual fill color (not the default black) so a
+          // light fill (e.g. white/yellow) doesn't print as a solid black
+          // box; rasterCore's luminance<128 threshold decides what ends up
+          // black on the printed tape.
+          ctx.fillStyle = data.fillColor
+          ctx.fillRect(x, y, w, h)
+          ctx.fillStyle = '#000000'
+        }
         ctx.lineWidth = Math.max(1, data.strokeWidth * dotsPerPt)
         ctx.strokeRect(x, y, w, h)
         break
