@@ -1,4 +1,4 @@
-import type { Driver, Raster1bpp, JobOptions } from './types'
+import type { Driver, Raster1bpp, JobOptions, PrinterStatus } from './types'
 import { packbits } from './packbits'
 
 function isBlankRow(row: Uint8Array): boolean {
@@ -52,6 +52,12 @@ export function createBrotherRasterDriver(): Driver {
       out.push(0x1a)
 
       return Uint8Array.from(out)
+    },
+
+    parseStatus(raw: Uint8Array): PrinterStatus {
+      // Brother 32-byte status: error-information bytes at offsets 8 and 9.
+      const hasError = raw.length >= 10 && (raw[8] !== 0 || raw[9] !== 0)
+      return { raw, hasError }
     },
   }
 }

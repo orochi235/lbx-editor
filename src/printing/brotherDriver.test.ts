@@ -56,4 +56,26 @@ describe('BrotherRasterDriver', () => {
     // raster count is at +7..+10 (4-byte LE): 300 = 0x012c = [0x2c, 0x01, 0x00, 0x00]
     expect(out.slice(idx + 7, idx + 11)).toEqual([0x2c, 0x01, 0x00, 0x00])
   })
+
+  it('parseStatus reports hasError for a set bit at offset 8', () => {
+    const raw = new Uint8Array(32)
+    raw[8] = 0x01
+    expect(createBrotherRasterDriver().parseStatus(raw).hasError).toBe(true)
+  })
+
+  it('parseStatus reports hasError for a set bit at offset 9', () => {
+    const raw = new Uint8Array(32)
+    raw[9] = 0x01
+    expect(createBrotherRasterDriver().parseStatus(raw).hasError).toBe(true)
+  })
+
+  it('parseStatus reports no error for 32 zero bytes', () => {
+    const raw = new Uint8Array(32)
+    expect(createBrotherRasterDriver().parseStatus(raw).hasError).toBe(false)
+  })
+
+  it('parseStatus reports no error for a short reply (<10 bytes)', () => {
+    const raw = Uint8Array.from([0x80, 0x00])
+    expect(createBrotherRasterDriver().parseStatus(raw).hasError).toBe(false)
+  })
 })

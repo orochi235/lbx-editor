@@ -651,6 +651,13 @@ git commit -m "Add WebSerialTransport over an injected SerialPort"
 - Create: `/Users/mike/src/lbx-editor/src/printing/profiles.ts`
 - Create: `/Users/mike/src/lbx-editor/src/printing/printJob.ts`
 - Test: `/Users/mike/src/lbx-editor/src/printing/printJob.test.ts`
+- Modify: `/Users/mike/src/lbx-editor/src/printing/types.ts`, `/Users/mike/src/lbx-editor/src/printing/brotherDriver.ts`, `/Users/mike/src/lbx-editor/src/printing/brotherDriver.test.ts`
+
+> **Amended after code review of earlier tasks:** status parsing is printer-specific (Brother's
+> error bytes at offsets 8/9 of a 32-byte status), so it lives on the `Driver` as
+> `parseStatus(raw): PrinterStatus`, implemented in `brotherDriver.ts` — not inlined in the
+> printer-agnostic `printJob.ts`. The orchestrator also reads the full 32-byte status
+> (`transport.read(2000, 32)`), since a Web Serial/BT SPP read can return partial chunks.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -740,29 +747,47 @@ export function ptP710btProfile(port: SerialPortLike, tapeWidthMm: number): Devi
 }
 ```
 
-- [ ] **Step 4: Write the orchestrator**
+- [ ] **Step 4: Add `PrinterStatus` and `parseStatus` to the `Driver` contract**
 
-`src/printing/printJob.ts`:
+`src/printing/types.ts` gains:
 
 ```ts
-import type { Driver, Transport, Raster1bpp, JobOptions } from './types'
-
-export interface PrintRasterArgs {
-  driver: Driver
-  transport: Transport
-  opts: JobOptions
-}
-
-/** Parsed Brother status: byte 18 (0-indexed) is the error-information byte. */
+/** Parsed printer status reply. */
 export interface PrinterStatus {
   raw: Uint8Array
   hasError: boolean
 }
 
-function parseStatus(raw: Uint8Array): PrinterStatus {
-  // Brother 32-byte status: error bytes are at offsets 8 and 9. Treat any set bit as an error.
+export interface Driver {
+  encode(raster: Raster1bpp, opts: JobOptions): Uint8Array
+  parseStatus(raw: Uint8Array): PrinterStatus
+}
+```
+
+`src/printing/brotherDriver.ts` implements it on the returned driver:
+
+```ts
+parseStatus(raw: Uint8Array): PrinterStatus {
+  // Brother 32-byte status: error-information bytes at offsets 8 and 9.
   const hasError = raw.length >= 10 && (raw[8] !== 0 || raw[9] !== 0)
   return { raw, hasError }
+},
+```
+
+`brotherDriver.test.ts` covers: a set bit at offset 8 → `hasError: true`; a set bit at offset 9 →
+`true`; 32 zero bytes → `false`; a short (<10-byte) reply → `false`.
+
+- [ ] **Step 5: Write the orchestrator**
+
+`src/printing/printJob.ts`:
+
+```ts
+import type { Driver, Transport, Raster1bpp, JobOptions, PrinterStatus } from './types'
+
+export interface PrintRasterArgs {
+  driver: Driver
+  transport: Transport
+  opts: JobOptions
 }
 
 /** Open, send the encoded job, read the trailing status, and always close. */
@@ -774,29 +799,35 @@ export async function printRaster(
   await transport.open()
   try {
     await transport.write(bytes)
-    const status = await transport.read(2000)
-    return parseStatus(status)
+    // 32-byte Brother status; reply to the stream's early status request — printer
+    // state around job start (missing tape, open cover), not completion. Blocking
+    // here also ensures the printer consumed the job before we close the port.
+    const status = await transport.read(2000, 32)
+    return driver.parseStatus(status)
   } finally {
     await transport.close()
   }
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+No status-parsing logic lives here; it's delegated to `driver.parseStatus`.
 
-Run: `cd /Users/mike/src/lbx-editor && npx vitest run src/printing/printJob.test.ts`
-Expected: PASS, 2 tests.
+- [ ] **Step 6: Run tests to verify they pass**
 
-- [ ] **Step 6: Run the full suite**
+Run: `cd /Users/mike/src/lbx-editor && npx vitest run src/printing/printJob.test.ts src/printing/brotherDriver.test.ts`
+Expected: PASS.
+
+- [ ] **Step 7: Run the full suite**
 
 Run: `cd /Users/mike/src/lbx-editor && npm test`
 Expected: PASS — all printing tests green.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 cd /Users/mike/src/lbx-editor
-git add src/printing/profiles.ts src/printing/printJob.ts src/printing/printJob.test.ts
+git add src/printing/profiles.ts src/printing/printJob.ts src/printing/printJob.test.ts \
+  src/printing/types.ts src/printing/brotherDriver.ts src/printing/brotherDriver.test.ts
 git commit -m "Add PT-P710BT profile and print job orchestrator"
 ```
 

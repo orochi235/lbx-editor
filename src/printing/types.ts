@@ -26,8 +26,15 @@ export interface JobOptions {
   marginDots: number
 }
 
+/** Parsed printer status reply. */
+export interface PrinterStatus {
+  raw: Uint8Array
+  hasError: boolean
+}
+
 export interface Driver {
   encode(raster: Raster1bpp, opts: JobOptions): Uint8Array
+  parseStatus(raw: Uint8Array): PrinterStatus
 }
 
 export interface Transport {
