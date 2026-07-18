@@ -15,7 +15,8 @@ connection. The pipeline is correct end-to-end.
 
 **Broken (platform, not us):** macOS 26's virtual Bluetooth serial port silently drops writes
 and never establishes the RFCOMM link, so Chrome's Web Serial — which sits on that port —
-cannot reach the printer. Brother's own macOS software is "USB only" for this printer.
+cannot reach the printer. (Brother's P-touch Editor greys its Bluetooth entry out as "USB only"
+when USB is connected — that's USB-preference, not proof Bluetooth is unsupported on macOS.)
 Full evidence trail in the plan doc's hardware-results section.
 
 ## The task

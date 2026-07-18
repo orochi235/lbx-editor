@@ -1110,8 +1110,11 @@ git commit -m "Wire Print button to Web Serial label printing"
   (Darwin 25 / macOS 26): `open()` succeeds instantly, writes are silently swallowed, and the
   RFCOMM link is never established (device stays "Not Connected" while data is queued). Chrome's
   Web Serial sits on this device, so the in-app Print flow cannot work over Bluetooth here.
-- Corroboration: Brother's own macOS software lists the PT-P710BT's Bluetooth endpoint as
-  "USB only" — Brother does not support Bluetooth printing for this device on macOS at all.
+- Note: Brother's P-touch Editor greys out the printer's Bluetooth entry as "USB only" while a
+  USB connection is present — this appears to be USB-preference behavior, not a statement that
+  Bluetooth is unsupported on macOS. If the editor does print over Bluetooth (untested here),
+  it would be via IOBluetooth directly — consistent with our finding that direct RFCOMM works
+  while the virtual serial port does not.
 - Decision: leave the (working) OS pairing untouched; do not build on the virtual serial port.
 
 ### Next: WebUSB transport (follow-up plan needed)
