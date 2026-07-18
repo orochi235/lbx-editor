@@ -28,6 +28,7 @@ interface ToolbarProps {
   onExport: () => void;
   onImport: () => void;
   onAddImage: () => void;
+  onPrint: () => void;
   zoomPercent: number;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -46,6 +47,7 @@ export function Toolbar({
   onExport,
   onImport,
   onAddImage,
+  onPrint,
   zoomPercent,
   onZoomIn,
   onZoomOut,
@@ -132,6 +134,9 @@ export function Toolbar({
       {/* File actions */}
       <button onClick={onImport}>Open .lbx</button>
       <button onClick={onExport}>Export .lbx</button>
+      <button type="button" onClick={onPrint} title="Print to label printer">
+        Print
+      </button>
     </div>
   );
 }

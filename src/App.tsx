@@ -35,6 +35,13 @@ import {
 } from './label';
 import { exportLbx } from './lbxExport';
 import { importLbx } from './lbxImport';
+import {
+  renderLabelToRgba,
+  rgbaToRaster,
+  ptP710btProfile,
+  printRaster,
+  type SerialPortLike,
+} from './printing';
 import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
 import { fileToBase64, guessMimeType, getImageDimensions } from './imageUtils';
@@ -385,6 +392,45 @@ export function App() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [scene]);
 
+  // --- Print ---
+  const handlePrint = useCallback(async () => {
+    const tapeWidthMm = parseInt(tapeSize, 10);
+    if (!('serial' in navigator)) {
+      alert('Web Serial is not supported in this browser. Use Chrome or Edge.');
+      return;
+    }
+    try {
+      // User gesture: choose the OS-paired PT-P710BT serial port. Must stay
+      // directly in the click handler chain (no await before it).
+      const port = await (
+        navigator as unknown as { serial: { requestPort(): Promise<SerialPortLike> } }
+      ).serial.requestPort();
+
+      const profile = ptP710btProfile(port, tapeWidthMm);
+      const nodes = Array.from(scene.nodes.values());
+      const rgba = renderLabelToRgba({
+        nodes,
+        labelLengthPt: labelLength,
+        tapeWidthPt: paperHeight,
+        printableDots: profile.media.printableDots,
+        dpi: profile.media.dpi,
+      });
+      const raster = rgbaToRaster(rgba, profile.media);
+      const status = await printRaster(raster, {
+        driver: profile.makeDriver(),
+        transport: profile.makeTransport(),
+        opts: { tapeWidthMm, autoCut: true, marginDots: 0 },
+      });
+      if (status.hasError) {
+        alert('Printer reported an error (check tape/cover).');
+      } else if (status.incomplete) {
+        alert('Print sent, but the printer status reply was incomplete — check the printer.');
+      }
+    } catch (err) {
+      alert(`Print failed: ${(err as Error).message}`);
+    }
+  }, [tapeSize, scene, labelLength, paperHeight]);
+
   const layers = useMemo(() => ({
     paper: { layer: paperLayer, before: 'scene' as const },
     scene: { drawOne: drawLabelNode },
@@ -406,6 +452,7 @@ export function App() {
               onLabelLengthChange={setLabelLength}
               onExport={handleExport}
               onImport={() => fileInputRef.current?.click()}
+              onPrint={handlePrint}
               zoomPercent={zoomPercent}
               onZoomIn={handleZoomIn}
               onZoomOut={handleZoomOut}

@@ -973,28 +973,37 @@ In `src/Toolbar.tsx`, add an `onPrint: () => void` prop to the toolbar's props i
 
 - [ ] **Step 2: Add the print handler in App.tsx**
 
-In `src/App.tsx`, import the printing API and add a handler. Use the existing label nodes, tape size, and label length already held in `App` state (`nodes`, `tapeSize`, label length). Parse the tape width mm from the tape size key.
+In `src/App.tsx`, import the printing API and add a handler. `App` already holds `tapeSize` (`TapeSize`, e.g. `'12mm'`), `labelLength` (pt, doubles as `paperWidth`), and `paperHeight` (`TAPE_SIZES[tapeSize].width`, the full tape height in pt — exactly the `tapeWidthPt` the renderer needs). Label nodes live in `scene.nodes`, a `Map<NodeId, LabelNode>`; `renderLabelToRgba` wants the node values directly (not the `{id, data, pose}` shape `handleExport` builds for `bil-lbx`), so the handler does `Array.from(scene.nodes.values())`. The real `SerialPort` is structurally assignable to the exported `SerialPortLike`, so only `navigator` needs a cast — never the port.
 
 ```tsx
-import { renderLabelToRgba, rgbaToRaster, ptP710btProfile, printRaster } from './printing'
+import {
+  renderLabelToRgba,
+  rgbaToRaster,
+  ptP710btProfile,
+  printRaster,
+  type SerialPortLike,
+} from './printing'
 
 // inside the App component:
-const handlePrint = async () => {
+const handlePrint = useCallback(async () => {
   const tapeWidthMm = parseInt(tapeSize, 10) // tapeSize keys look like '12mm'
   if (!('serial' in navigator)) {
     alert('Web Serial is not supported in this browser. Use Chrome or Edge.')
     return
   }
   try {
-    // user gesture: choose the OS-paired PT-P710BT serial port
-    const port = await (navigator as unknown as {
-      serial: { requestPort(): Promise<unknown> }
-    }).serial.requestPort()
+    // User gesture: choose the OS-paired PT-P710BT serial port. Must stay
+    // directly in the click handler chain (no await before it).
+    const port = await (
+      navigator as unknown as { serial: { requestPort(): Promise<SerialPortLike> } }
+    ).serial.requestPort()
 
-    const profile = ptP710btProfile(port as never, tapeWidthMm)
+    const profile = ptP710btProfile(port, tapeWidthMm)
+    const nodes = Array.from(scene.nodes.values())
     const rgba = renderLabelToRgba({
       nodes,
-      labelLengthPt: labelLength, // existing label length state (pt)
+      labelLengthPt: labelLength,
+      tapeWidthPt: paperHeight, // full tape height in pt, TAPE_SIZES[tapeSize].width
       printableDots: profile.media.printableDots,
       dpi: profile.media.dpi,
     })
@@ -1004,14 +1013,18 @@ const handlePrint = async () => {
       transport: profile.makeTransport(),
       opts: { tapeWidthMm, autoCut: true, marginDots: 0 },
     })
-    if (status.hasError) alert('Printer reported an error (check tape/cover).')
+    if (status.hasError) {
+      alert('Printer reported an error (check tape/cover).')
+    } else if (status.incomplete) {
+      alert('Print sent, but the printer status reply was incomplete — check the printer.')
+    }
   } catch (err) {
     alert(`Print failed: ${(err as Error).message}`)
   }
-}
+}, [tapeSize, scene, labelLength, paperHeight])
 ```
 
-Wire `onPrint={handlePrint}` into the `<Toolbar />` usage. Adjust the names `nodes`, `tapeSize`, and `labelLength` to the actual state variable names in `App.tsx`.
+Wire `onPrint={handlePrint}` into the `<Toolbar />` usage.
 
 - [ ] **Step 3: Type-check**
 
