@@ -20,6 +20,8 @@ export function createBrotherRasterDriver(): Driver {
       out.push(0x1b, 0x69, 0x53)
       // 4. raster mode
       out.push(0x1b, 0x69, 0x61, 0x01)
+      // 4.5. switch automatic status notification mode: notify (default)
+      out.push(0x1b, 0x69, 0x21, 0x00)
       // 5. print information: ESC i z, flags 0x84, media 0x00, width mm, length 0x00,
       //    raster count (4-byte LE), trailing 0x00 0x00
       const n = raster.lineCount

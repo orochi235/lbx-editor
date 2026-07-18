@@ -17,6 +17,7 @@ describe('BrotherRasterDriver', () => {
       0x1b, 0x40, // init
       0x1b, 0x69, 0x53, // status request
       0x1b, 0x69, 0x61, 0x01, // raster mode
+      0x1b, 0x69, 0x21, 0x00, // status notification mode
       0x1b, 0x69, 0x7a, 0x84, 0x00, 0x0c, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, // print info (12mm, 1 line)
       0x1b, 0x69, 0x4d, 0x40, // auto-cut
       0x1b, 0x69, 0x4b, 0x08, // advanced mode
@@ -46,5 +47,13 @@ describe('BrotherRasterDriver', () => {
     const idx = out.findIndex((b, i) => b === 0x1b && out[i + 1] === 0x69 && out[i + 2] === 0x4d)
     expect(idx).toBeGreaterThan(-1)
     expect(out[idx + 3]).toBe(0x00)
+  })
+
+  it('encodes multi-byte raster count in print-info (lineCount: 300)', () => {
+    const out = Array.from(createBrotherRasterDriver().encode(blankRaster(300), opts))
+    const idx = out.findIndex((b, i) => b === 0x1b && out[i + 1] === 0x69 && out[i + 2] === 0x7a)
+    expect(idx).toBeGreaterThan(-1)
+    // raster count is at +7..+10 (4-byte LE): 300 = 0x012c = [0x2c, 0x01, 0x00, 0x00]
+    expect(out.slice(idx + 7, idx + 11)).toEqual([0x2c, 0x01, 0x00, 0x00])
   })
 })
