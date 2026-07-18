@@ -32,6 +32,8 @@ export interface PrinterStatus {
   hasError: boolean
   /** True when fewer bytes than a full status reply arrived (timeout/disconnect). */
   incomplete: boolean
+  /** Loaded tape width in mm (byte 10), or null when the reply is incomplete. */
+  mediaWidthMm: number | null
 }
 
 export interface Driver {

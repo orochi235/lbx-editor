@@ -8,7 +8,8 @@ export interface UsbKeepaliveOptions {
   /** True while a print job is running — the tick yields to it. */
   isBusy(): boolean
   intervalMs?: number
-  onStatus?(status: PrinterStatus): void
+  /** Called after every tick: parsed status on success, null when absent or failed. */
+  onStatus?(status: PrinterStatus | null): void
 }
 
 export interface UsbKeepalive {
@@ -30,6 +31,7 @@ export function startUsbKeepalive(options: UsbKeepaliveOptions): UsbKeepalive {
   let inFlight: Promise<void> | null = null
 
   const tick = async () => {
+    let status: PrinterStatus | null = null
     try {
       const device = await options.getDevice()
       if (!device) return
@@ -38,12 +40,14 @@ export function startUsbKeepalive(options: UsbKeepaliveOptions): UsbKeepalive {
       try {
         await transport.write(encodeStatusRequest())
         const raw = await transport.read(2000, 32)
-        options.onStatus?.(createBrotherRasterDriver().parseStatus(raw))
+        status = createBrotherRasterDriver().parseStatus(raw)
       } finally {
         await transport.close()
       }
     } catch (err) {
       console.warn('USB keepalive tick failed:', err)
+    } finally {
+      options.onStatus?.(status)
     }
   }
 

@@ -121,6 +121,34 @@ describe('startUsbKeepalive', () => {
     expect(written).toHaveLength(1)
   })
 
+  it('reports null status when no device is granted', async () => {
+    const statuses: unknown[] = []
+    const { stop } = startUsbKeepalive({
+      getDevice: async () => null,
+      isBusy: () => false,
+      intervalMs: 1000,
+      onStatus: (s) => statuses.push(s),
+    })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(statuses).toEqual([null])
+    stop()
+  })
+
+  it('reports null status when the tick fails', async () => {
+    const statuses: unknown[] = []
+    const { stop } = startUsbKeepalive({
+      getDevice: async () => {
+        throw new Error('boom')
+      },
+      isBusy: () => false,
+      intervalMs: 1000,
+      onStatus: (s) => statuses.push(s),
+    })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(statuses).toEqual([null])
+    stop()
+  })
+
   it('idle() resolves immediately when no tick is in flight', async () => {
     const { device } = fakeDevice(FULL_STATUS)
     const keepalive = startUsbKeepalive({

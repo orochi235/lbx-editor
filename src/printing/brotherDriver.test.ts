@@ -82,4 +82,16 @@ describe('BrotherRasterDriver', () => {
     expect(status.hasError).toBe(false)
     expect(status.incomplete).toBe(true)
   })
+
+  it('parseStatus extracts media width from byte 10', () => {
+    const raw = new Uint8Array(32)
+    raw[10] = 12
+    expect(createBrotherRasterDriver().parseStatus(raw).mediaWidthMm).toBe(12)
+  })
+
+  it('parseStatus reports null media width for an incomplete reply', () => {
+    const raw = new Uint8Array(16)
+    raw[10] = 12
+    expect(createBrotherRasterDriver().parseStatus(raw).mediaWidthMm).toBeNull()
+  })
 })
