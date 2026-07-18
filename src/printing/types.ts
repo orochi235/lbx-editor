@@ -1,0 +1,45 @@
+/** A plain RGBA bitmap — no DOM dependency, so the raster core is testable in Node. */
+export interface RgbaImage {
+  width: number
+  height: number
+  data: Uint8ClampedArray // length === width * height * 4, RGBA
+}
+
+/** Physical printer geometry for a loaded medium. */
+export interface MediaSpec {
+  dpi: number
+  printheadDots: number // total dots across the head (128 for PT-P710BT)
+  printableDots: number // dots actually printed for this tape, centered in the head
+  tapeWidthMm: number
+}
+
+/** Monochrome raster ready for a driver: one fixed-width row per printer raster line. */
+export interface Raster1bpp {
+  lineBytes: number // bytes per row (16 for PT-P710BT)
+  lineCount: number // number of raster lines (label length in dots)
+  rows: Uint8Array[] // each row is lineBytes long, MSB-first (bit 7 of byte 0 = dot 0)
+}
+
+export interface JobOptions {
+  tapeWidthMm: number
+  autoCut: boolean
+  marginDots: number
+}
+
+export interface Driver {
+  encode(raster: Raster1bpp, opts: JobOptions): Uint8Array
+}
+
+export interface Transport {
+  open(): Promise<void>
+  write(bytes: Uint8Array): Promise<void>
+  read(timeoutMs: number): Promise<Uint8Array>
+  close(): Promise<void>
+}
+
+export interface DeviceProfile {
+  model: string
+  media: MediaSpec
+  makeDriver(): Driver
+  makeTransport(): Transport
+}
