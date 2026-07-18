@@ -882,83 +882,46 @@ git commit -m "Add PT-P710BT profile and print job orchestrator"
 
 This module is DOM-dependent (uses an off-screen `<canvas>`), so it is verified manually in Task 8 rather than unit-tested. It renders label nodes to a clean white bitmap at print resolution — no zoom, brick background, or selection chrome. Text renders as a filled box (matching the current editor behavior of treating text as bounding boxes); refine when weasel gains MSDF text. `DOTS_PER_PT = dpi / 72`.
 
+`src/label.ts`'s `LabelNodeData` already uses `kind` as its discriminant (`'text' | 'rect' | 'line' | 'image'`) with `fillColor`/`strokeWidth` on `LabelRectData`, matching the draft below. Weasel's `SceneNode<TData, TLayer, TPose>` (`Node<TData, TLayer, TPose>` in `src/core/scene/types.ts`) is a plain discriminated union exposing `.data` and `.pose` directly — no forced casting needed, so the implemented version drops the draft's `poseOf`/`dataOf` `as unknown as` helpers and imports `LabelLayer` to build the concrete `LabelNode = SceneNode<LabelNodeData, LabelLayer, LabelPose>` alias (mirroring `App.tsx`).
+
+One real gap the draft missed: node `y`/`height` are authored in points against the *full* tape width (`TAPE_SIZES[...].width`, i.e. the paper height in `App.tsx`), not against `printableDots`. `RenderArgs` therefore adds a `tapeWidthPt` field, and the renderer scales y/height by `printableDots / (tapeWidthPt * dotsPerPt)` in addition to `dotsPerPt` — see the vertical-scale doc comment in the implementation for the chosen squeeze-vs-crop tradeoff. Task 8's `handlePrint` must pass `tapeWidthPt: tape.width` (or equivalent) alongside `labelLengthPt`.
+
 - [ ] **Step 1: Write the renderer**
 
-`src/printing/labelRender.ts`:
+`src/printing/labelRender.ts` (implemented; see file for the full vertical-scale doc comment):
 
 ```ts
 import type { SceneNode } from '@weasel-js/core'
-import type { LabelNodeData, LabelPose } from '../label'
+import type { LabelNodeData, LabelLayer, LabelPose } from '../label'
 import type { RgbaImage } from './types'
 
+type LabelNode = SceneNode<LabelNodeData, LabelLayer, LabelPose>
+
 interface RenderArgs {
-  nodes: SceneNode[]
+  nodes: LabelNode[]
   labelLengthPt: number
+  tapeWidthPt: number // full tape width in pt — see vertical-scale note below
   printableDots: number
   dpi: number
 }
 
-function poseOf(node: SceneNode): LabelPose {
-  return (node as unknown as { pose: LabelPose }).pose
-}
-
-function dataOf(node: SceneNode): LabelNodeData {
-  return (node as unknown as { data: LabelNodeData }).data
-}
-
-/**
- * Render label nodes to a clean monochrome-ready RGBA bitmap at print resolution.
- * Output: width = labelLengthPt * dpi/72 (dots along the tape), height = printableDots.
- */
-export function renderLabelToRgba({ nodes, labelLengthPt, printableDots, dpi }: RenderArgs): RgbaImage {
+export function renderLabelToRgba({
+  nodes,
+  labelLengthPt,
+  tapeWidthPt,
+  printableDots,
+  dpi,
+}: RenderArgs): RgbaImage {
   const dotsPerPt = dpi / 72
   const widthDots = Math.max(1, Math.round(labelLengthPt * dotsPerPt))
-  const canvas = document.createElement('canvas')
-  canvas.width = widthDots
-  canvas.height = printableDots
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('could not get 2d context')
-
-  // white background
-  ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, widthDots, printableDots)
-  ctx.fillStyle = '#000000'
-  ctx.strokeStyle = '#000000'
-
-  for (const node of nodes) {
-    const pose = poseOf(node)
-    const data = dataOf(node)
-    const x = pose.x * dotsPerPt
-    const y = pose.y * dotsPerPt
-    const w = pose.width * dotsPerPt
-    const h = pose.height * dotsPerPt
-
-    if (data.kind === 'image') {
-      // images: drawn opaque-black as a filled box for v1 (bitmap compositing comes later)
-      ctx.fillRect(x, y, w, h)
-    } else if (data.kind === 'rect') {
-      if (data.fillColor && data.fillColor !== 'transparent') ctx.fillRect(x, y, w, h)
-      ctx.lineWidth = Math.max(1, (data.strokeWidth ?? 1) * dotsPerPt)
-      ctx.strokeRect(x, y, w, h)
-    } else if (data.kind === 'line') {
-      ctx.lineWidth = Math.max(1, (data.strokeWidth ?? 1) * dotsPerPt)
-      ctx.beginPath()
-      ctx.moveTo(x, y + h / 2)
-      ctx.lineTo(x + w, y + h / 2)
-      ctx.stroke()
-    } else if (data.kind === 'text') {
-      // text-as-box (current editor behavior): outline the bounds
-      ctx.lineWidth = 1
-      ctx.strokeRect(x, y, w, h)
-    }
-  }
-
-  const imageData = ctx.getImageData(0, 0, widthDots, printableDots)
-  return { width: widthDots, height: printableDots, data: imageData.data }
+  const fullHeightDots = tapeWidthPt * dotsPerPt
+  const verticalScale = fullHeightDots > 0 ? printableDots / fullHeightDots : 1
+  // ... canvas setup, white background, per-node switch on data.kind
+  // (image/rect/line/text), each scaling x/w by dotsPerPt and y/h by
+  // dotsPerPt * verticalScale. See src/printing/labelRender.ts for the
+  // full implementation.
 }
 ```
-
-> Note: confirm the actual discriminant property name on `LabelNodeData` in `src/label.ts` (the field that distinguishes text/rect/line/image — shown above as `kind`) and align the `switch`/`if` branches and the field names (`fillColor`, `strokeWidth`) to the real type. Adjust the property accessors if the scene node stores pose/data under different keys.
 
 - [ ] **Step 2: Write the public barrel export**
 
