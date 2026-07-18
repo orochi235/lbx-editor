@@ -1,0 +1,41 @@
+.printer-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #444;
+  padding: 2px 8px;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.printer-chip__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.printer-chip--ready .printer-chip__dot {
+  background: #2e9e44;
+}
+
+.printer-chip--error .printer-chip__dot {
+  background: #d33;
+}
+
+.printer-chip--unknown .printer-chip__dot {
+  background: #aaa;
+}
+
+.printer-chip--printing .printer-chip__dot {
+  background: #2b7de9;
+  animation: printer-chip-pulse 1s ease-in-out infinite;
+}
+
+@keyframes printer-chip-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}

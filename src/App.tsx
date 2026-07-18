@@ -43,6 +43,7 @@ import {
   createWebSerialTransport,
   createWebUsbTransport,
   startUsbKeepalive,
+  type PrinterStatus,
   type SerialPortLike,
   type Transport,
   type UsbDeviceLike,
@@ -414,6 +415,8 @@ export function App() {
   const [printing, setPrinting] = useState(false);
   const printingRef = useRef(false);
   const keepaliveRef = useRef<UsbKeepalive | null>(null);
+  const [printerLastSeen, setPrinterLastSeen] = useState<{ status: PrinterStatus; at: number } | null>(null);
+  const [printerReachable, setPrinterReachable] = useState(false);
   const handlePrint = useCallback(async () => {
     if (printingRef.current) return;
     const tapeWidthMm = parseInt(tapeSize, 10);
@@ -482,6 +485,8 @@ export function App() {
         transport: profile.makeTransport(),
         opts: { tapeWidthMm, autoCut: true, marginDots: 0 },
       });
+      setPrinterLastSeen({ status, at: Date.now() });
+      setPrinterReachable(true);
       if (status.hasError) {
         alert('Printer reported an error (check tape/cover).');
       } else if (status.incomplete) {
@@ -506,6 +511,11 @@ export function App() {
       getDevice: async () =>
         (await usb.getDevices()).find((d) => d.vendorId === USB_VENDOR_BROTHER) ?? null,
       isBusy: () => printingRef.current,
+      intervalMs: 60_000,
+      onStatus: (status) => {
+        setPrinterReachable(status !== null);
+        if (status !== null) setPrinterLastSeen({ status, at: Date.now() });
+      },
     });
     keepaliveRef.current = keepalive;
     return () => {
@@ -543,6 +553,8 @@ export function App() {
               onZoomSet={handleZoomSet}
               onZoomFit={handleZoomFit}
               onZoomReset={handleZoomReset}
+              printerLastSeen={printerLastSeen}
+              printerReachable={printerReachable}
             />
             <input
               ref={fileInputRef}

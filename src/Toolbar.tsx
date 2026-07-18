@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { TAPE_SIZES, type TapeSize } from './label';
+import { PrinterStatusChip, type PrinterStatusChipProps } from './PrinterStatusChip';
 
 // Zoom slider: logarithmic mapping over weasel's zoom clamp range (0.1×–8×), so
 // equal slider travel is equal proportional zoom. Expressed in percent.
@@ -36,6 +37,8 @@ interface ToolbarProps {
   onZoomSet: (percent: number) => void;
   onZoomFit: () => void;
   onZoomReset: () => void;
+  printerLastSeen: PrinterStatusChipProps['lastSeen'];
+  printerReachable: boolean;
 }
 
 export function Toolbar({
@@ -56,6 +59,8 @@ export function Toolbar({
   onZoomSet,
   onZoomFit,
   onZoomReset,
+  printerLastSeen,
+  printerReachable,
 }: ToolbarProps) {
   return (
     <div style={{
@@ -132,6 +137,13 @@ export function Toolbar({
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />
+
+      {/* Printer status */}
+      <PrinterStatusChip
+        lastSeen={printerLastSeen}
+        reachable={printerReachable}
+        printing={printDisabled ?? false}
+      />
 
       {/* File actions */}
       <button onClick={onImport}>Open .lbx</button>
