@@ -54,6 +54,7 @@ import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
 import { fileToBase64, guessMimeType, getImageDimensions } from './imageUtils';
 import { getImageBitmap } from './imageBitmapCache';
+import { getTextBitmap } from './textBitmapCache';
 
 type LabelNode = SceneNode<LabelNodeData, LabelLayer, LabelPose>;
 
@@ -99,13 +100,18 @@ function drawLabelNode(node: LabelNode, pose: LabelPose, _view: View): DrawComma
   const { x, y, width, height } = pose;
 
   switch (data.kind) {
-    case 'text':
-      // Light bounding box to show the text frame
+    case 'text': {
+      const bitmap = getTextBitmap(data, width, height);
+      if (bitmap) {
+        return [{ kind: 'image', image: bitmap, x, y, w: width, h: height }];
+      }
+      // Fallback: the old light frame so the node stays visible/selectable
       return [{
         kind: 'path',
         path: rectPath(x, y, width, height),
         stroke: { paint: { color: '#999999' }, width: 0.3 },
       }];
+    }
     case 'rect':
       return [{
         kind: 'path',

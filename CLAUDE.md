@@ -31,7 +31,7 @@ Key weasel APIs used:
 
 ## Current state
 
-- Text renders as bounding boxes (waiting on weasel MSDF font support for proper text rendering)
+- Text renders as real glyphs via a canvas rasterizer (`src/textRender.ts`) shared by screen (bitmap cache) and print; weasel MSDF text remains the eventual replacement for the screen path.
 - Objects can be created, selected, moved, resized via weasel tools
 - Import/export .lbx files works end-to-end
 - Property panel for editing text, rect, and pose properties
