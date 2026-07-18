@@ -33,7 +33,12 @@ export interface Driver {
 export interface Transport {
   open(): Promise<void>
   write(bytes: Uint8Array): Promise<void>
-  read(timeoutMs: number): Promise<Uint8Array>
+  /**
+   * Reads accumulated incoming chunks until at least `minBytes` bytes (default 1) have arrived
+   * or `timeoutMs` elapses, then returns whatever was collected.
+   * Note: read() cancels the underlying stream, so it is single-use per open() in Web Serial implementations.
+   */
+  read(timeoutMs: number, minBytes?: number): Promise<Uint8Array>
   close(): Promise<void>
 }
 

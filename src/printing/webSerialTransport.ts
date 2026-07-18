@@ -27,21 +27,48 @@ export function createWebSerialTransport(port: SerialPortLike, options: WebSeria
       if (!port.writable) throw new Error('serial port not writable')
       const writer = port.writable.getWriter()
       try {
+        // writer.write() means "queued", not "transmitted" — the print flow relies on
+        // the subsequent status read() blocking until the printer has consumed the data
         await writer.write(bytes)
       } finally {
         writer.releaseLock()
       }
     },
-    async read(timeoutMs: number) {
+    async read(timeoutMs: number, minBytes: number = 1) {
       if (!port.readable) throw new Error('serial port not readable')
       const reader = port.readable.getReader()
-      const timeout = new Promise<{ value?: Uint8Array; done: boolean }>((resolve) =>
-        setTimeout(() => resolve({ value: new Uint8Array(0), done: false }), timeoutMs),
-      )
+      const deadline = Date.now() + timeoutMs
+      const accumulated: number[] = []
+      let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+
       try {
-        const result = await Promise.race([reader.read(), timeout])
-        return result.value ?? new Uint8Array(0)
+        while (accumulated.length < minBytes) {
+          const remainingMs = Math.max(0, deadline - Date.now())
+          if (remainingMs === 0) break
+
+          const timeoutPromise = new Promise<{ value?: Uint8Array; done: boolean }>((resolve) => {
+            timeoutHandle = setTimeout(() => resolve({ value: undefined, done: false }), remainingMs)
+          })
+
+          try {
+            const result = await Promise.race([reader.read(), timeoutPromise])
+            if (timeoutHandle !== null) clearTimeout(timeoutHandle)
+            timeoutHandle = null
+
+            if (result.value) {
+              accumulated.push(...Array.from(result.value))
+            }
+            if (result.done) break
+          } catch (e) {
+            if (timeoutHandle !== null) clearTimeout(timeoutHandle)
+            timeoutHandle = null
+            throw e
+          }
+        }
+
+        return new Uint8Array(accumulated)
       } finally {
+        if (timeoutHandle !== null) clearTimeout(timeoutHandle)
         await reader.cancel().catch(() => {})
         reader.releaseLock()
       }
