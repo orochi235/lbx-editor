@@ -48,7 +48,7 @@ describe('startUsbKeepalive', () => {
   it('polls status on each tick and reports it', async () => {
     const { device, written } = fakeDevice(FULL_STATUS)
     const statuses: unknown[] = []
-    const stop = startUsbKeepalive({
+    const { stop } = startUsbKeepalive({
       getDevice: async () => device,
       isBusy: () => false,
       intervalMs: 1000,
@@ -68,7 +68,7 @@ describe('startUsbKeepalive', () => {
   it('skips ticks while busy', async () => {
     const { device, written } = fakeDevice(FULL_STATUS)
     let busy = true
-    const stop = startUsbKeepalive({
+    const { stop } = startUsbKeepalive({
       getDevice: async () => device,
       isBusy: () => busy,
       intervalMs: 1000,
@@ -83,7 +83,7 @@ describe('startUsbKeepalive', () => {
 
   it('skips ticks when no device is granted', async () => {
     let calls = 0
-    const stop = startUsbKeepalive({
+    const { stop } = startUsbKeepalive({
       getDevice: async () => {
         calls++
         return null
@@ -97,7 +97,7 @@ describe('startUsbKeepalive', () => {
   })
 
   it('swallows tick errors', async () => {
-    const stop = startUsbKeepalive({
+    const { stop } = startUsbKeepalive({
       getDevice: async () => {
         throw new Error('boom')
       },
@@ -110,7 +110,7 @@ describe('startUsbKeepalive', () => {
 
   it('stop() halts polling', async () => {
     const { device, written } = fakeDevice(FULL_STATUS)
-    const stop = startUsbKeepalive({
+    const { stop } = startUsbKeepalive({
       getDevice: async () => device,
       isBusy: () => false,
       intervalMs: 1000,
@@ -119,5 +119,45 @@ describe('startUsbKeepalive', () => {
     stop()
     await vi.advanceTimersByTimeAsync(5000)
     expect(written).toHaveLength(1)
+  })
+
+  it('idle() resolves immediately when no tick is in flight', async () => {
+    const { device } = fakeDevice(FULL_STATUS)
+    const keepalive = startUsbKeepalive({
+      getDevice: async () => device,
+      isBusy: () => false,
+      intervalMs: 1000,
+    })
+    await expect(keepalive.idle()).resolves.toBeUndefined()
+    keepalive.stop()
+  })
+
+  it('idle() waits for the in-flight tick to finish', async () => {
+    let releaseRead: (() => void) | undefined
+    const { device } = fakeDevice(FULL_STATUS)
+    const originalTransferIn = device.transferIn.bind(device)
+    device.transferIn = async (ep, len) => {
+      await new Promise<void>((resolve) => {
+        releaseRead = resolve
+      })
+      return originalTransferIn(ep, len)
+    }
+    const keepalive = startUsbKeepalive({
+      getDevice: async () => device,
+      isBusy: () => false,
+      intervalMs: 1000,
+    })
+    await vi.advanceTimersByTimeAsync(1000) // tick starts, parked inside transferIn
+    let idleResolved = false
+    const idlePromise = keepalive.idle().then(() => {
+      idleResolved = true
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(idleResolved).toBe(false)
+    releaseRead?.()
+    await vi.advanceTimersByTimeAsync(0)
+    await idlePromise
+    expect(idleResolved).toBe(true)
+    keepalive.stop()
   })
 })

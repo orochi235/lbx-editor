@@ -72,9 +72,19 @@ Goal: prevent auto-power-off (~10 min idle) while the app is open.
   every tick: get the granted device, build a WebUsb transport, `open()`,
   send the status request (100×`00`, `1B 40`, `1B 69 53`), `read(2000, 32)`,
   `close()`. Claim is held only for the duration of one status round-trip so
-  other software can use the printer between ticks.
+  other software can use the printer between ticks. Returns a handle,
+  `{ stop, idle }`: `stop()` clears the poll interval, and `idle()` resolves
+  once any in-flight tick has finished (immediately when idle) so a caller
+  can await exclusive device access.
 - Skips a tick (silently) when the device is absent, a print is in progress
-  (shared `printing` flag), or the previous tick is still running.
+  (shared `printing` flag), or the previous tick is still running (tracked
+  via the in-flight promise `idle()` also observes, not a separate boolean).
+- `App.tsx`'s `handlePrint` awaits `keepaliveRef.current?.idle()` right after
+  setting the busy flag and before claiming the device, so a print job can
+  never interleave with an in-flight keepalive tick's own claim/release of the
+  USB interface. The busy flag itself (`printingRef.current`) is now set and
+  cleared entirely inside `handlePrint`'s try/finally, rather than via a
+  render-phase `printingRef.current = printing;` assignment.
 - `onStatus(PrinterStatus)` lets the UI show live tape width / error state
   later; initial wiring just keeps the timer alive.
 - **Hardware verification item:** confirm a status poll actually resets the

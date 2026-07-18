@@ -11,19 +11,25 @@ export interface UsbKeepaliveOptions {
   onStatus?(status: PrinterStatus): void
 }
 
+export interface UsbKeepalive {
+  /** Stop polling. */
+  stop(): void
+  /** Resolves once any in-flight tick has finished (immediately when idle). */
+  idle(): Promise<void>
+}
+
 /**
  * Periodically round-trips a status request so the PT-P710BT's idle
  * auto-power-off timer keeps getting reset while the app is open. The claim is
  * held only for the duration of one poll so other software can use the printer
- * between ticks. Opportunistic: every failure is swallowed.
+ * between ticks. Opportunistic: every failure is swallowed. Callers that need
+ * exclusive device access await `idle()` first.
  */
-export function startUsbKeepalive(options: UsbKeepaliveOptions): () => void {
+export function startUsbKeepalive(options: UsbKeepaliveOptions): UsbKeepalive {
   const intervalMs = options.intervalMs ?? 5 * 60_000
-  let ticking = false
+  let inFlight: Promise<void> | null = null
 
   const tick = async () => {
-    if (ticking || options.isBusy()) return
-    ticking = true
     try {
       const device = await options.getDevice()
       if (!device) return
@@ -38,11 +44,19 @@ export function startUsbKeepalive(options: UsbKeepaliveOptions): () => void {
       }
     } catch (err) {
       console.warn('USB keepalive tick failed:', err)
-    } finally {
-      ticking = false
     }
   }
 
-  const handle = setInterval(() => void tick(), intervalMs)
-  return () => clearInterval(handle)
+  const runTick = () => {
+    if (inFlight || options.isBusy()) return
+    inFlight = tick().finally(() => {
+      inFlight = null
+    })
+  }
+
+  const handle = setInterval(runTick, intervalMs)
+  return {
+    stop: () => clearInterval(handle),
+    idle: () => inFlight ?? Promise.resolve(),
+  }
 }

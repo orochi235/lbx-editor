@@ -635,7 +635,7 @@ describe('startUsbKeepalive', () => {
   it('polls status on each tick and reports it', async () => {
     const { device, written } = fakeDevice(FULL_STATUS)
     const statuses: unknown[] = []
-    const stop = startUsbKeepalive({
+    const { stop } = startUsbKeepalive({
       getDevice: async () => device,
       isBusy: () => false,
       intervalMs: 1000,
@@ -655,7 +655,7 @@ describe('startUsbKeepalive', () => {
   it('skips ticks while busy', async () => {
     const { device, written } = fakeDevice(FULL_STATUS)
     let busy = true
-    const stop = startUsbKeepalive({
+    const { stop } = startUsbKeepalive({
       getDevice: async () => device,
       isBusy: () => busy,
       intervalMs: 1000,
@@ -670,7 +670,7 @@ describe('startUsbKeepalive', () => {
 
   it('skips ticks when no device is granted', async () => {
     let calls = 0
-    const stop = startUsbKeepalive({
+    const { stop } = startUsbKeepalive({
       getDevice: async () => {
         calls++
         return null
@@ -684,7 +684,7 @@ describe('startUsbKeepalive', () => {
   })
 
   it('swallows tick errors', async () => {
-    const stop = startUsbKeepalive({
+    const { stop } = startUsbKeepalive({
       getDevice: async () => {
         throw new Error('boom')
       },
@@ -697,7 +697,7 @@ describe('startUsbKeepalive', () => {
 
   it('stop() halts polling', async () => {
     const { device, written } = fakeDevice(FULL_STATUS)
-    const stop = startUsbKeepalive({
+    const { stop } = startUsbKeepalive({
       getDevice: async () => device,
       isBusy: () => false,
       intervalMs: 1000,
@@ -706,6 +706,46 @@ describe('startUsbKeepalive', () => {
     stop()
     await vi.advanceTimersByTimeAsync(5000)
     expect(written).toHaveLength(1)
+  })
+
+  it('idle() resolves immediately when no tick is in flight', async () => {
+    const { device } = fakeDevice(FULL_STATUS)
+    const keepalive = startUsbKeepalive({
+      getDevice: async () => device,
+      isBusy: () => false,
+      intervalMs: 1000,
+    })
+    await expect(keepalive.idle()).resolves.toBeUndefined()
+    keepalive.stop()
+  })
+
+  it('idle() waits for the in-flight tick to finish', async () => {
+    let releaseRead: (() => void) | undefined
+    const { device } = fakeDevice(FULL_STATUS)
+    const originalTransferIn = device.transferIn.bind(device)
+    device.transferIn = async (ep, len) => {
+      await new Promise<void>((resolve) => {
+        releaseRead = resolve
+      })
+      return originalTransferIn(ep, len)
+    }
+    const keepalive = startUsbKeepalive({
+      getDevice: async () => device,
+      isBusy: () => false,
+      intervalMs: 1000,
+    })
+    await vi.advanceTimersByTimeAsync(1000) // tick starts, parked inside transferIn
+    let idleResolved = false
+    const idlePromise = keepalive.idle().then(() => {
+      idleResolved = true
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(idleResolved).toBe(false)
+    releaseRead?.()
+    await vi.advanceTimersByTimeAsync(0)
+    await idlePromise
+    expect(idleResolved).toBe(true)
+    keepalive.stop()
   })
 })
 ```
@@ -733,19 +773,25 @@ export interface UsbKeepaliveOptions {
   onStatus?(status: PrinterStatus): void
 }
 
+export interface UsbKeepalive {
+  /** Stop polling. */
+  stop(): void
+  /** Resolves once any in-flight tick has finished (immediately when idle). */
+  idle(): Promise<void>
+}
+
 /**
  * Periodically round-trips a status request so the PT-P710BT's idle
  * auto-power-off timer keeps getting reset while the app is open. The claim is
  * held only for the duration of one poll so other software can use the printer
- * between ticks. Opportunistic: every failure is swallowed.
+ * between ticks. Opportunistic: every failure is swallowed. Callers that need
+ * exclusive device access await `idle()` first.
  */
-export function startUsbKeepalive(options: UsbKeepaliveOptions): () => void {
+export function startUsbKeepalive(options: UsbKeepaliveOptions): UsbKeepalive {
   const intervalMs = options.intervalMs ?? 5 * 60_000
-  let ticking = false
+  let inFlight: Promise<void> | null = null
 
   const tick = async () => {
-    if (ticking || options.isBusy()) return
-    ticking = true
     try {
       const device = await options.getDevice()
       if (!device) return
@@ -760,20 +806,28 @@ export function startUsbKeepalive(options: UsbKeepaliveOptions): () => void {
       }
     } catch (err) {
       console.warn('USB keepalive tick failed:', err)
-    } finally {
-      ticking = false
     }
   }
 
-  const handle = setInterval(() => void tick(), intervalMs)
-  return () => clearInterval(handle)
+  const runTick = () => {
+    if (inFlight || options.isBusy()) return
+    inFlight = tick().finally(() => {
+      inFlight = null
+    })
+  }
+
+  const handle = setInterval(runTick, intervalMs)
+  return {
+    stop: () => clearInterval(handle),
+    idle: () => inFlight ?? Promise.resolve(),
+  }
 }
 ```
 
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `npx vitest run src/printing/keepalive.test.ts`
-Expected: PASS (5 tests).
+Expected: PASS (7 tests).
 
 - [ ] **Step 6: Export and wire into the app**
 
@@ -781,17 +835,30 @@ In `src/printing/index.ts` add:
 
 ```typescript
 export { startUsbKeepalive } from './keepalive'
+export type { UsbKeepalive } from './keepalive'
 export { encodeStatusRequest } from './brotherDriver'
 ```
 
 (Adjust the existing `createBrotherRasterDriver` export line to keep one export per module if it already exports from `./brotherDriver` — merge into a single line: `export { createBrotherRasterDriver, encodeStatusRequest } from './brotherDriver'` and drop the separate line added above.)
 
-In `src/App.tsx`: import `startUsbKeepalive` (add to the `./printing` import list), add `useRef`-based busy tracking and the effect. Next to `const [printing, setPrinting] = useState(false);`:
+In `src/App.tsx`: import `startUsbKeepalive` and `type UsbKeepalive` (add to the `./printing` import list), add `useRef`-based busy tracking, a ref to hold the keepalive handle, and the effect. Next to `const [printing, setPrinting] = useState(false);`:
 
 ```typescript
   const printingRef = useRef(false);
-  printingRef.current = printing;
+  const keepaliveRef = useRef<UsbKeepalive | null>(null);
 ```
+
+At the top of `handlePrint`'s `try` block (right after `setPrinting(true);`), await any in-flight tick before claiming the device:
+
+```typescript
+    try {
+      printingRef.current = true;
+      // Let any in-flight keepalive poll release the interface before we claim it
+      // (≤2 s worst case; Chrome's user-activation window comfortably outlives it).
+      await keepaliveRef.current?.idle();
+```
+
+and in the `finally`, before `setPrinting(false);`, add `printingRef.current = false;` — the busy flag is now set/cleared entirely inside `handlePrint`'s try/finally rather than via a render-phase ref write.
 
 After `handlePrint`'s definition add:
 
@@ -801,11 +868,16 @@ After `handlePrint`'s definition add:
   useEffect(() => {
     if (!('usb' in navigator)) return;
     const usb = (navigator as unknown as UsbNavigator).usb;
-    return startUsbKeepalive({
+    const keepalive = startUsbKeepalive({
       getDevice: async () =>
         (await usb.getDevices()).find((d) => d.vendorId === USB_VENDOR_BROTHER) ?? null,
       isBusy: () => printingRef.current,
     });
+    keepaliveRef.current = keepalive;
+    return () => {
+      keepaliveRef.current = null;
+      keepalive.stop();
+    };
   }, []);
 ```
 

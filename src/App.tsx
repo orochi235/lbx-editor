@@ -46,6 +46,7 @@ import {
   type SerialPortLike,
   type Transport,
   type UsbDeviceLike,
+  type UsbKeepalive,
 } from './printing';
 import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
@@ -412,7 +413,7 @@ export function App() {
   // --- Print ---
   const [printing, setPrinting] = useState(false);
   const printingRef = useRef(false);
-  printingRef.current = printing;
+  const keepaliveRef = useRef<UsbKeepalive | null>(null);
   const handlePrint = useCallback(async () => {
     if (printing) return;
     const tapeWidthMm = parseInt(tapeSize, 10);
@@ -423,6 +424,10 @@ export function App() {
     }
     setPrinting(true);
     try {
+      printingRef.current = true;
+      // Let any in-flight keepalive poll release the interface before we claim it
+      // (≤2 s worst case; Chrome's user-activation window comfortably outlives it).
+      await keepaliveRef.current?.idle();
       let transport: Transport;
       if (hasWebUsb) {
         const usb = (navigator as unknown as UsbNavigator).usb;
@@ -487,6 +492,7 @@ export function App() {
       if (err instanceof DOMException && err.name === 'NotFoundError') return;
       alert(`Print failed: ${(err as Error).message}`);
     } finally {
+      printingRef.current = false;
       setPrinting(false);
     }
   }, [printing, tapeSize, scene, labelLength, paperHeight]);
@@ -496,11 +502,16 @@ export function App() {
   useEffect(() => {
     if (!('usb' in navigator)) return;
     const usb = (navigator as unknown as UsbNavigator).usb;
-    return startUsbKeepalive({
+    const keepalive = startUsbKeepalive({
       getDevice: async () =>
         (await usb.getDevices()).find((d) => d.vendorId === USB_VENDOR_BROTHER) ?? null,
       isBusy: () => printingRef.current,
     });
+    keepaliveRef.current = keepalive;
+    return () => {
+      keepaliveRef.current = null;
+      keepalive.stop();
+    };
   }, []);
 
   const layers = useMemo(() => ({
