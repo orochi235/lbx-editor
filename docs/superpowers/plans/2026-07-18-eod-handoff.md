@@ -56,7 +56,17 @@ asleep hint. The full pipeline prints real labels over USB from Chrome.
    rendering fixes. Watch: glyphs print slightly vertically compressed (documented v1
    squeeze in `labelRender.ts`); judge acceptability. Orientation/mirroring deliberate
    check (asymmetric glyph) also still open.
-4. **Deferred follow-ups** (from plan self-reviews, none blocking): vertical-squeeze
+4. **Diagonal-line stepping on printed labels (reported 2026-07-18 eve).** A printed
+   diagonal line shows regular stair-stepping — looks moiré-like; likely needs closer
+   calibration to the printer's dpi. Plausible mechanisms in `labelRender.ts`:
+   (a) the v1 vertical squeeze (`printableDots / (tapeWidthPt * dotsPerPt)`) makes the
+   x and y axes render at *different* effective dpi, so slopes hit non-integer dot
+   ratios with a visible repeat period; (b) rasterCore's hard luminance<128 threshold
+   binarizes the canvas's anti-aliased line edge, which can double/notch steps
+   depending on where the cut lands. Related to the deferred vertical-squeeze fix.
+   Possible probes: print a 45° line with squeeze forced to 1, and/or render lines with
+   AA disabled (manual Bresenham) and compare.
+5. **Deferred follow-ups** (from plan self-reviews, none blocking): vertical-squeeze
    print fidelity (margin-accurate rendering instead of squeeze), serial-path runtime
    fallback when a USB claim fails, `Toolbar` `printDisabled`-as-`printing` aliasing
    (only valid while printing is the sole disable reason), weasel MSDF text as the
