@@ -43,13 +43,13 @@ asleep hint. The full pipeline prints real labels over USB from Chrome.
 
 ## Open items (task list order)
 
-1. **"O brother where art thou" extraction (next big task, user-approved).** Extract
-   `src/printing/` minus `labelRender.ts` (editor-coupled) into a standalone sibling repo
-   `~/src/` — types, rasterCore, packbits, brotherDriver, transports (WebUSB + Web
-   Serial), profiles, printJob, keepalive — plus `docs/hardware/pt-p710bt.md` and
-   `scripts/hardware-debug/`. Linked-package pattern like weasel/bil-lbx. `git init -b
-   main`, update `~/src/PROJECTS.md`. No second-printer profiles until real hardware
-   exists. Note: `textRender.ts` stays in the app (DOM/editor concern).
+1. ~~**"O brother where art thou" extraction.**~~ **DONE 2026-07-18 eve** — `~/src/obwat`
+   exists (primitives + new `createBrotherPrinter` connectionless facade), lbx-editor
+   consumes it, `src/printing/` deleted. Spec:
+   `docs/superpowers/specs/2026-07-18-obwat-design.md`; plan:
+   `docs/superpowers/plans/2026-07-18-obwat-extraction.md`. Hardware doc + debug
+   scripts moved to obwat (stub pointer left behind). **A hardware re-verify of the
+   facade print path is pending** (pure refactor + facade, but untested on the wire).
 2. **Keepalive soak** — leave app open + printer on >15 min; confirm the 60s polls keep
    it awake. Record in the webusb handoff doc's results section.
 3. **Print-check line angles + text glyphs on tape** — first real print after today's

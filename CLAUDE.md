@@ -7,6 +7,11 @@ Web-based visual editor for Brother P-touch label files (.lbx).
 Standalone Vite + React app consuming:
 - `@weasel-js/core` (linked from `../weasel`) — 2D scene graph, canvas rendering, tools
 - `bil-lbx` (linked from `../bil-lbx`) — .lbx serialization/parsing
+- `obwat` (linked from `../obwat`) — Brother P-touch printing: raster encoding,
+  WebUSB/Web Serial transports, and the `createBrotherPrinter` facade (device
+  acquisition, keepalive, status events). The app renders pixels
+  (`src/labelRender.ts`); obwat owns pixels-to-paper. UX policy (grant-flag
+  localStorage, alert copy) stays in App.tsx.
 
 ## Local development
 
