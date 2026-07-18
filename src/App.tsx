@@ -17,6 +17,7 @@ import {
   type View,
   type RenderLayer,
   type NodeId,
+  useImageTool,
   type ToolsApi,
   type InsertNodeFactory,
 } from '@weasel-js/core';
@@ -48,6 +49,7 @@ import { renderLabelToRgba } from './labelRender';
 import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
 import { fileToBase64, guessMimeType, getImageDimensions } from './imageUtils';
+import { buildImageInsert, type PendingImage } from './imageInsert';
 import { getImageBitmap } from './imageBitmapCache';
 import { getTextBitmap } from './textBitmapCache';
 
@@ -273,6 +275,14 @@ export function App() {
   // that drives the palette.
   const [tools, setTools] = useState<ToolsApi | null>(null);
 
+  // Drag-to-place image tool. `src` is unused: the `image` insertNodeFactory
+  // below reads pendingImageRef instead of the binding's params. The tool
+  // exists for its palette button, crosshair, and drag-rect insert gesture;
+  // the picked file is staged by handleImagePick.
+  const pendingImageRef = useRef<PendingImage | null>(null);
+  const imageTool = useImageTool({ src: '', label: 'Image' });
+  const toolsPatch = useMemo(() => ({ image: imageTool }), [imageTool]);
+
   const insertNodeFactories = useMemo<Record<string, InsertNodeFactory>>(() => ({
     rect: (b) => ({
       pose: { x: b.x, y: b.y, width: b.width, height: b.height },
@@ -320,6 +330,7 @@ export function App() {
         color: '#000000',
       } satisfies LabelNodeData,
     }),
+    image: (b) => buildImageInsert(pendingImageRef.current, b),
   }), []);
 
   const addImageFromFile = useCallback(async (file: File) => {
@@ -345,11 +356,51 @@ export function App() {
 
   const imageInputRef = useRef<HTMLInputElement>(null);
 
-  const handleImagePick = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImagePick = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) addImageFromFile(file);
     if (imageInputRef.current) imageInputRef.current.value = '';
-  }, [addImageFromFile]);
+    if (!file) return;
+    const mimeType = guessMimeType(file.name);
+    const src = await fileToBase64(file);
+    const dims = await getImageDimensions(src, mimeType, paperWidth - 20, paperHeight - 10);
+    pendingImageRef.current = {
+      src,
+      originalName: file.name,
+      mimeType,
+      defaultWidth: dims.width,
+      defaultHeight: dims.height,
+    };
+  }, [paperWidth, paperHeight]);
+
+  // The palette's IMG button just does tools.setActive('image') (registry-
+  // driven palette, no picker hook on the tool). Observe the activation
+  // transition and open the hidden file input; a fresh pick happens on every
+  // entry into the tool. Re-picking without switching tools first is not
+  // supported (setActive on the active id is a no-op).
+  const prevActiveToolRef = useRef<string | null>(null);
+  useEffect(() => {
+    const active = tools?.active ?? null;
+    if (active === 'image' && prevActiveToolRef.current !== 'image') {
+      imageInputRef.current?.click();
+    }
+    prevActiveToolRef.current = active;
+  }, [tools]);
+
+  // Dismissing the picker means "never mind": revert to select so an
+  // imageless crosshair tool isn't left active. Native `cancel` event
+  // (Chrome 113+); this app is Chrome-only (WebUSB).
+  const toolsRef = useRef(tools);
+  toolsRef.current = tools;
+  useEffect(() => {
+    const input = imageInputRef.current;
+    if (!input) return;
+    const onCancel = () => {
+      const t = toolsRef.current;
+      if (t?.active === 'image') t.setActive('select');
+    };
+    input.addEventListener('cancel', onCancel);
+    return () => input.removeEventListener('cancel', onCancel);
+  }, []);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -574,6 +625,7 @@ export function App() {
                     selection={selection}
                     selectionMode="multi"
                     defaultTools={['select', 'hand', 'rect', 'line', 'text']}
+                    tools={toolsPatch}
                     insertNodeFactories={insertNodeFactories}
                     onToolsCreated={setTools}
                     selectTool={{ rotate: false }}
