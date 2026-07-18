@@ -357,7 +357,7 @@ export function createWebUsbTransport(device: UsbDeviceLike): Transport {
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run src/printing/webUsbTransport.test.ts`
-Expected: PASS (10 tests).
+Expected: PASS (13 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -430,7 +430,7 @@ and change the two lines after `requestPort()` (currently `const profile = ptP71
 - [ ] **Step 4: Verify suite and build**
 
 Run: `npm test && npm run build`
-Expected: all tests pass (35 existing + 10 new), build clean.
+Expected: all tests pass (35 existing + 13 new), build clean.
 
 - [ ] **Step 5: Commit**
 
@@ -469,7 +469,7 @@ Add near the other module-level constants (after `const FIT_PADDING = 16;`):
 ```typescript
 const USB_VENDOR_BROTHER = 0x04f9;
 /** Set once a USB device grant exists; lets us distinguish "printer asleep" from "never granted". */
-const USB_PRINTED_FLAG = 'lbx-editor.hasPrintedOverUsb';
+const USB_GRANT_FLAG = 'lbx-editor.hasUsbGrant';
 
 type UsbDeviceWithVendor = UsbDeviceLike & { vendorId: number };
 interface UsbNavigator {
@@ -501,10 +501,10 @@ Replace the body of `handlePrint` (keep `printing` guard, `tapeWidthMm` parse, a
         let device =
           (await usb.getDevices()).find((d) => d.vendorId === USB_VENDOR_BROTHER) ?? null;
         if (!device) {
-          if (localStorage.getItem(USB_PRINTED_FLAG)) {
+          if (localStorage.getItem(USB_GRANT_FLAG)) {
             // One-shot hint: clearing the flag means a repeat click falls through to
             // the picker, so a revoked permission can't dead-end the Print button.
-            localStorage.removeItem(USB_PRINTED_FLAG);
+            localStorage.removeItem(USB_GRANT_FLAG);
             alert(
               'Printer not found — it may have auto-powered off. Press its power button, then print again.',
             );
@@ -513,7 +513,7 @@ Replace the body of `handlePrint` (keep `printing` guard, `tapeWidthMm` parse, a
           device = await usb.requestDevice({ filters: [{ vendorId: USB_VENDOR_BROTHER }] });
         }
         // A grant now exists (or was reconfirmed) — remember for the asleep-vs-never-granted hint.
-        localStorage.setItem(USB_PRINTED_FLAG, '1');
+        localStorage.setItem(USB_GRANT_FLAG, '1');
         transport = createWebUsbTransport(device);
       } else {
         // User gesture: choose the OS-paired PT-P710BT serial port. Must stay
@@ -905,7 +905,7 @@ git commit -m "Add USB keepalive to counter printer auto-power-off"
 - [ ] **Step 1: Full suite + build**
 
 Run: `npm test && npm run build`
-Expected: all tests green (50 total expected), clean build.
+Expected: all tests green (56 total expected), clean build.
 
 - [ ] **Step 2: Hardware — first print via picker**
 

@@ -160,4 +160,33 @@ describe('startUsbKeepalive', () => {
     expect(idleResolved).toBe(true)
     keepalive.stop()
   })
+
+  it('skips interval firings while a tick is still in flight', async () => {
+    let releaseRead: (() => void) | undefined
+    const { device, written } = fakeDevice(FULL_STATUS)
+    const originalTransferIn = device.transferIn.bind(device)
+    device.transferIn = async (ep, len) => {
+      await new Promise<void>((resolve) => {
+        releaseRead = resolve
+      })
+      return originalTransferIn(ep, len)
+    }
+    let getDeviceCalls = 0
+    const keepalive = startUsbKeepalive({
+      getDevice: async () => {
+        getDeviceCalls++
+        return device
+      },
+      isBusy: () => false,
+      intervalMs: 1000,
+    })
+    await vi.advanceTimersByTimeAsync(1000) // first tick starts, parks in transferIn
+    await vi.advanceTimersByTimeAsync(1000) // second interval firing must be skipped
+    expect(getDeviceCalls).toBe(1)
+    releaseRead?.()
+    await vi.advanceTimersByTimeAsync(0)
+    await keepalive.idle()
+    expect(written).toHaveLength(1)
+    keepalive.stop()
+  })
 })

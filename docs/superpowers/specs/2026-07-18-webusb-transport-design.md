@@ -109,6 +109,7 @@ Goal: prevent auto-power-off (~10 min idle) while the app is open.
   bytes, close best-effort semantics.
 - `keepalive.test.ts`: fake timers; covers tick cadence, skip-while-printing,
   skip-while-absent, no overlapping ticks, stop().
-- Profile tests updated for the new signature.
+- Profile signature change is compile-time covered (tsc + App call site);
+  `profiles.test.ts` continues to test `ptP710btMedia`.
 - Hardware: real print via Print button (first-time picker + zero-click
   reprint), orientation/mirroring check (open watch-item), keepalive soak.

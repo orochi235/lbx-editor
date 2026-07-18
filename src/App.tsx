@@ -64,7 +64,7 @@ const FIT_PADDING = 16;
 
 const USB_VENDOR_BROTHER = 0x04f9;
 /** Set once a USB device grant exists; lets us distinguish "printer asleep" from "never granted". */
-const USB_PRINTED_FLAG = 'lbx-editor.hasPrintedOverUsb';
+const USB_GRANT_FLAG = 'lbx-editor.hasUsbGrant';
 
 type UsbDeviceWithVendor = UsbDeviceLike & { vendorId: number };
 interface UsbNavigator {
@@ -415,7 +415,7 @@ export function App() {
   const printingRef = useRef(false);
   const keepaliveRef = useRef<UsbKeepalive | null>(null);
   const handlePrint = useCallback(async () => {
-    if (printing) return;
+    if (printingRef.current) return;
     const tapeWidthMm = parseInt(tapeSize, 10);
     const hasWebUsb = 'usb' in navigator;
     if (!hasWebUsb && !('serial' in navigator)) {
@@ -436,10 +436,10 @@ export function App() {
         let device =
           (await usb.getDevices()).find((d) => d.vendorId === USB_VENDOR_BROTHER) ?? null;
         if (!device) {
-          if (localStorage.getItem(USB_PRINTED_FLAG)) {
+          if (localStorage.getItem(USB_GRANT_FLAG)) {
             // One-shot hint: clearing the flag means a repeat click falls through to
             // the picker, so a revoked permission can't dead-end the Print button.
-            localStorage.removeItem(USB_PRINTED_FLAG);
+            localStorage.removeItem(USB_GRANT_FLAG);
             alert(
               'Printer not found — it may have auto-powered off. Press its power button, then print again.',
             );
@@ -448,7 +448,7 @@ export function App() {
           device = await usb.requestDevice({ filters: [{ vendorId: USB_VENDOR_BROTHER }] });
         }
         // A grant now exists (or was reconfirmed) — remember for the asleep-vs-never-granted hint.
-        localStorage.setItem(USB_PRINTED_FLAG, '1');
+        localStorage.setItem(USB_GRANT_FLAG, '1');
         transport = createWebUsbTransport(device);
       } else {
         // User gesture: choose the OS-paired PT-P710BT serial port. Must stay
