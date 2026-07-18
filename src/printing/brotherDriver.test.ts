@@ -1,0 +1,50 @@
+import { describe, it, expect } from 'vitest'
+import { createBrotherRasterDriver } from './brotherDriver'
+import { packbits } from './packbits'
+import type { Raster1bpp, JobOptions } from './types'
+
+const opts: JobOptions = { tapeWidthMm: 12, autoCut: true, marginDots: 0 }
+
+function blankRaster(lineCount: number): Raster1bpp {
+  return { lineBytes: 16, lineCount, rows: Array.from({ length: lineCount }, () => new Uint8Array(16)) }
+}
+
+describe('BrotherRasterDriver', () => {
+  it('emits the documented header, blank-line opcode, and print-cut footer', () => {
+    const out = Array.from(createBrotherRasterDriver().encode(blankRaster(1), opts))
+    const expected = [
+      ...new Array(100).fill(0x00), // invalidate
+      0x1b, 0x40, // init
+      0x1b, 0x69, 0x53, // status request
+      0x1b, 0x69, 0x61, 0x01, // raster mode
+      0x1b, 0x69, 0x7a, 0x84, 0x00, 0x0c, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, // print info (12mm, 1 line)
+      0x1b, 0x69, 0x4d, 0x40, // auto-cut
+      0x1b, 0x69, 0x4b, 0x08, // advanced mode
+      0x1b, 0x69, 0x64, 0x00, 0x00, // margin
+      0x4d, 0x02, // compression
+      0x5a, // blank raster line
+      0x1a, // print + feed + cut
+    ]
+    expect(out).toEqual(expected)
+  })
+
+  it('emits 0x47 + LE length + packbits for a non-blank line', () => {
+    const row = new Uint8Array(16)
+    row[0] = 0xff
+    const raster: Raster1bpp = { lineBytes: 16, lineCount: 1, rows: [row] }
+    const out = Array.from(createBrotherRasterDriver().encode(raster, opts))
+    const payload = Array.from(packbits(row))
+    const gIndex = out.lastIndexOf(0x47)
+    expect(gIndex).toBeGreaterThan(-1)
+    expect(out[gIndex + 1]).toBe(payload.length & 0xff)
+    expect(out[gIndex + 2]).toBe((payload.length >> 8) & 0xff)
+    expect(out.slice(gIndex + 3, gIndex + 3 + payload.length)).toEqual(payload)
+  })
+
+  it('clears the auto-cut bit when autoCut is false', () => {
+    const out = Array.from(createBrotherRasterDriver().encode(blankRaster(1), { ...opts, autoCut: false }))
+    const idx = out.findIndex((b, i) => b === 0x1b && out[i + 1] === 0x69 && out[i + 2] === 0x4d)
+    expect(idx).toBeGreaterThan(-1)
+    expect(out[idx + 3]).toBe(0x00)
+  })
+})
