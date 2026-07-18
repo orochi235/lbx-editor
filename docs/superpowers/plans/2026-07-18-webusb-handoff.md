@@ -82,3 +82,18 @@ Unit tests for the transport with a fake USB device (mirror `webSerialTransport.
 pattern), suite + build green, then a real print from the app in Chrome via the Print button
 (USB picker). Orientation/mirroring on hardware is still an open watch-item from the original
 plan — check it on the first real print.
+
+### Hardware verification results (2026-07-18, end of day)
+
+Implemented via `docs/superpowers/plans/2026-07-18-webusb-transport.md` (56 tests green,
+build clean, per-task + final reviews). On-hardware, in Chrome via the Print button:
+
+- **First print via USB picker: PASS** — picker listed PT-P710BT, label printed and auto-cut.
+- **Zero-click reprint: PASS** — second print went through with no picker (granted-device path).
+- **Asleep hint: PASS** — printer off → "may have auto-powered off" alert, no picker.
+- Orientation/mirroring: printed labels look right in practice; a deliberate
+  asymmetric-glyph check has not been done — still an open watch-item.
+- Keepalive soak (>12 min idle with app open): **not yet run** — pending.
+- New defect observed while testing (pre-existing, not transport-related): line objects
+  render on screen as rectangles and print as horizontal lines regardless of their actual
+  angle — tracked as a follow-up.
