@@ -36,6 +36,14 @@ Sketch (from the plan doc, refine via brainstorming):
 
 ## Open questions to resolve first (in order)
 
+> **RESOLVED 2026-07-18 — all three.** See `docs/hardware/pt-p710bt.md` for the full
+> hardware/OS-layer reference. Summary: interface 0 is class 7/1/2 with bulk OUT 0x02 /
+> bulk IN 0x81 (64-byte packets); Chrome claims it fine on macOS (no kernel driver in the
+> way); no mode toggle needed — the status sequence answered correctly over WebUSB with a
+> valid 32-byte reply (12mm media, no errors). Gotcha discovered: the printer auto-powers
+> off when idle and disappears from enumeration — the transport/UI must surface
+> "printer may be asleep" instead of failing opaquely.
+
 1. **USB descriptor layout**: interface class/endpoints of the PT-P710BT. Enumerate via
    `ioreg -p IOUSB -l -w0` / a quick Chrome `navigator.usb` probe. Expect printer class (0x07)
    with bulk IN+OUT.
