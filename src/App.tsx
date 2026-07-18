@@ -41,7 +41,10 @@ import {
   ptP710btProfile,
   printRaster,
   createWebSerialTransport,
+  createWebUsbTransport,
   type SerialPortLike,
+  type Transport,
+  type UsbDeviceLike,
 } from './printing';
 import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
@@ -56,6 +59,18 @@ function genNodeId(): NodeId {
 }
 
 const FIT_PADDING = 16;
+
+const USB_VENDOR_BROTHER = 0x04f9;
+/** Set after the first successful USB print; lets us distinguish "printer asleep" from "never granted". */
+const USB_PRINTED_FLAG = 'lbx-editor.hasPrintedOverUsb';
+
+type UsbDeviceWithVendor = UsbDeviceLike & { vendorId: number };
+interface UsbNavigator {
+  usb: {
+    getDevices(): Promise<UsbDeviceWithVendor[]>;
+    requestDevice(options: { filters: Array<{ vendorId: number }> }): Promise<UsbDeviceWithVendor>;
+  };
+}
 
 interface CanvasSize {
   width: number;
@@ -398,19 +413,39 @@ export function App() {
   const handlePrint = useCallback(async () => {
     if (printing) return;
     const tapeWidthMm = parseInt(tapeSize, 10);
-    if (!('serial' in navigator)) {
-      alert('Web Serial is not supported in this browser. Use Chrome or Edge.');
+    const hasWebUsb = 'usb' in navigator;
+    if (!hasWebUsb && !('serial' in navigator)) {
+      alert('Neither WebUSB nor Web Serial is supported in this browser. Use Chrome or Edge.');
       return;
     }
     setPrinting(true);
     try {
-      // User gesture: choose the OS-paired PT-P710BT serial port. Must stay
-      // directly in the click handler chain (no await before it).
-      const port = await (
-        navigator as unknown as { serial: { requestPort(): Promise<SerialPortLike> } }
-      ).serial.requestPort();
+      let transport: Transport;
+      if (hasWebUsb) {
+        const usb = (navigator as unknown as UsbNavigator).usb;
+        // Previously-granted device → zero-click print. getDevices() is fast, so the
+        // user activation survives for requestDevice below when we need the picker.
+        let device =
+          (await usb.getDevices()).find((d) => d.vendorId === USB_VENDOR_BROTHER) ?? null;
+        if (!device) {
+          if (localStorage.getItem(USB_PRINTED_FLAG)) {
+            alert(
+              'Printer not found — it may have auto-powered off. Press its power button and try again.',
+            );
+            return;
+          }
+          device = await usb.requestDevice({ filters: [{ vendorId: USB_VENDOR_BROTHER }] });
+        }
+        transport = createWebUsbTransport(device);
+      } else {
+        // User gesture: choose the OS-paired PT-P710BT serial port. Must stay
+        // directly in the click handler chain (no await before it).
+        const port = await (
+          navigator as unknown as { serial: { requestPort(): Promise<SerialPortLike> } }
+        ).serial.requestPort();
+        transport = createWebSerialTransport(port, { baudRate: 9600 });
+      }
 
-      const transport = createWebSerialTransport(port, { baudRate: 9600 });
       const profile = ptP710btProfile(transport, tapeWidthMm);
       // Render order (layer-major DFS preorder), not Map insertion order, so
       // printed stacking matches what's on screen after any z-reorder.
@@ -438,6 +473,8 @@ export function App() {
         alert('Printer reported an error (check tape/cover).');
       } else if (status.incomplete) {
         alert('Print sent, but the printer status reply was incomplete — check the printer.');
+      } else if (hasWebUsb) {
+        localStorage.setItem(USB_PRINTED_FLAG, '1');
       }
     } catch (err) {
       // Dismissing the port picker is a normal cancel, not a failure.
