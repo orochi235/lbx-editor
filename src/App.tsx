@@ -68,6 +68,7 @@ const FIT_PADDING = 16;
 const USB_VENDOR_BROTHER = 0x04f9;
 /** Set once a USB device grant exists; lets us distinguish "printer asleep" from "never granted". */
 const USB_GRANT_FLAG = 'lbx-editor.hasUsbGrant';
+const AUTOCUT_KEY = 'lbx-editor.autoCut';
 
 type UsbDeviceWithVendor = UsbDeviceLike & { vendorId: number };
 interface UsbNavigator {
@@ -423,6 +424,11 @@ export function App() {
 
   // --- Print ---
   const [printing, setPrinting] = useState(false);
+  const [autoCut, setAutoCut] = useState(() => localStorage.getItem(AUTOCUT_KEY) !== '0');
+  const handleAutoCutChange = useCallback((on: boolean) => {
+    setAutoCut(on);
+    localStorage.setItem(AUTOCUT_KEY, on ? '1' : '0');
+  }, []);
   const printingRef = useRef(false);
   const keepaliveRef = useRef<UsbKeepalive | null>(null);
   const [printerLastSeen, setPrinterLastSeen] = useState<{ status: PrinterStatus; at: number } | null>(null);
@@ -493,7 +499,7 @@ export function App() {
       const status = await printRaster(raster, {
         driver: profile.makeDriver(),
         transport: profile.makeTransport(),
-        opts: { tapeWidthMm, autoCut: true, marginDots: 0 },
+        opts: { tapeWidthMm, autoCut, marginDots: 0 },
       });
       setPrinterLastSeen({ status, at: Date.now() });
       setPrinterReachable(true);
@@ -510,7 +516,7 @@ export function App() {
       printingRef.current = false;
       setPrinting(false);
     }
-  }, [printing, tapeSize, scene, labelLength, paperHeight]);
+  }, [printing, tapeSize, scene, labelLength, paperHeight, autoCut]);
 
   // Keep the printer awake (it auto-powers off after ~10 min idle) while the
   // app is open and a USB grant exists. See docs/hardware/pt-p710bt.md.
@@ -557,6 +563,8 @@ export function App() {
               onImport={() => fileInputRef.current?.click()}
               onPrint={handlePrint}
               printDisabled={printing}
+              autoCut={autoCut}
+              onAutoCutChange={handleAutoCutChange}
               zoomPercent={zoomPercent}
               onZoomIn={handleZoomIn}
               onZoomOut={handleZoomOut}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { TAPE_SIZES, type TapeSize } from './label';
 import { PrinterStatusChip, type PrinterStatusChipProps } from './PrinterStatusChip';
+import './toolbar.css';
 
 // Zoom slider: logarithmic mapping over weasel's zoom clamp range (0.1×–8×), so
 // equal slider travel is equal proportional zoom. Expressed in percent.
@@ -31,6 +32,8 @@ interface ToolbarProps {
   onAddImage: () => void;
   onPrint: () => void;
   printDisabled?: boolean;
+  autoCut: boolean;
+  onAutoCutChange: (on: boolean) => void;
   zoomPercent: number;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -53,6 +56,8 @@ export function Toolbar({
   onAddImage,
   onPrint,
   printDisabled,
+  autoCut,
+  onAutoCutChange,
   zoomPercent,
   onZoomIn,
   onZoomOut,
@@ -148,6 +153,14 @@ export function Toolbar({
       {/* File actions */}
       <button onClick={onImport}>Open .lbx</button>
       <button onClick={onExport}>Export .lbx</button>
+      <label className="toolbar-check" title="Cut the tape automatically after printing">
+        <input
+          type="checkbox"
+          checked={autoCut}
+          onChange={(e) => onAutoCutChange(e.target.checked)}
+        />
+        Auto cut
+      </label>
       <button type="button" onClick={onPrint} disabled={printDisabled} title="Print to label printer">
         Print
       </button>
