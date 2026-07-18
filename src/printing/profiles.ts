@@ -1,6 +1,5 @@
-import type { DeviceProfile, MediaSpec } from './types'
+import type { DeviceProfile, MediaSpec, Transport } from './types'
 import { createBrotherRasterDriver } from './brotherDriver'
-import { createWebSerialTransport, type SerialPortLike } from './webSerialTransport'
 
 export const PT_P710BT_DPI = 180
 export const PT_P710BT_PRINTHEAD_DOTS = 128
@@ -27,12 +26,12 @@ export function ptP710btMedia(tapeWidthMm: number): MediaSpec {
   return { dpi: PT_P710BT_DPI, printheadDots: PT_P710BT_PRINTHEAD_DOTS, printableDots, tapeWidthMm }
 }
 
-/** A PT-P710BT profile bound to an already-selected Web Serial port. */
-export function ptP710btProfile(port: SerialPortLike, tapeWidthMm: number): DeviceProfile {
+/** A PT-P710BT profile bound to an already-constructed transport (USB, serial, …). */
+export function ptP710btProfile(transport: Transport, tapeWidthMm: number): DeviceProfile {
   return {
     model: 'Brother PT-P710BT',
     media: ptP710btMedia(tapeWidthMm),
     makeDriver: () => createBrotherRasterDriver(),
-    makeTransport: () => createWebSerialTransport(port, { baudRate: 9600 }),
+    makeTransport: () => transport,
   }
 }

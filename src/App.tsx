@@ -40,6 +40,7 @@ import {
   rgbaToRaster,
   ptP710btProfile,
   printRaster,
+  createWebSerialTransport,
   type SerialPortLike,
 } from './printing';
 import { Toolbar } from './Toolbar';
@@ -409,7 +410,8 @@ export function App() {
         navigator as unknown as { serial: { requestPort(): Promise<SerialPortLike> } }
       ).serial.requestPort();
 
-      const profile = ptP710btProfile(port, tapeWidthMm);
+      const transport = createWebSerialTransport(port, { baudRate: 9600 });
+      const profile = ptP710btProfile(transport, tapeWidthMm);
       // Render order (layer-major DFS preorder), not Map insertion order, so
       // printed stacking matches what's on screen after any z-reorder.
       const nodes = Array.from(scene.renderOrder(), (id) => scene.nodes.get(id)!);
