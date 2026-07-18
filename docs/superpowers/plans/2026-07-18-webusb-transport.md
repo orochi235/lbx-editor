@@ -468,7 +468,7 @@ Add near the other module-level constants (after `const FIT_PADDING = 16;`):
 
 ```typescript
 const USB_VENDOR_BROTHER = 0x04f9;
-/** Set after the first successful USB print; lets us distinguish "printer asleep" from "never granted". */
+/** Set once a USB device grant exists; lets us distinguish "printer asleep" from "never granted". */
 const USB_PRINTED_FLAG = 'lbx-editor.hasPrintedOverUsb';
 
 type UsbDeviceWithVendor = UsbDeviceLike & { vendorId: number };
@@ -502,13 +502,18 @@ Replace the body of `handlePrint` (keep `printing` guard, `tapeWidthMm` parse, a
           (await usb.getDevices()).find((d) => d.vendorId === USB_VENDOR_BROTHER) ?? null;
         if (!device) {
           if (localStorage.getItem(USB_PRINTED_FLAG)) {
+            // One-shot hint: clearing the flag means a repeat click falls through to
+            // the picker, so a revoked permission can't dead-end the Print button.
+            localStorage.removeItem(USB_PRINTED_FLAG);
             alert(
-              'Printer not found — it may have auto-powered off. Press its power button and try again.',
+              'Printer not found — it may have auto-powered off. Press its power button, then print again.',
             );
             return;
           }
           device = await usb.requestDevice({ filters: [{ vendorId: USB_VENDOR_BROTHER }] });
         }
+        // A grant now exists (or was reconfirmed) — remember for the asleep-vs-never-granted hint.
+        localStorage.setItem(USB_PRINTED_FLAG, '1');
         transport = createWebUsbTransport(device);
       } else {
         // User gesture: choose the OS-paired PT-P710BT serial port. Must stay
@@ -529,12 +534,16 @@ After the existing `const status = await printRaster(…)` call, extend the resu
         alert('Printer reported an error (check tape/cover).');
       } else if (status.incomplete) {
         alert('Print sent, but the printer status reply was incomplete — check the printer.');
-      } else if (hasWebUsb) {
-        localStorage.setItem(USB_PRINTED_FLAG, '1');
       }
 ```
 
-The `catch` block stays as is (`NotFoundError` covers both the serial picker cancel and the USB picker cancel/empty-chooser dismiss).
+The `catch` block's comment changes to reflect both pickers (`NotFoundError` covers both the serial picker cancel and the USB picker cancel/empty-chooser dismiss):
+
+```typescript
+    } catch (err) {
+      // Dismissing the device/port picker is a normal cancel, not a failure.
+      if (err instanceof DOMException && err.name === 'NotFoundError') return;
+```
 
 - [ ] **Step 2: Verify suite and build**
 

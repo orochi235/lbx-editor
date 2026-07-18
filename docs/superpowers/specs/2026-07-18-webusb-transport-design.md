@@ -47,10 +47,16 @@ composes the transport. No USB-specific profile variant.
 - If `navigator.usb` exists:
   - `getDevices()` → if a Brother (vendor `0x04F9`) device is granted, use it
     silently — zero-click reprint.
-  - If a device was previously granted but is now absent (tracked via a
-    remembered "has printed over USB" flag in `localStorage`), show
-    "Printer not found — it may have auto-powered off; press its power button"
-    rather than opening the picker.
+  - A `localStorage` flag records that a device grant exists (not that a print
+    succeeded); it's set as soon as a device is acquired, whether via
+    `getDevices()` or a fresh `requestDevice()` grant.
+  - If a device was previously granted but is now absent, and the flag is
+    set, show "Printer not found — it may have auto-powered off; press its
+    power button, then print again" rather than opening the picker. The hint
+    is one-shot: firing it clears the flag, so a repeat click falls through
+    to `requestDevice()` — a genuinely revoked permission can't dead-end the
+    Print button, while a printer that was merely asleep gets the zero-click
+    path again once woken.
   - Otherwise `requestDevice({ filters: [{ vendorId: 0x04F9 }] })`, kept
     directly in the click-handler gesture chain. `NotFoundError` → silent
     (picker canceled), matching the serial path's convention.
