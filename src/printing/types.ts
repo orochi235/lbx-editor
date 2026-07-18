@@ -30,6 +30,8 @@ export interface JobOptions {
 export interface PrinterStatus {
   raw: Uint8Array
   hasError: boolean
+  /** True when fewer bytes than a full status reply arrived (timeout/disconnect). */
+  incomplete: boolean
 }
 
 export interface Driver {

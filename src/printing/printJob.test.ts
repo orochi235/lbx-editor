@@ -71,4 +71,39 @@ describe('printRaster', () => {
     const result = await printRaster(raster, { driver: createBrotherRasterDriver(), transport, opts })
     expect(result.hasError).toBe(true)
   })
+
+  it('resolves with the status even when close() rejects', async () => {
+    const transport: Transport = {
+      async open() {},
+      async write() {},
+      async read() { return new Uint8Array(32) },
+      async close() { throw new Error('close boom') },
+    }
+    const result = await printRaster(raster, { driver: createBrotherRasterDriver(), transport, opts })
+    expect(result.hasError).toBe(false)
+  })
+
+  it('surfaces the write error when both write() and close() fail', async () => {
+    const transport: Transport = {
+      async open() {},
+      async write() { throw new Error('boom') },
+      async read() { return new Uint8Array(0) },
+      async close() { throw new Error('close boom') },
+    }
+    await expect(
+      printRaster(raster, { driver: createBrotherRasterDriver(), transport, opts }),
+    ).rejects.toThrow('boom')
+  })
+
+  it('clean success: a full 32-byte zero status resolves with no error and complete', async () => {
+    const transport: Transport = {
+      async open() {},
+      async write() {},
+      async read() { return new Uint8Array(32) },
+      async close() {},
+    }
+    const result = await printRaster(raster, { driver: createBrotherRasterDriver(), transport, opts })
+    expect(result.hasError).toBe(false)
+    expect(result.incomplete).toBe(false)
+  })
 })

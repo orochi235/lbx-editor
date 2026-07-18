@@ -69,13 +69,17 @@ describe('BrotherRasterDriver', () => {
     expect(createBrotherRasterDriver().parseStatus(raw).hasError).toBe(true)
   })
 
-  it('parseStatus reports no error for 32 zero bytes', () => {
+  it('parseStatus reports no error for 32 zero bytes, and complete', () => {
     const raw = new Uint8Array(32)
-    expect(createBrotherRasterDriver().parseStatus(raw).hasError).toBe(false)
+    const status = createBrotherRasterDriver().parseStatus(raw)
+    expect(status.hasError).toBe(false)
+    expect(status.incomplete).toBe(false)
   })
 
-  it('parseStatus reports no error for a short reply (<10 bytes)', () => {
+  it('parseStatus reports no error for a short reply (<10 bytes), and incomplete', () => {
     const raw = Uint8Array.from([0x80, 0x00])
-    expect(createBrotherRasterDriver().parseStatus(raw).hasError).toBe(false)
+    const status = createBrotherRasterDriver().parseStatus(raw)
+    expect(status.hasError).toBe(false)
+    expect(status.incomplete).toBe(true)
   })
 })

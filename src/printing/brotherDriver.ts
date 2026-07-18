@@ -57,7 +57,9 @@ export function createBrotherRasterDriver(): Driver {
     parseStatus(raw: Uint8Array): PrinterStatus {
       // Brother 32-byte status: error-information bytes at offsets 8 and 9.
       const hasError = raw.length >= 10 && (raw[8] !== 0 || raw[9] !== 0)
-      return { raw, hasError }
+      // Full Brother status is 32 bytes; fewer means a timeout/disconnect truncated it.
+      const incomplete = raw.length < 32
+      return { raw, hasError, incomplete }
     },
   }
 }

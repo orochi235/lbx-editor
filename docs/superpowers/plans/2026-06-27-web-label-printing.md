@@ -652,12 +652,26 @@ git commit -m "Add WebSerialTransport over an injected SerialPort"
 - Create: `/Users/mike/src/lbx-editor/src/printing/printJob.ts`
 - Test: `/Users/mike/src/lbx-editor/src/printing/printJob.test.ts`
 - Modify: `/Users/mike/src/lbx-editor/src/printing/types.ts`, `/Users/mike/src/lbx-editor/src/printing/brotherDriver.ts`, `/Users/mike/src/lbx-editor/src/printing/brotherDriver.test.ts`
+- Test: `/Users/mike/src/lbx-editor/src/printing/profiles.test.ts`
 
 > **Amended after code review of earlier tasks:** status parsing is printer-specific (Brother's
 > error bytes at offsets 8/9 of a 32-byte status), so it lives on the `Driver` as
 > `parseStatus(raw): PrinterStatus`, implemented in `brotherDriver.ts` — not inlined in the
 > printer-agnostic `printJob.ts`. The orchestrator also reads the full 32-byte status
 > (`transport.read(2000, 32)`), since a Web Serial/BT SPP read can return partial chunks.
+>
+> **Amended again after a second code-review pass:**
+> - `ptP710btMedia` uses a documented per-width print-area lookup table instead of a pure linear
+>   formula (the printer reserves edge margins), falling back to the clamped formula for
+>   unlisted widths.
+> - `printRaster`'s `finally` closes the transport best-effort (`.catch(() => {})`) so a
+>   rejecting `close()` never masks the job's real outcome (success or the original error).
+> - `PrinterStatus` gained `incomplete: boolean` (`raw.length < 32`) so a short/absent status
+>   reply (timeout/disconnect) is distinguishable from a genuine all-clear.
+> - The `printJob.ts` comment on the status read was softened: the 32-byte reply answers the
+>   stream's *early* status-request command, so it reflects job-start printer state (missing
+>   tape, open cover) and does **not** guarantee the printer finished consuming the job before
+>   `close()` races it — that race is a Task 8 hardware-verification item.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -727,12 +741,25 @@ import { createWebSerialTransport, type SerialPortLike } from './webSerialTransp
 export const PT_P710BT_DPI = 180
 export const PT_P710BT_PRINTHEAD_DOTS = 128
 
+/**
+ * Documented print-area dot counts per tape width (PT-P700-series raster reference).
+ * The printer reserves top/bottom margins, so these are smaller than the physical
+ * tape width in dots. TODO(task8): confirm against hardware.
+ */
+const PT_P710BT_PRINTABLE_DOTS: Record<number, number> = {
+  3.5: 24,
+  6: 32,
+  9: 50,
+  12: 70,
+  18: 112,
+  24: 128,
+}
+
 /** Build the media spec for a given tape width (mm) on the PT-P710BT. */
 export function ptP710btMedia(tapeWidthMm: number): MediaSpec {
-  const printableDots = Math.min(
-    PT_P710BT_PRINTHEAD_DOTS,
-    Math.round((tapeWidthMm / 25.4) * PT_P710BT_DPI),
-  )
+  const printableDots =
+    PT_P710BT_PRINTABLE_DOTS[tapeWidthMm] ??
+    Math.min(PT_P710BT_PRINTHEAD_DOTS, Math.round((tapeWidthMm / 25.4) * PT_P710BT_DPI))
   return { dpi: PT_P710BT_DPI, printheadDots: PT_P710BT_PRINTHEAD_DOTS, printableDots, tapeWidthMm }
 }
 
@@ -747,7 +774,10 @@ export function ptP710btProfile(port: SerialPortLike, tapeWidthMm: number): Devi
 }
 ```
 
-- [ ] **Step 4: Add `PrinterStatus` and `parseStatus` to the `Driver` contract**
+`profiles.test.ts` covers: 12mm → 70, 24mm → 128, 18mm → 112, an unlisted width (10mm) falling
+back to `min(128, round(10/25.4*180)) = 71`, and dpi/printheadDots/tapeWidthMm passthrough.
+
+- [ ] **Step 4: Add `PrinterStatus` (with `incomplete`) and `parseStatus` to the `Driver` contract**
 
 `src/printing/types.ts` gains:
 
@@ -756,6 +786,8 @@ export function ptP710btProfile(port: SerialPortLike, tapeWidthMm: number): Devi
 export interface PrinterStatus {
   raw: Uint8Array
   hasError: boolean
+  /** True when fewer bytes than a full status reply arrived (timeout/disconnect). */
+  incomplete: boolean
 }
 
 export interface Driver {
@@ -770,12 +802,15 @@ export interface Driver {
 parseStatus(raw: Uint8Array): PrinterStatus {
   // Brother 32-byte status: error-information bytes at offsets 8 and 9.
   const hasError = raw.length >= 10 && (raw[8] !== 0 || raw[9] !== 0)
-  return { raw, hasError }
+  // Full Brother status is 32 bytes; fewer means a timeout/disconnect truncated it.
+  const incomplete = raw.length < 32
+  return { raw, hasError, incomplete }
 },
 ```
 
 `brotherDriver.test.ts` covers: a set bit at offset 8 → `hasError: true`; a set bit at offset 9 →
-`true`; 32 zero bytes → `false`; a short (<10-byte) reply → `false`.
+`true`; 32 zero bytes → `{hasError: false, incomplete: false}`; a short (<10-byte) reply →
+`{hasError: false, incomplete: true}`.
 
 - [ ] **Step 5: Write the orchestrator**
 
@@ -799,22 +834,27 @@ export async function printRaster(
   await transport.open()
   try {
     await transport.write(bytes)
-    // 32-byte Brother status; reply to the stream's early status request — printer
-    // state around job start (missing tape, open cover), not completion. Blocking
-    // here also ensures the printer consumed the job before we close the port.
+    // 32-byte Brother status; this is the reply to the stream's EARLY status-request
+    // command, so it reflects printer state around job start (missing tape, open
+    // cover) — it is not a print-completion acknowledgment, and the printer may still
+    // be consuming the job when this resolves. Whether closing here races the transfer
+    // on real hardware is a Task 8 hardware-verification item.
     const status = await transport.read(2000, 32)
     return driver.parseStatus(status)
   } finally {
-    await transport.close()
+    // best-effort: a close failure must not mask the job's real outcome
+    await transport.close().catch(() => {})
   }
 }
 ```
 
-No status-parsing logic lives here; it's delegated to `driver.parseStatus`.
+No status-parsing logic lives here; it's delegated to `driver.parseStatus`. Closing is
+best-effort — a rejecting `close()` never replaces a successful result or masks the write
+error that's actually surfacing.
 
 - [ ] **Step 6: Run tests to verify they pass**
 
-Run: `cd /Users/mike/src/lbx-editor && npx vitest run src/printing/printJob.test.ts src/printing/brotherDriver.test.ts`
+Run: `cd /Users/mike/src/lbx-editor && npx vitest run src/printing/printJob.test.ts src/printing/brotherDriver.test.ts src/printing/profiles.test.ts`
 Expected: PASS.
 
 - [ ] **Step 7: Run the full suite**
@@ -826,8 +866,9 @@ Expected: PASS — all printing tests green.
 
 ```bash
 cd /Users/mike/src/lbx-editor
-git add src/printing/profiles.ts src/printing/printJob.ts src/printing/printJob.test.ts \
-  src/printing/types.ts src/printing/brotherDriver.ts src/printing/brotherDriver.test.ts
+git add src/printing/profiles.ts src/printing/profiles.test.ts src/printing/printJob.ts \
+  src/printing/printJob.test.ts src/printing/types.ts src/printing/brotherDriver.ts \
+  src/printing/brotherDriver.test.ts
 git commit -m "Add PT-P710BT profile and print job orchestrator"
 ```
 
