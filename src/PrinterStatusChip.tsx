@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { PrinterStatus } from './printing';
+import type { PrinterStatus } from 'obwat';
 import './printerStatusChip.css';
 
 export interface PrinterStatusChipProps {

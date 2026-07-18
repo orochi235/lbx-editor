@@ -16,6 +16,11 @@ export default defineConfig({
         find: 'bil-lbx',
         replacement: resolve(__dirname, '../bil-lbx/src/index.ts'),
       },
+      // obwat local source
+      {
+        find: 'obwat',
+        replacement: resolve(__dirname, '../obwat/src/index.ts'),
+      },
     ]),
   },
   server: { port: 5180 },

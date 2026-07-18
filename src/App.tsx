@@ -37,19 +37,14 @@ import {
 import { exportLbx } from './lbxExport';
 import { importLbx } from './lbxImport';
 import {
-  renderLabelToRgba,
   rgbaToRaster,
-  ptP710btProfile,
-  printRaster,
-  createWebSerialTransport,
-  createWebUsbTransport,
-  startUsbKeepalive,
+  ptP710btMedia,
+  createBrotherPrinter,
+  NoGrantedDeviceError,
+  type BrotherPrinter,
   type PrinterStatus,
-  type SerialPortLike,
-  type Transport,
-  type UsbDeviceLike,
-  type UsbKeepalive,
-} from './printing';
+} from 'obwat';
+import { renderLabelToRgba } from './labelRender';
 import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
 import { fileToBase64, guessMimeType, getImageDimensions } from './imageUtils';
@@ -65,18 +60,9 @@ function genNodeId(): NodeId {
 
 const FIT_PADDING = 16;
 
-const USB_VENDOR_BROTHER = 0x04f9;
 /** Set once a USB device grant exists; lets us distinguish "printer asleep" from "never granted". */
 const USB_GRANT_FLAG = 'lbx-editor.hasUsbGrant';
 const AUTOCUT_KEY = 'lbx-editor.autoCut';
-
-type UsbDeviceWithVendor = UsbDeviceLike & { vendorId: number };
-interface UsbNavigator {
-  usb: {
-    getDevices(): Promise<UsbDeviceWithVendor[]>;
-    requestDevice(options: { filters: Array<{ vendorId: number }> }): Promise<UsbDeviceWithVendor>;
-  };
-}
 
 interface CanvasSize {
   width: number;
@@ -430,55 +416,40 @@ export function App() {
     localStorage.setItem(AUTOCUT_KEY, on ? '1' : '0');
   }, []);
   const printingRef = useRef(false);
-  const keepaliveRef = useRef<UsbKeepalive | null>(null);
   const [printerLastSeen, setPrinterLastSeen] = useState<{ status: PrinterStatus; at: number } | null>(null);
   const [printerReachable, setPrinterReachable] = useState(false);
+
+  // One connectionless printer session per mount. Its keepalive keeps the
+  // PT-P710BT awake (it auto-powers off after ~10 min idle); its status
+  // events — keepalive ticks and post-print statuses alike — feed the chip.
+  const printerRef = useRef<BrotherPrinter | null>(null);
+  useEffect(() => {
+    const printer = createBrotherPrinter();
+    printerRef.current = printer;
+    const off = printer.onStatus((status) => {
+      setPrinterReachable(status !== null);
+      if (status !== null) setPrinterLastSeen({ status, at: Date.now() });
+    });
+    return () => {
+      off();
+      printerRef.current = null;
+      printer.dispose();
+    };
+  }, []);
+
   const handlePrint = useCallback(async () => {
     if (printingRef.current) return;
+    const printer = printerRef.current;
+    if (!printer) return;
     const tapeWidthMm = parseInt(tapeSize, 10);
-    const hasWebUsb = 'usb' in navigator;
-    if (!hasWebUsb && !('serial' in navigator)) {
+    if (!('usb' in navigator) && !('serial' in navigator)) {
       alert('Neither WebUSB nor Web Serial is supported in this browser. Use Chrome or Edge.');
       return;
     }
     setPrinting(true);
+    printingRef.current = true;
     try {
-      printingRef.current = true;
-      // Let any in-flight keepalive poll release the interface before we claim it
-      // (≤2 s worst case; Chrome's user-activation window comfortably outlives it).
-      await keepaliveRef.current?.idle();
-      let transport: Transport;
-      if (hasWebUsb) {
-        const usb = (navigator as unknown as UsbNavigator).usb;
-        // Previously-granted device → zero-click print. getDevices() is fast, so the
-        // user activation survives for requestDevice below when we need the picker.
-        let device =
-          (await usb.getDevices()).find((d) => d.vendorId === USB_VENDOR_BROTHER) ?? null;
-        if (!device) {
-          if (localStorage.getItem(USB_GRANT_FLAG)) {
-            // One-shot hint: clearing the flag means a repeat click falls through to
-            // the picker, so a revoked permission can't dead-end the Print button.
-            localStorage.removeItem(USB_GRANT_FLAG);
-            alert(
-              'Printer not found — it may have auto-powered off. Press its power button, then print again.',
-            );
-            return;
-          }
-          device = await usb.requestDevice({ filters: [{ vendorId: USB_VENDOR_BROTHER }] });
-        }
-        // A grant now exists (or was reconfirmed) — remember for the asleep-vs-never-granted hint.
-        localStorage.setItem(USB_GRANT_FLAG, '1');
-        transport = createWebUsbTransport(device);
-      } else {
-        // User gesture: choose the OS-paired PT-P710BT serial port. Must stay
-        // directly in the click handler chain (no await before it).
-        const port = await (
-          navigator as unknown as { serial: { requestPort(): Promise<SerialPortLike> } }
-        ).serial.requestPort();
-        transport = createWebSerialTransport(port, { baudRate: 9600 });
-      }
-
-      const profile = ptP710btProfile(transport, tapeWidthMm);
+      const media = ptP710btMedia(tapeWidthMm);
       // Render order (layer-major DFS preorder), not Map insertion order, so
       // printed stacking matches what's on screen after any z-reorder.
       const nodes = Array.from(scene.renderOrder(), (id) => scene.nodes.get(id)!);
@@ -486,8 +457,8 @@ export function App() {
         nodes,
         labelLengthPt: labelLength,
         tapeWidthPt: paperHeight,
-        printableDots: profile.media.printableDots,
-        dpi: profile.media.dpi,
+        printableDots: media.printableDots,
+        dpi: media.dpi,
         // Same lookup drawLabelNode uses for on-screen rendering; the cache
         // returns null (not yet decoded) rather than undefined.
         getImageBitmap: (node) =>
@@ -495,14 +466,33 @@ export function App() {
             ? getImageBitmap(node.data.src, node.data.mimeType) ?? undefined
             : undefined,
       });
-      const raster = rgbaToRaster(rgba, profile.media);
-      const status = await printRaster(raster, {
-        driver: profile.makeDriver(),
-        transport: profile.makeTransport(),
-        opts: { tapeWidthMm, autoCut, marginDots: 0 },
-      });
-      setPrinterLastSeen({ status, at: Date.now() });
-      setPrinterReachable(true);
+      const raster = rgbaToRaster(rgba, media);
+      const jobOpts = { tapeWidthMm, autoCut, marginDots: 0 };
+
+      let status: PrinterStatus;
+      try {
+        // Zero-click path: an already-granted device. The facade's mutex waits
+        // out any in-flight keepalive tick (≤2 s; Chrome's user-activation
+        // window comfortably outlives it if we fall through to the picker).
+        status = await printer.print(raster, jobOpts);
+      } catch (err) {
+        if (!(err instanceof NoGrantedDeviceError)) throw err;
+        if (localStorage.getItem(USB_GRANT_FLAG)) {
+          // One-shot hint: clearing the flag means a repeat click falls through to
+          // the picker, so a revoked permission can't dead-end the Print button.
+          localStorage.removeItem(USB_GRANT_FLAG);
+          alert(
+            'Printer not found — it may have auto-powered off. Press its power button, then print again.',
+          );
+          return;
+        }
+        await printer.requestDevice();
+        status = await printer.print(raster, jobOpts);
+      }
+      // A grant exists (the print went through) — remember for the
+      // asleep-vs-never-granted hint. Serial grants don't persist, so
+      // the flag stays USB-only.
+      if ('usb' in navigator) localStorage.setItem(USB_GRANT_FLAG, '1');
       if (status.hasError) {
         alert('Printer reported an error (check tape/cover).');
       } else if (status.incomplete) {
@@ -517,28 +507,6 @@ export function App() {
       setPrinting(false);
     }
   }, [printing, tapeSize, scene, labelLength, paperHeight, autoCut]);
-
-  // Keep the printer awake (it auto-powers off after ~10 min idle) while the
-  // app is open and a USB grant exists. See docs/hardware/pt-p710bt.md.
-  useEffect(() => {
-    if (!('usb' in navigator)) return;
-    const usb = (navigator as unknown as UsbNavigator).usb;
-    const keepalive = startUsbKeepalive({
-      getDevice: async () =>
-        (await usb.getDevices()).find((d) => d.vendorId === USB_VENDOR_BROTHER) ?? null,
-      isBusy: () => printingRef.current,
-      intervalMs: 60_000,
-      onStatus: (status) => {
-        setPrinterReachable(status !== null);
-        if (status !== null) setPrinterLastSeen({ status, at: Date.now() });
-      },
-    });
-    keepaliveRef.current = keepalive;
-    return () => {
-      keepaliveRef.current = null;
-      keepalive.stop();
-    };
-  }, []);
 
   const layers = useMemo(() => ({
     paper: { layer: paperLayer, before: 'scene' as const },

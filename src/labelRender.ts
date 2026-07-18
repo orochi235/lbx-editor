@@ -1,7 +1,7 @@
 import type { SceneNode } from '@weasel-js/core'
-import { lineEndpoints, type LabelNodeData, type LabelLayer, type LabelPose } from '../label'
-import { drawLabelText } from '../textRender'
-import type { RgbaImage } from './types'
+import { lineEndpoints, type LabelNodeData, type LabelLayer, type LabelPose } from './label'
+import { drawLabelText } from './textRender'
+import type { RgbaImage } from 'obwat'
 
 type LabelNode = SceneNode<LabelNodeData, LabelLayer, LabelPose>
 
