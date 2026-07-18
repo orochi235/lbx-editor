@@ -66,7 +66,13 @@ asleep hint. The full pipeline prints real labels over USB from Chrome.
    depending on where the cut lands. Related to the deferred vertical-squeeze fix.
    Possible probes: print a 45° line with squeeze forced to 1, and/or render lines with
    AA disabled (manual Bresenham) and compare.
-5. **Deferred follow-ups** (from plan self-reviews, none blocking): vertical-squeeze
+5. **IMG button → main toolbar (assessed, awaiting Mike's pick).** See
+   `docs/superpowers/plans/2026-07-18-img-toolbar-assessment.md`: prefer enabling
+   weasel's built-in image tool (`tools: { image: true }` + an `image` insert
+   factory) — verify how `useImageTool` sources its file first; fall back to a
+   ToolPalette "action" button kind. Do NOT build an action-tool class in the Tool
+   system (`Tool.onActivate` is dead code in the dispatcher).
+6. **Deferred follow-ups** (from plan self-reviews, none blocking): vertical-squeeze
    print fidelity (margin-accurate rendering instead of squeeze), serial-path runtime
    fallback when a USB claim fails, `Toolbar` `printDisabled`-as-`printing` aliasing
    (only valid while printing is the sole disable reason), weasel MSDF text as the
