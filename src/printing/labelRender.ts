@@ -1,5 +1,5 @@
 import type { SceneNode } from '@weasel-js/core'
-import type { LabelNodeData, LabelLayer, LabelPose } from '../label'
+import { lineEndpoints, type LabelNodeData, type LabelLayer, type LabelPose } from '../label'
 import type { RgbaImage } from './types'
 
 type LabelNode = SceneNode<LabelNodeData, LabelLayer, LabelPose>
@@ -93,13 +93,15 @@ export function renderLabelToRgba({
         ctx.lineWidth = Math.max(1, data.strokeWidth * dotsPerPt)
         ctx.strokeRect(x, y, w, h)
         break
-      case 'line':
+      case 'line': {
+        const [p, q] = lineEndpoints({ x, y, width: w, height: h }, data.descending)
         ctx.lineWidth = Math.max(1, data.strokeWidth * dotsPerPt)
         ctx.beginPath()
-        ctx.moveTo(x, y + h / 2)
-        ctx.lineTo(x + w, y + h / 2)
+        ctx.moveTo(p.x, p.y)
+        ctx.lineTo(q.x, q.y)
         ctx.stroke()
         break
+      }
       case 'text':
         // text-as-box (current editor behavior): outline the bounds
         ctx.lineWidth = 1

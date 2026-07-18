@@ -28,6 +28,8 @@ export interface LabelLineData {
   kind: 'line';
   strokeStyle: string;
   strokeWidth: number;
+  /** True: the line runs top-left → bottom-right of its pose box; false: bottom-left → top-right. */
+  descending: boolean;
 }
 
 export interface LabelImageData {
@@ -63,3 +65,13 @@ export type TapeSize = keyof typeof TAPE_SIZES;
 
 export const DEFAULT_TAPE: TapeSize = '12mm';
 export const DEFAULT_LABEL_LENGTH = 200; // pt, for fixed-length labels
+
+/** The two endpoints of a line within its pose box, honoring its diagonal direction. */
+export function lineEndpoints(
+  pose: { x: number; y: number; width: number; height: number },
+  descending: boolean,
+): [{ x: number; y: number }, { x: number; y: number }] {
+  return descending
+    ? [{ x: pose.x, y: pose.y }, { x: pose.x + pose.width, y: pose.y + pose.height }]
+    : [{ x: pose.x, y: pose.y + pose.height }, { x: pose.x + pose.width, y: pose.y }];
+}

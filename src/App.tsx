@@ -28,6 +28,7 @@ import {
   TAPE_SIZES,
   DEFAULT_TAPE,
   DEFAULT_LABEL_LENGTH,
+  lineEndpoints,
   type LabelNodeData,
   type LabelLayer,
   type LabelPose,
@@ -112,12 +113,14 @@ function drawLabelNode(node: LabelNode, pose: LabelPose, _view: View): DrawComma
         stroke: { paint: { color: data.strokeStyle }, width: data.strokeWidth },
         ...(data.fillColor ? { fill: { fill: 'solid', color: data.fillColor } } : {}),
       }];
-    case 'line':
+    case 'line': {
+      const [p, q] = lineEndpoints({ x, y, width, height }, data.descending);
       return [{
         kind: 'path',
-        path: rectPath(x, y, width, Math.max(height, 0.5)),
+        path: polygonFromPoints([p, q]),
         stroke: { paint: { color: data.strokeStyle }, width: data.strokeWidth },
       }];
+    }
     case 'image': {
       const bmp = getImageBitmap(data.src, data.mimeType);
       if (bmp) {
@@ -306,6 +309,7 @@ export function App() {
           kind: 'line',
           strokeStyle: '#000000',
           strokeWidth: 0.5,
+          descending: (c.x - a.x) * (c.y - a.y) >= 0,
         } satisfies LabelNodeData,
       };
     },
