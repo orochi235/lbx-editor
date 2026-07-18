@@ -39,12 +39,13 @@ export function createWebUsbTransport(device: UsbDeviceLike): Transport {
       if (device.configuration === null) await device.selectConfiguration(1)
       const config = device.configuration
       if (!config) throw new Error('USB device has no active configuration')
+      let found: { interfaceNumber: number; epIn: number; epOut: number } | null = null
       for (const iface of config.interfaces) {
         const endpoints = iface.alternates[0]?.endpoints ?? []
         const bulkIn = endpoints.find((e) => e.type === 'bulk' && e.direction === 'in')
         const bulkOut = endpoints.find((e) => e.type === 'bulk' && e.direction === 'out')
         if (bulkIn && bulkOut) {
-          claimed = {
+          found = {
             interfaceNumber: iface.interfaceNumber,
             epIn: bulkIn.endpointNumber,
             epOut: bulkOut.endpointNumber,
@@ -52,8 +53,9 @@ export function createWebUsbTransport(device: UsbDeviceLike): Transport {
           break
         }
       }
-      if (!claimed) throw new Error('no USB interface with bulk IN and OUT endpoints')
-      await device.claimInterface(claimed.interfaceNumber)
+      if (!found) throw new Error('no USB interface with bulk IN and OUT endpoints')
+      await device.claimInterface(found.interfaceNumber)
+      claimed = found
     },
 
     async write(bytes: Uint8Array) {
@@ -76,13 +78,17 @@ export function createWebUsbTransport(device: UsbDeviceLike): Transport {
         // WebUSB has no native transfer timeout. On deadline we abandon the pending
         // transferIn; close() (device.close) tears it down — like the serial
         // transport, read() is effectively single-use per open().
-        const result = await Promise.race([
-          device.transferIn(claimed.epIn, READ_PACKET_SIZE),
-          new Promise<null>((resolve) => {
-            timeoutHandle = setTimeout(() => resolve(null), remainingMs)
-          }),
-        ])
-        if (timeoutHandle !== null) clearTimeout(timeoutHandle)
+        let result: { status?: string; data?: DataView } | null
+        try {
+          result = await Promise.race([
+            device.transferIn(claimed.epIn, READ_PACKET_SIZE),
+            new Promise<null>((resolve) => {
+              timeoutHandle = setTimeout(() => resolve(null), remainingMs)
+            }),
+          ])
+        } finally {
+          if (timeoutHandle !== null) clearTimeout(timeoutHandle)
+        }
         if (result === null) break
         if (result.data) {
           for (let i = 0; i < result.data.byteLength; i++) accumulated.push(result.data.getUint8(i))

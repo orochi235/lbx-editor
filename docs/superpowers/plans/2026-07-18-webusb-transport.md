@@ -196,6 +196,39 @@ describe('WebUsbTransport', () => {
     await expect(t.write(Uint8Array.from([1]))).rejects.toThrow('USB transport not open')
     await expect(t.read(10)).rejects.toThrow('USB transport not open')
   })
+
+  it('read() stops early on a non-ok transfer status and returns the partial data', async () => {
+    const { device, reads } = fakeDevice()
+    reads.push({ status: 'stall', data: dataView([1, 2]) })
+    const t = createWebUsbTransport(device)
+    await t.open()
+    const got = await t.read(1000, 32)
+    expect(Array.from(got)).toEqual([1, 2])
+  })
+
+  it('open() failure at claimInterface leaves the transport unopened', async () => {
+    const { device } = fakeDevice()
+    device.claimInterface = async () => {
+      throw new Error('claim denied')
+    }
+    const t = createWebUsbTransport(device)
+    await expect(t.open()).rejects.toThrow('claim denied')
+    await expect(t.write(Uint8Array.from([1]))).rejects.toThrow('USB transport not open')
+    await t.close() // must not throw; nothing was claimed
+  })
+
+  it('close() swallows releaseInterface and close failures', async () => {
+    const { device } = fakeDevice()
+    device.releaseInterface = async () => {
+      throw new Error('release failed')
+    }
+    device.close = async () => {
+      throw new Error('close failed')
+    }
+    const t = createWebUsbTransport(device)
+    await t.open()
+    await expect(t.close()).resolves.toBeUndefined()
+  })
 })
 ```
 
@@ -250,12 +283,13 @@ export function createWebUsbTransport(device: UsbDeviceLike): Transport {
       if (device.configuration === null) await device.selectConfiguration(1)
       const config = device.configuration
       if (!config) throw new Error('USB device has no active configuration')
+      let found: { interfaceNumber: number; epIn: number; epOut: number } | null = null
       for (const iface of config.interfaces) {
         const endpoints = iface.alternates[0]?.endpoints ?? []
         const bulkIn = endpoints.find((e) => e.type === 'bulk' && e.direction === 'in')
         const bulkOut = endpoints.find((e) => e.type === 'bulk' && e.direction === 'out')
         if (bulkIn && bulkOut) {
-          claimed = {
+          found = {
             interfaceNumber: iface.interfaceNumber,
             epIn: bulkIn.endpointNumber,
             epOut: bulkOut.endpointNumber,
@@ -263,8 +297,9 @@ export function createWebUsbTransport(device: UsbDeviceLike): Transport {
           break
         }
       }
-      if (!claimed) throw new Error('no USB interface with bulk IN and OUT endpoints')
-      await device.claimInterface(claimed.interfaceNumber)
+      if (!found) throw new Error('no USB interface with bulk IN and OUT endpoints')
+      await device.claimInterface(found.interfaceNumber)
+      claimed = found
     },
 
     async write(bytes: Uint8Array) {
@@ -287,13 +322,17 @@ export function createWebUsbTransport(device: UsbDeviceLike): Transport {
         // WebUSB has no native transfer timeout. On deadline we abandon the pending
         // transferIn; close() (device.close) tears it down — like the serial
         // transport, read() is effectively single-use per open().
-        const result = await Promise.race([
-          device.transferIn(claimed.epIn, READ_PACKET_SIZE),
-          new Promise<null>((resolve) => {
-            timeoutHandle = setTimeout(() => resolve(null), remainingMs)
-          }),
-        ])
-        if (timeoutHandle !== null) clearTimeout(timeoutHandle)
+        let result: { status?: string; data?: DataView } | null
+        try {
+          result = await Promise.race([
+            device.transferIn(claimed.epIn, READ_PACKET_SIZE),
+            new Promise<null>((resolve) => {
+              timeoutHandle = setTimeout(() => resolve(null), remainingMs)
+            }),
+          ])
+        } finally {
+          if (timeoutHandle !== null) clearTimeout(timeoutHandle)
+        }
         if (result === null) break
         if (result.data) {
           for (let i = 0; i < result.data.byteLength; i++) accumulated.push(result.data.getUint8(i))

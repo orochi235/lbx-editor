@@ -171,4 +171,37 @@ describe('WebUsbTransport', () => {
     await expect(t.write(Uint8Array.from([1]))).rejects.toThrow('USB transport not open')
     await expect(t.read(10)).rejects.toThrow('USB transport not open')
   })
+
+  it('read() stops early on a non-ok transfer status and returns the partial data', async () => {
+    const { device, reads } = fakeDevice()
+    reads.push({ status: 'stall', data: dataView([1, 2]) })
+    const t = createWebUsbTransport(device)
+    await t.open()
+    const got = await t.read(1000, 32)
+    expect(Array.from(got)).toEqual([1, 2])
+  })
+
+  it('open() failure at claimInterface leaves the transport unopened', async () => {
+    const { device } = fakeDevice()
+    device.claimInterface = async () => {
+      throw new Error('claim denied')
+    }
+    const t = createWebUsbTransport(device)
+    await expect(t.open()).rejects.toThrow('claim denied')
+    await expect(t.write(Uint8Array.from([1]))).rejects.toThrow('USB transport not open')
+    await t.close() // must not throw; nothing was claimed
+  })
+
+  it('close() swallows releaseInterface and close failures', async () => {
+    const { device } = fakeDevice()
+    device.releaseInterface = async () => {
+      throw new Error('release failed')
+    }
+    device.close = async () => {
+      throw new Error('close failed')
+    }
+    const t = createWebUsbTransport(device)
+    await t.open()
+    await expect(t.close()).resolves.toBeUndefined()
+  })
 })
