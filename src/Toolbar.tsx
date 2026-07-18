@@ -29,7 +29,6 @@ interface ToolbarProps {
   onLabelLengthChange: (len: number) => void;
   onExport: () => void;
   onImport: () => void;
-  onAddImage: () => void;
   onPrint: () => void;
   printDisabled?: boolean;
   autoCut: boolean;
@@ -53,7 +52,6 @@ export function Toolbar({
   onLabelLengthChange,
   onExport,
   onImport,
-  onAddImage,
   onPrint,
   printDisabled,
   autoCut,
@@ -112,12 +110,6 @@ export function Toolbar({
           pt
         </label>
       )}
-
-      {/* Separator */}
-      <div style={{ width: '1px', height: '24px', background: '#ddd' }} />
-
-      {/* Image import (no weasel tool — images come from a file, not a drag) */}
-      <button onClick={onAddImage} title="Add image">IMG</button>
 
       {/* Separator */}
       <div style={{ width: '1px', height: '24px', background: '#ddd' }} />

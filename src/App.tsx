@@ -575,7 +575,6 @@ export function App() {
               onTapeSizeChange={setTapeSize}
               autoLength={autoLength}
               onAutoLengthChange={setAutoLength}
-              onAddImage={() => imageInputRef.current?.click()}
               labelLength={labelLength}
               onLabelLengthChange={setLabelLength}
               onExport={handleExport}
