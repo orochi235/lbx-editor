@@ -48,6 +48,32 @@ implementation yet.
    first *reanimate the dead `onActivate` path*, add previous-tool memory, and
    special-case the palette anyway — the largest diff for the same pixels.
 
+## Verification results (2026-07-18, post-assessment)
+
+Read the weasel source to answer the open question in option 1. Three findings:
+
+1. **`tools: { image: true }` does not work.** `image` is not in SceneCanvas's
+   `KNOWN_BUILTIN_IDS` (`SceneCanvas.tsx:1079`); a `true` value for an unknown
+   id is ignored with a dev warning. The patch form *does* accept a full tool
+   instance — `tools: { image: useImageTool({ src }) }` — and that path is
+   public API.
+2. **`useImageTool` has no file picker.** It takes `src` (URL / `blob:` /
+   `data:` URI) as a required hook option and bakes it into the insert
+   binding's params; the insert dep stamps it onto each new node. It is a
+   drag-to-place stamp tool for an image you already have.
+3. **No activation hook to open a picker from.** `Tool.onActivate` is the
+   already-flagged dead code path, so "activate image tool → picker opens"
+   cannot be built without reanimating it (option 4 territory).
+
+Consequence: **option 1 alone cannot deliver a picker-opening IMG button in
+the palette.** Option 2 (ToolPalette "action" button kind) is the required
+piece. Option 1 survives as an optional UX upgrade layered on top: the action
+button opens the picker, the picked file becomes a blob/data URI in app state,
+the app registers `tools: { image: useImageTool({ src }) }` + an `'image'`
+entry in its `insertNodeFactories` (minting the app-shaped
+`{ kind: 'image', src, ... }` node), and activates the tool via its ToolsApi
+handle for drag-to-place — replacing today's insert-at-(10,5).
+
 ## Verdict
 
 The virtue Mike is after is real: object creation belongs in the object
@@ -57,7 +83,11 @@ Tool system is exactly the machinery a picker button doesn't need, and its
 activation hook is dead code besides. The shallow thing should be either a
 palette affordance (option 2) or nothing new at all (option 1).
 
-**Recommendation:** check option 1 first (read `useImageTool` for its file
-source); fall back to option 2 if the built-in doesn't fit. Both satisfy the
-governing rule (weasel changes are fine when both sides get simpler); option 4
-fails it.
+**Recommendation (updated after verification):** option 2 — teach ToolPalette
+an "action" button kind — is the required piece; option 1's `image: true`
+mechanism doesn't exist and its tool has no picker. The remaining pick is UX
+scope: (a) action button only — picker opens, image inserts at the default
+spot as today, just launched from the palette; or (b) action button + image
+tool — after picking, activate `useImageTool` (registered via the tools patch
+with the picked src) so the user drags the image into place like the other
+shape tools. Both satisfy the governing rule; option 4 still fails it.
