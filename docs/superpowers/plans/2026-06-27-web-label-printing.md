@@ -973,7 +973,7 @@ In `src/Toolbar.tsx`, add an `onPrint: () => void` prop to the toolbar's props i
 
 - [ ] **Step 2: Add the print handler in App.tsx**
 
-In `src/App.tsx`, import the printing API and add a handler. `App` already holds `tapeSize` (`TapeSize`, e.g. `'12mm'`), `labelLength` (pt, doubles as `paperWidth`), and `paperHeight` (`TAPE_SIZES[tapeSize].width`, the full tape height in pt — exactly the `tapeWidthPt` the renderer needs). Label nodes live in `scene.nodes`, a `Map<NodeId, LabelNode>`; `renderLabelToRgba` wants the node values directly (not the `{id, data, pose}` shape `handleExport` builds for `bil-lbx`), so the handler does `Array.from(scene.nodes.values())`. The real `SerialPort` is structurally assignable to the exported `SerialPortLike`, so only `navigator` needs a cast — never the port.
+In `src/App.tsx`, import the printing API and add a handler. `App` already holds `tapeSize` (`TapeSize`, e.g. `'12mm'`), `labelLength` (pt, doubles as `paperWidth`), and `paperHeight` (`TAPE_SIZES[tapeSize].width`, the full tape height in pt — exactly the `tapeWidthPt` the renderer needs). Label nodes live in `scene.nodes`, a `Map<NodeId, LabelNode>`, but the canvas paints via `scene.renderOrder()` (a layer-major DFS-preorder `Iterable<NodeId>`, confirmed on weasel's `Scene` type in `src/core/scene/scene.ts`) — after any z-reorder, Map insertion order and paint order diverge, so the handler builds `nodes` from `renderOrder()`, not `scene.nodes.values()`, to keep printed stacking matching the screen (`handleExport` is left on Map order — out of scope here). `renderLabelToRgba` wants the node values directly (not the `{id, data, pose}` shape `handleExport` builds for `bil-lbx`). The real `SerialPort` is structurally assignable to the exported `SerialPortLike`, so only `navigator` needs a cast — never the port. A `printing` boolean state guards against double-clicks (two concurrent jobs on one port can lock the stream and garble a label mid-print), and dismissing the Web Serial port picker rejects with a `NotFoundError` `DOMException` — a normal cancel, not a failure, so it's swallowed before the generic alert.
 
 ```tsx
 import {
@@ -985,12 +985,15 @@ import {
 } from './printing'
 
 // inside the App component:
+const [printing, setPrinting] = useState(false)
 const handlePrint = useCallback(async () => {
+  if (printing) return
   const tapeWidthMm = parseInt(tapeSize, 10) // tapeSize keys look like '12mm'
   if (!('serial' in navigator)) {
     alert('Web Serial is not supported in this browser. Use Chrome or Edge.')
     return
   }
+  setPrinting(true)
   try {
     // User gesture: choose the OS-paired PT-P710BT serial port. Must stay
     // directly in the click handler chain (no await before it).
@@ -999,7 +1002,9 @@ const handlePrint = useCallback(async () => {
     ).serial.requestPort()
 
     const profile = ptP710btProfile(port, tapeWidthMm)
-    const nodes = Array.from(scene.nodes.values())
+    // Render order (layer-major DFS preorder), not Map insertion order, so
+    // printed stacking matches what's on screen after any z-reorder.
+    const nodes = Array.from(scene.renderOrder(), (id) => scene.nodes.get(id)!)
     const rgba = renderLabelToRgba({
       nodes,
       labelLengthPt: labelLength,
@@ -1019,12 +1024,16 @@ const handlePrint = useCallback(async () => {
       alert('Print sent, but the printer status reply was incomplete — check the printer.')
     }
   } catch (err) {
+    // Dismissing the port picker is a normal cancel, not a failure.
+    if (err instanceof DOMException && err.name === 'NotFoundError') return
     alert(`Print failed: ${(err as Error).message}`)
+  } finally {
+    setPrinting(false)
   }
-}, [tapeSize, scene, labelLength, paperHeight])
+}, [printing, tapeSize, scene, labelLength, paperHeight])
 ```
 
-Wire `onPrint={handlePrint}` into the `<Toolbar />` usage.
+Wire `onPrint={handlePrint}` and `printDisabled={printing}` into the `<Toolbar />` usage; `Toolbar.tsx` takes a new optional `printDisabled?: boolean` prop and passes it to the Print button's `disabled`.
 
 - [ ] **Step 3: Type-check**
 
@@ -1038,6 +1047,8 @@ Expected: tsc + Vite build pass.
 3. Create a simple label (a rect or text box), click **Print**, and select the printer's serial port.
 4. Confirm a label prints and auto-cuts.
 5. If the print is mirrored or rotated 180°, note it — the fix is reversing column or dot order in `rgbaToRaster` (a follow-up, not part of v1 acceptance).
+6. Also watch: does the incomplete-status alert fire on good prints? If so, downgrade it to `console.warn` — the 2000ms/32-byte read in `printJob.ts` may just be racing a real (but slow) status reply rather than reporting an actual disconnect.
+7. Note (academic, no action needed): 36mm tape falls back to the `Math.round((tapeWidthMm / 25.4) * PT_P710BT_DPI)` estimate in `ptP710btMedia` (capped at 128 dots) since it's not in `PT_P710BT_PRINTABLE_DOTS`, but the PT-P710BT's hardware max is 24mm tape — the printer physically can't load 36mm, so this path is unreachable in practice.
 
 - [ ] **Step 5: Commit**
 

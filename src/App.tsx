@@ -393,12 +393,15 @@ export function App() {
   }, [scene]);
 
   // --- Print ---
+  const [printing, setPrinting] = useState(false);
   const handlePrint = useCallback(async () => {
+    if (printing) return;
     const tapeWidthMm = parseInt(tapeSize, 10);
     if (!('serial' in navigator)) {
       alert('Web Serial is not supported in this browser. Use Chrome or Edge.');
       return;
     }
+    setPrinting(true);
     try {
       // User gesture: choose the OS-paired PT-P710BT serial port. Must stay
       // directly in the click handler chain (no await before it).
@@ -407,7 +410,9 @@ export function App() {
       ).serial.requestPort();
 
       const profile = ptP710btProfile(port, tapeWidthMm);
-      const nodes = Array.from(scene.nodes.values());
+      // Render order (layer-major DFS preorder), not Map insertion order, so
+      // printed stacking matches what's on screen after any z-reorder.
+      const nodes = Array.from(scene.renderOrder(), (id) => scene.nodes.get(id)!);
       const rgba = renderLabelToRgba({
         nodes,
         labelLengthPt: labelLength,
@@ -427,9 +432,13 @@ export function App() {
         alert('Print sent, but the printer status reply was incomplete — check the printer.');
       }
     } catch (err) {
+      // Dismissing the port picker is a normal cancel, not a failure.
+      if (err instanceof DOMException && err.name === 'NotFoundError') return;
       alert(`Print failed: ${(err as Error).message}`);
+    } finally {
+      setPrinting(false);
     }
-  }, [tapeSize, scene, labelLength, paperHeight]);
+  }, [printing, tapeSize, scene, labelLength, paperHeight]);
 
   const layers = useMemo(() => ({
     paper: { layer: paperLayer, before: 'scene' as const },
@@ -453,6 +462,7 @@ export function App() {
               onExport={handleExport}
               onImport={() => fileInputRef.current?.click()}
               onPrint={handlePrint}
+              printDisabled={printing}
               zoomPercent={zoomPercent}
               onZoomIn={handleZoomIn}
               onZoomOut={handleZoomOut}
