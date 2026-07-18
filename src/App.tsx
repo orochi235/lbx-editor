@@ -42,6 +42,7 @@ import {
   printRaster,
   createWebSerialTransport,
   createWebUsbTransport,
+  startUsbKeepalive,
   type SerialPortLike,
   type Transport,
   type UsbDeviceLike,
@@ -410,6 +411,8 @@ export function App() {
 
   // --- Print ---
   const [printing, setPrinting] = useState(false);
+  const printingRef = useRef(false);
+  printingRef.current = printing;
   const handlePrint = useCallback(async () => {
     if (printing) return;
     const tapeWidthMm = parseInt(tapeSize, 10);
@@ -487,6 +490,18 @@ export function App() {
       setPrinting(false);
     }
   }, [printing, tapeSize, scene, labelLength, paperHeight]);
+
+  // Keep the printer awake (it auto-powers off after ~10 min idle) while the
+  // app is open and a USB grant exists. See docs/hardware/pt-p710bt.md.
+  useEffect(() => {
+    if (!('usb' in navigator)) return;
+    const usb = (navigator as unknown as UsbNavigator).usb;
+    return startUsbKeepalive({
+      getDevice: async () =>
+        (await usb.getDevices()).find((d) => d.vendorId === USB_VENDOR_BROTHER) ?? null,
+      isBusy: () => printingRef.current,
+    });
+  }, []);
 
   const layers = useMemo(() => ({
     paper: { layer: paperLayer, before: 'scene' as const },

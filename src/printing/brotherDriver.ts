@@ -6,6 +6,13 @@ function isBlankRow(row: Uint8Array): boolean {
   return true
 }
 
+/** Stand-alone status query: 100-byte invalidate + initialize (ESC @) + status request (ESC i S). */
+export function encodeStatusRequest(): Uint8Array {
+  const out = new Uint8Array(105)
+  out.set([0x1b, 0x40, 0x1b, 0x69, 0x53], 100)
+  return out
+}
+
 /** Brother PT-P710BT raster driver. Byte sequence taken verbatim from the reference impl. */
 export function createBrotherRasterDriver(): Driver {
   return {
