@@ -50,6 +50,7 @@ import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
 import { fileToBase64, guessMimeType, getImageDimensions } from './imageUtils';
 import { buildImageInsert, type PendingImage } from './imageInsert';
+import { tapeMismatchMessage } from './printPreflight';
 import { getImageBitmap } from './imageBitmapCache';
 import { getTextBitmap } from './textBitmapCache';
 
@@ -500,6 +501,16 @@ export function App() {
     setPrinting(true);
     printingRef.current = true;
     try {
+      // Preflight: the printer tells us what tape it's holding, so a
+      // mismatched job (printer blinks red, generic error reply) is caught
+      // before it's sent. Unknown media (asleep printer, no usable width in
+      // the reply) proceeds — the printer stays the authority.
+      const loaded = await printer.queryMedia();
+      const mismatch = tapeMismatchMessage(tapeWidthMm, loaded?.tapeWidthMm ?? null);
+      if (mismatch) {
+        alert(mismatch);
+        return;
+      }
       const media = Printers.ptP710bt.media(tapeWidthMm);
       // Same drawOne as the screen path, through weasel's headless renderer —
       // print is the screen's rendering at printer resolution.
