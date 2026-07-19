@@ -39,7 +39,7 @@ import { exportLbx } from './lbxExport';
 import { importLbx } from './lbxImport';
 import {
   rgbaToRaster,
-  ptP710btMedia,
+  Printers,
   createBrotherPrinter,
   NoGrantedDeviceError,
   type BrotherPrinter,
@@ -500,7 +500,7 @@ export function App() {
     setPrinting(true);
     printingRef.current = true;
     try {
-      const media = ptP710btMedia(tapeWidthMm);
+      const media = Printers.ptP710bt.media(tapeWidthMm);
       // Render order (layer-major DFS preorder), not Map insertion order, so
       // printed stacking matches what's on screen after any z-reorder.
       const nodes = Array.from(scene.renderOrder(), (id) => scene.nodes.get(id)!);
