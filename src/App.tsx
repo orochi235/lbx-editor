@@ -501,21 +501,15 @@ export function App() {
     printingRef.current = true;
     try {
       const media = Printers.ptP710bt.media(tapeWidthMm);
-      // Render order (layer-major DFS preorder), not Map insertion order, so
-      // printed stacking matches what's on screen after any z-reorder.
-      const nodes = Array.from(scene.renderOrder(), (id) => scene.nodes.get(id)!);
+      // Same drawOne as the screen path, through weasel's headless renderer —
+      // print is the screen's rendering at printer resolution.
       const rgba = renderLabelToRgba({
-        nodes,
+        scene,
+        drawOne: drawLabelNode,
         labelLengthPt: labelLength,
         tapeWidthPt: paperHeight,
         printableDots: media.printableDots,
         dpi: media.dpi,
-        // Same lookup drawLabelNode uses for on-screen rendering; the cache
-        // returns null (not yet decoded) rather than undefined.
-        getImageBitmap: (node) =>
-          node.data.kind === 'image'
-            ? getImageBitmap(node.data.src, node.data.mimeType) ?? undefined
-            : undefined,
       });
       const raster = rgbaToRaster(rgba, media);
       const jobOpts = { tapeWidthMm, autoCut, marginDots: 0 };

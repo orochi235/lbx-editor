@@ -9,9 +9,10 @@ Standalone Vite + React app consuming:
 - `bil-lbx` (linked from `../bil-lbx`) — .lbx serialization/parsing
 - `obwat` (linked from `../obwat`) — Brother P-touch printing: raster encoding,
   WebUSB/Web Serial transports, and the `createBrotherPrinter` facade (device
-  acquisition, keepalive, status events). The app renders pixels
-  (`src/labelRender.ts`); obwat owns pixels-to-paper. UX policy (grant-flag
-  localStorage, alert copy) stays in App.tsx.
+  acquisition, keepalive, status events). Weasel renders pixels for print via
+  `renderSceneToPixels` (`src/labelRender.ts` is just the unit math); obwat
+  owns pixels-to-paper. UX policy (grant-flag localStorage, alert copy) stays
+  in App.tsx.
 
 ## Local development
 
@@ -36,7 +37,8 @@ Key weasel APIs used:
 
 ## Current state
 
-- Text renders as real glyphs via a canvas rasterizer (`src/textRender.ts`) shared by screen (bitmap cache) and print; weasel MSDF text remains the eventual replacement for the screen path.
+- Print renders through weasel's headless `renderSceneToPixels` with the same `drawOne` as the screen — print is the screen's rendering at printer resolution (WYSIWYG by construction).
+- Text renders as real glyphs via a canvas rasterizer (`src/textRender.ts`) rasterized into a 4× bitmap cache (`src/textBitmapCache.ts`) used by both screen and print; weasel MSDF text remains the eventual replacement.
 - Objects can be created, selected, moved, resized via weasel tools
 - Import/export .lbx files works end-to-end
 - Property panel for editing text, rect, and pose properties

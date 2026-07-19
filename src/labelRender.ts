@@ -1,122 +1,61 @@
-import type { SceneNode } from '@weasel-js/core'
-import { lineEndpoints, type LabelNodeData, type LabelLayer, type LabelPose } from './label'
-import { drawLabelText } from './textRender'
+import {
+  renderSceneToPixels,
+  type Scene,
+  type SceneViewDrawOne,
+} from '@weasel-js/core'
+import type { LabelNodeData, LabelLayer, LabelPose } from './label'
 import type { RgbaImage } from 'obwat'
 
-type LabelNode = SceneNode<LabelNodeData, LabelLayer, LabelPose>
-
-interface RenderArgs {
-  nodes: LabelNode[]
+interface LabelGeometry {
   /** Label length along the tape, in points (the paper's full width in App.tsx). */
   labelLengthPt: number
   /** Full tape width in points (the paper's full height in App.tsx, i.e. `TAPE_SIZES[...].width`). */
   tapeWidthPt: number
   printableDots: number
   dpi: number
+}
+
+interface RenderArgs extends LabelGeometry {
+  scene: Scene<LabelNodeData, LabelLayer, LabelPose>
   /**
-   * Resolve a decoded bitmap for an image node, reusing the editor's own
-   * bitmap cache (keyed off the node, since the cache itself keys off
-   * `data.src`/`data.mimeType` internally — this keeps `labelRender` decoupled
-   * from that cache's implementation). Return undefined (bitmap not yet
-   * decoded, or resolver omitted) to fall back to a filled box.
+   * Per-node draw callback — pass the same one the on-screen canvas uses
+   * (`drawLabelNode`) so print is pixel-for-pixel the screen's rendering.
    */
-  getImageBitmap?: (node: LabelNode) => ImageBitmap | undefined
+  drawOne: SceneViewDrawOne<LabelNodeData, LabelLayer, LabelPose>
 }
 
 /**
- * Render label nodes to a clean monochrome-ready RGBA bitmap at print resolution.
- * Output: width = labelLengthPt * dpi/72 (dots along the tape), height = printableDots.
+ * Unit math mapping label geometry onto `renderSceneToPixels` arguments.
  *
- * Vertical scale: node y/height are authored in points against the *full* tape
- * width (`tapeWidthPt`), but `printableDots` is the narrower printable band
- * (the printhead can't reach the tape's outer edges). For v1 we squeeze the
- * full tape height onto printableDots with a single scale factor
- * (`printableDots / (tapeWidthPt * dotsPerPt)`) rather than scaling by dpi and
- * center-cropping — this keeps every node visible instead of clipping ones
- * near the tape edges, at the cost of a slight vertical squeeze. Exact
- * print-margin fidelity is a follow-up.
+ * Horizontal: points → printer dots at full resolution (`dpi/72`).
+ *
+ * Vertical squeeze: node y/height are authored in points against the *full*
+ * tape width (`tapeWidthPt`), but `printableDots` is the narrower printable
+ * band (the printhead can't reach the tape's outer edges). For v1 we squeeze
+ * the full tape height onto printableDots (`scale.y = printableDots /
+ * tapeWidthPt`) rather than scaling by dpi and center-cropping — this keeps
+ * every node visible instead of clipping ones near the tape edges, at the
+ * cost of a slight vertical squeeze. Exact print-margin fidelity is a
+ * follow-up. Output height rounds back to exactly `printableDots`.
  */
-export function renderLabelToRgba({
-  nodes,
-  labelLengthPt,
-  tapeWidthPt,
-  printableDots,
-  dpi,
-  getImageBitmap,
-}: RenderArgs): RgbaImage {
-  const dotsPerPt = dpi / 72
-  const widthDots = Math.max(1, Math.round(labelLengthPt * dotsPerPt))
-  const fullHeightDots = tapeWidthPt * dotsPerPt
-  const verticalScale = fullHeightDots > 0 ? printableDots / fullHeightDots : 1
-
-  const canvas = document.createElement('canvas')
-  canvas.width = widthDots
-  canvas.height = printableDots
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('could not get 2d context')
-
-  // white background
-  ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, widthDots, printableDots)
-  ctx.fillStyle = '#000000'
-  ctx.strokeStyle = '#000000'
-
-  for (const node of nodes) {
-    const { pose, data } = node
-    const x = pose.x * dotsPerPt
-    const y = pose.y * dotsPerPt * verticalScale
-    const w = pose.width * dotsPerPt
-    const h = pose.height * dotsPerPt * verticalScale
-
-    switch (data.kind) {
-      case 'image': {
-        const bitmap = getImageBitmap?.(node)
-        if (bitmap) {
-          // rasterCore's luminance<128 threshold turns this into monochrome dots
-          ctx.drawImage(bitmap, x, y, w, h)
-        } else {
-          // No-bitmap fallback (not yet decoded, or no resolver supplied): a
-          // filled box so the printed label still shows something is there.
-          ctx.fillRect(x, y, w, h)
-        }
-        break
-      }
-      case 'rect':
-        if (data.fillColor && data.fillColor !== 'transparent') {
-          // Use the rect's actual fill color (not the default black) so a
-          // light fill (e.g. white/yellow) doesn't print as a solid black
-          // box; rasterCore's luminance<128 threshold decides what ends up
-          // black on the printed tape.
-          ctx.fillStyle = data.fillColor
-          ctx.fillRect(x, y, w, h)
-          ctx.fillStyle = '#000000'
-        }
-        ctx.lineWidth = Math.max(1, data.strokeWidth * dotsPerPt)
-        ctx.strokeRect(x, y, w, h)
-        break
-      case 'line': {
-        const [p, q] = lineEndpoints({ x, y, width: w, height: h }, data.descending)
-        ctx.lineWidth = Math.max(1, data.strokeWidth * dotsPerPt)
-        ctx.beginPath()
-        ctx.moveTo(p.x, p.y)
-        ctx.lineTo(q.x, q.y)
-        ctx.stroke()
-        break
-      }
-      case 'text':
-        ctx.save()
-        ctx.scale(dotsPerPt, dotsPerPt * verticalScale)
-        drawLabelText(ctx, data, {
-          x: pose.x,
-          y: pose.y,
-          width: pose.width,
-          height: pose.height,
-        })
-        ctx.restore()
-        break
-    }
+export function labelRenderPlan({ labelLengthPt, tapeWidthPt, printableDots, dpi }: LabelGeometry) {
+  return {
+    sourceRect: { x: 0, y: 0, width: labelLengthPt, height: tapeWidthPt },
+    scale: {
+      x: dpi / 72,
+      y: tapeWidthPt > 0 ? printableDots / tapeWidthPt : 1,
+    },
+    background: '#ffffff',
   }
+}
 
-  const imageData = ctx.getImageData(0, 0, widthDots, printableDots)
-  return { width: widthDots, height: printableDots, data: imageData.data }
+/**
+ * Render the label scene to a clean monochrome-ready RGBA bitmap at print
+ * resolution, via weasel's headless renderer — the same WebGL2 pipeline that
+ * draws the screen. Output: width = labelLengthPt * dpi/72 (dots along the
+ * tape), height = printableDots. rasterCore's luminance<128 threshold
+ * downstream turns this into monochrome dots.
+ */
+export function renderLabelToRgba({ scene, drawOne, ...geometry }: RenderArgs): RgbaImage {
+  return renderSceneToPixels({ scene, drawOne, ...labelRenderPlan(geometry) })
 }
