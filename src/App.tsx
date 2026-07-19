@@ -601,11 +601,33 @@ export function App() {
     return drawLabelNode(data === node.data ? node : { ...node, data }, pose, view);
   }, [inkCss]);
 
+  // --- Printable-bounds overlay ---
+  // Content outside the label rect won't print (print crops at the label
+  // length; the tape band all prints for now via labelRender's v1 squeeze, so
+  // the rect vertically matches the tape until margin-accurate rendering
+  // lands). Draw the scene twice: a faded full copy, then a crisp copy
+  // clipped to the label rect — anything off-label reads as semitransparent.
+  // Commands and the clip path are world-space; weasel applies the view.
+  const printablePath = useMemo(
+    () => rectPath(0, 0, paperWidth, paperHeight),
+    [paperWidth, paperHeight],
+  );
+  const dimOffLabel = useCallback(
+    (cmds: DrawCommand[]): DrawCommand[] =>
+      cmds.length === 0
+        ? cmds
+        : [
+            { kind: 'group', alpha: 0.35, children: cmds },
+            { kind: 'group', clip: printablePath, children: cmds },
+          ],
+    [printablePath],
+  );
+
   const layers = useMemo(() => ({
     paper: { layer: paperLayer, before: 'scene' as const },
-    scene: { drawOne: drawScreenNode },
+    scene: { drawOne: drawScreenNode, postProcess: dimOffLabel },
     selectionOverlay: { handles: { size: 5 } },
-  }), [paperLayer, drawScreenNode]);
+  }), [paperLayer, drawScreenNode, dimOffLabel]);
 
   return (
     <DepRegistryProvider>
