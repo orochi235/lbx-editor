@@ -44,7 +44,11 @@ import {
   NoGrantedDeviceError,
   type BrotherPrinter,
   type PrinterStatus,
+  type TapeColor,
+  type TextColor,
 } from 'obwat';
+import { printsAsInk, remapNodeInk, tapeColorCss, textColorCss } from './tapeColors';
+import { DebugPanel } from './DebugPanel';
 import { renderLabelToRgba } from './labelRender';
 import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
@@ -66,6 +70,7 @@ const FIT_PADDING = 16;
 /** Set once a USB device grant exists; lets us distinguish "printer asleep" from "never granted". */
 const USB_GRANT_FLAG = 'lbx-editor.hasUsbGrant';
 const AUTOCUT_KEY = 'lbx-editor.autoCut';
+const CASSETTE_COLORS_KEY = 'lbx-editor.cassetteColors';
 
 interface CanvasSize {
   width: number;
@@ -229,6 +234,30 @@ export function App() {
   const selection = useSelection();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // --- Cassette-driven canvas colors ---
+  // The printer's status replies (fed by keepalive ticks, see the printer
+  // session effect below) report the loaded cassette's tape + ink colors; the
+  // canvas previews that combination. Debug-panel overrides win over the live
+  // cassette; the toggle kills the whole behavior. Print is untouched — the
+  // printer lays down its one ink regardless of what the screen shows.
+  const [printerLastSeen, setPrinterLastSeen] = useState<{ status: PrinterStatus; at: number } | null>(null);
+  const [printerReachable, setPrinterReachable] = useState(false);
+  const [cassetteColorsEnabled, setCassetteColorsEnabled] = useState(
+    () => localStorage.getItem(CASSETTE_COLORS_KEY) !== '0',
+  );
+  const handleCassetteColorsChange = useCallback((on: boolean) => {
+    setCassetteColorsEnabled(on);
+    localStorage.setItem(CASSETTE_COLORS_KEY, on ? '1' : '0');
+  }, []);
+  const [tapeColorOverride, setTapeColorOverride] = useState<TapeColor | null>(null);
+  const [textColorOverride, setTextColorOverride] = useState<TextColor | null>(null);
+
+  const liveStatus = printerReachable ? (printerLastSeen?.status ?? null) : null;
+  const tapeCss =
+    (cassetteColorsEnabled ? tapeColorCss(tapeColorOverride ?? liveStatus?.tapeColor) : null) ?? '#ffffff';
+  const inkCss =
+    (cassetteColorsEnabled ? textColorCss(textColorOverride ?? liveStatus?.textColor) : null) ?? '#000000';
+
   // --- Paper background layer ---
   // The tape is drawn as a solid black "raised brick": its rectangle extruded
   // down-right by `depth` into a single filled silhouette, so the offset shadow
@@ -260,12 +289,14 @@ export function App() {
         {
           kind: 'path',
           path: rectPath(0, 0, paperWidth, paperHeight),
-          fill: { fill: 'solid', color: '#ffffff' },
-          stroke: { paint: { color: '#000000' }, width: 0.5 },
+          fill: { fill: 'solid', color: tapeCss },
+          // A dark tape face would vanish against its black brick — lighten
+          // the border so the tape edge stays readable.
+          stroke: { paint: { color: printsAsInk(tapeCss) ? '#888888' : '#000000' }, width: 0.5 },
         },
       ],
     };
-  }, [paperWidth, paperHeight]);
+  }, [paperWidth, paperHeight, tapeCss]);
 
   // --- Object creation via weasel tools ---
   // The palette activates weasel's built-in rect/line/text tools; their drag
@@ -468,8 +499,6 @@ export function App() {
     localStorage.setItem(AUTOCUT_KEY, on ? '1' : '0');
   }, []);
   const printingRef = useRef(false);
-  const [printerLastSeen, setPrinterLastSeen] = useState<{ status: PrinterStatus; at: number } | null>(null);
-  const [printerReachable, setPrinterReachable] = useState(false);
 
   // One connectionless printer session per mount. Its keepalive keeps the
   // PT-P710BT awake (it auto-powers off after ~10 min idle); its status
@@ -564,11 +593,19 @@ export function App() {
     }
   }, [printing, tapeSize, scene, labelLength, paperHeight, autoCut]);
 
+  // Screen draw: same drawLabelNode as print, but with ink-dark node colors
+  // recolored to the cassette's ink first. Print keeps the raw node data (a
+  // white-ink remap would erase the label under the <128 luminance threshold).
+  const drawScreenNode = useCallback((node: LabelNode, pose: LabelPose, view: View) => {
+    const data = remapNodeInk(node.data, inkCss);
+    return drawLabelNode(data === node.data ? node : { ...node, data }, pose, view);
+  }, [inkCss]);
+
   const layers = useMemo(() => ({
     paper: { layer: paperLayer, before: 'scene' as const },
-    scene: { drawOne: drawLabelNode },
+    scene: { drawOne: drawScreenNode },
     selectionOverlay: { handles: { size: 5 } },
-  }), [paperLayer]);
+  }), [paperLayer, drawScreenNode]);
 
   return (
     <DepRegistryProvider>
@@ -643,7 +680,18 @@ export function App() {
                   />
                 )}
               </div>
-              <PropertyPanel scene={scene} selection={selection} />
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <PropertyPanel scene={scene} selection={selection} />
+                <DebugPanel
+                  cassetteColorsEnabled={cassetteColorsEnabled}
+                  onCassetteColorsEnabledChange={handleCassetteColorsChange}
+                  tapeColorOverride={tapeColorOverride}
+                  onTapeColorOverrideChange={setTapeColorOverride}
+                  textColorOverride={textColorOverride}
+                  onTextColorOverrideChange={setTextColorOverride}
+                  liveStatus={liveStatus}
+                />
+              </div>
             </div>
           </div>
         </SelectionContextProvider>
