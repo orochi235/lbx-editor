@@ -42,6 +42,11 @@ Key weasel APIs used:
 - Objects can be created, selected, moved, resized via weasel tools
 - Import/export .lbx files works end-to-end
 - Property panel for editing text, rect, and pose properties
+- Canvas previews the loaded cassette's tape/ink colors from live printer
+  status (`src/tapeColors.ts`); Debug panel (below Properties) has the enable
+  toggle and manual overrides
+- Content outside the label rect renders semitransparent via weasel's scene
+  `postProcess` hook (faded full draw + clipped crisp draw in App.tsx)
 
 ## Governing rule
 
