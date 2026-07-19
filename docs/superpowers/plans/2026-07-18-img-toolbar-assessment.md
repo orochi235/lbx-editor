@@ -91,3 +91,23 @@ spot as today, just launched from the palette; or (b) action button + image
 tool — after picking, activate `useImageTool` (registered via the tools patch
 with the picked src) so the user drags the image into place like the other
 shape tools. Both satisfy the governing rule; option 4 still fails it.
+
+## Final outcome (2026-07-18 eve, implemented)
+
+Mike picked (b) — and during planning the action-button kind turned out to be
+unnecessary as well. The missed piece: `onToolsCreated` re-fires on every
+tools identity change (`SceneCanvas.tsx:1201`) and the app stores the ToolsApi
+in state, so `tools.active` is observable app-side. The palette's IMG button
+is simply the image tool's own registry-driven button; an app `useEffect`
+watches the activation transition into `'image'` and opens the hidden file
+input — no dead `onActivate` path, no new palette API.
+
+Shipped (plan: `2026-07-18-img-palette-tool.md`) with **zero weasel changes**:
+`tools={{ image: useImageTool({ src: '' }) }}` (patch instance form — internal
+keybindings stay live for the patch form, only the ToolsApi takeover disables
+them), an `image` `insertNodeFactories` entry backed by pure
+`buildImageInsert` (contain-fit into the drag box, click-sized drags get the
+natural default size, `null` = reject when nothing picked), and picker-cancel
+reverting to select via the input's native `cancel` event. Option 2 remains
+the fallback design if a palette button must ever fire *without* activating
+any tool.

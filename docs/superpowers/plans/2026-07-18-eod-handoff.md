@@ -66,16 +66,17 @@ asleep hint. The full pipeline prints real labels over USB from Chrome.
    depending on where the cut lands. Related to the deferred vertical-squeeze fix.
    Possible probes: print a 45° line with squeeze forced to 1, and/or render lines with
    AA disabled (manual Bresenham) and compare.
-5. **IMG button → main toolbar (verified, awaiting Mike's pick on UX scope).** See
-   `docs/superpowers/plans/2026-07-18-img-toolbar-assessment.md` (verification
-   results section, 2026-07-18 eve). Verified: `tools: { image: true }` is
-   ignored (image not in `KNOWN_BUILTIN_IDS`) and `useImageTool` needs a
-   pre-chosen `src` (no picker, no activation hook). The ToolPalette "action"
-   button kind is the required weasel change either way; the pick is (a) action
-   button that runs today's picker+insert flow, or (b) also feed the picked file
-   to `useImageTool` (via the tools-patch instance form + an `image`
-   insertNodeFactory) for drag-to-place. Do NOT build an action-tool class in
-   the Tool system (`Tool.onActivate` is dead code in the dispatcher).
+5. ~~**IMG button → main toolbar.**~~ **DONE 2026-07-18 eve** — Mike picked
+   drag-to-place; shipped with zero weasel changes (the action-button kind
+   proved unnecessary: the app observes `tools.active` via `onToolsCreated`
+   and opens the picker on the activation transition). Palette IMG button =
+   weasel's `useImageTool` via the tools-patch instance form; `image`
+   insertNodeFactory contain-fits via pure `buildImageInsert`
+   (`src/imageInsert.ts`, unit-tested); picker cancel reverts to select.
+   Old app-chrome IMG button removed. Browser-verified end-to-end with
+   Playwright (palette button, picker, drag insert, cancel revert). Plan:
+   `docs/superpowers/plans/2026-07-18-img-palette-tool.md`; final outcome
+   recorded in the assessment doc.
 6. **Deferred follow-ups** (from plan self-reviews, none blocking): vertical-squeeze
    print fidelity (margin-accurate rendering instead of squeeze), serial-path runtime
    fallback when a USB claim fails, `Toolbar` `printDisabled`-as-`printing` aliasing
