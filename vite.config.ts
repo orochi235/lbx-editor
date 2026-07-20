@@ -11,15 +11,11 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: weaselAliases(weaselRoot, [
-      // bil-lbx local source
+      // bil-lbx local source. (obwat now resolves to the published npm
+      // package — `npm link ../obwat` to develop it against the editor.)
       {
         find: 'bil-lbx',
         replacement: resolve(__dirname, '../bil-lbx/src/index.ts'),
-      },
-      // obwat local source
-      {
-        find: 'obwat',
-        replacement: resolve(__dirname, '../obwat/src/index.ts'),
       },
     ]),
   },

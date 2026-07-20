@@ -46,9 +46,7 @@
       "canvas/*": ["../weasel/src/canvas/*"],
       "debug/*": ["../weasel/src/debug/*"],
       "bil-lbx": ["../bil-lbx/src/index.ts"],
-      "bil-lbx/*": ["../bil-lbx/src/*"],
-      "obwat": ["../obwat/src/index.ts"],
-      "obwat/*": ["../obwat/src/*"]
+      "bil-lbx/*": ["../bil-lbx/src/*"]
     }
   },
   "include": ["src"]

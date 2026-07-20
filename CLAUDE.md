@@ -7,7 +7,7 @@ Web-based visual editor for Brother P-touch label files (.lbx).
 Standalone Vite + React app consuming:
 - `@weasel-js/core` (linked from `../weasel`) — 2D scene graph, canvas rendering, tools
 - `bil-lbx` (linked from `../bil-lbx`) — .lbx serialization/parsing
-- `obwat` (linked from `../obwat`) — Brother P-touch printing: raster encoding,
+- `obwat` (from npm, `^0.1.0`) — Brother P-touch printing: raster encoding,
   WebUSB/Web Serial transports, and the `createBrotherPrinter` facade (device
   acquisition, keepalive, status events). Weasel renders pixels for print via
   `renderSceneToPixels` (`src/labelRender.ts` is just the unit math); obwat
@@ -21,7 +21,9 @@ npm install
 npm run dev    # starts on http://localhost:5180
 ```
 
-Requires sibling repos: `~/src/weasel` and `~/src/bil-lbx`.
+Requires sibling repos: `~/src/weasel` and `~/src/bil-lbx`. obwat installs
+from npm; to develop it against the editor, `npm link ../obwat` (and remember
+obwat consumers use its built `dist/` — run its `npm run build` after edits).
 
 ## Weasel integration
 
