@@ -56,8 +56,13 @@ Key weasel APIs used:
   keepalive polls fast (3 s) while the printer is absent, so power-on shows
   up on the chip within seconds.
 - Printer panel in the right sidebar (between Properties and Debug): status
-  chip (same component as the toolbar's) + Auto cut; future printer controls
-  land there.
+  chip (same component as the toolbar's), Auto cut, Print preview toggle,
+  and the Dithering selector; future printer controls land there.
+- Print preview: runs the real print pipeline (renderLabelToRgba →
+  ditherToMask) on each committed scene change and draws the ink dots over
+  the printable band (ink color, transparent elsewhere) while suppressing
+  the live scene draw. The Dithering choice (threshold / Floyd–Steinberg /
+  Atkinson / Bayer) feeds preview and print job alike.
 - Auto-length is hidden/unimplemented: the flag round-trips .lbx but layout
   always uses the explicit Length field.
 
