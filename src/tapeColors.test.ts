@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { printsAsInk, remapNodeInk, tapeColorCss, textColorCss } from './tapeColors';
+import { printsAsInk, remapNodeInk, tapeColorCss, tapeIsClear, textColorCss } from './tapeColors';
 import type { LabelLineData, LabelRectData, LabelTextData } from './label';
 
 describe('tapeColorCss / textColorCss', () => {
@@ -15,6 +15,17 @@ describe('tapeColorCss / textColorCss', () => {
     expect(tapeColorCss(null)).toBeNull();
     expect(tapeColorCss(undefined)).toBeNull();
     expect(textColorCss('other')).toBeNull();
+  });
+});
+
+describe('tapeIsClear', () => {
+  it('flags transparent-film cassettes only', () => {
+    expect(tapeIsClear('clear')).toBe(true);
+    expect(tapeIsClear('clear-white-text')).toBe(true);
+    expect(tapeIsClear('matte-clear')).toBe(true);
+    expect(tapeIsClear('white')).toBe(false);
+    expect(tapeIsClear(null)).toBe(false);
+    expect(tapeIsClear(undefined)).toBe(false);
   });
 });
 

@@ -41,6 +41,7 @@ interface ToolbarProps {
   onZoomReset: () => void;
   printerLastSeen: PrinterStatusChipProps['lastSeen'];
   printerReachable: boolean;
+  onPrinterRefresh: () => void;
 }
 
 export function Toolbar({
@@ -64,6 +65,7 @@ export function Toolbar({
   onZoomReset,
   printerLastSeen,
   printerReachable,
+  onPrinterRefresh,
 }: ToolbarProps) {
   return (
     <div style={{
@@ -140,6 +142,7 @@ export function Toolbar({
         lastSeen={printerLastSeen}
         reachable={printerReachable}
         printing={printDisabled ?? false}
+        onRefresh={onPrinterRefresh}
       />
 
       {/* File actions */}

@@ -6,6 +6,9 @@ export interface PrinterStatusChipProps {
   lastSeen: { status: PrinterStatus; at: number } | null;
   reachable: boolean;
   printing: boolean;
+  /** Click handler: fire an immediate status query (result arrives via the
+   *  same onStatus stream that feeds this chip). */
+  onRefresh?: () => void;
 }
 
 const MODEL = 'PT-P710BT';
@@ -15,8 +18,9 @@ function relativeTime(at: number, now: number): string {
   return mins < 1 ? 'just now' : `${mins}m ago`;
 }
 
-/** Toolbar chip: printer reachability, tape width, error state, last-seen. */
-export function PrinterStatusChip({ lastSeen, reachable, printing }: PrinterStatusChipProps) {
+/** Toolbar chip: printer reachability, tape width, error state, last-seen.
+ *  Clicking re-queries the printer. */
+export function PrinterStatusChip({ lastSeen, reachable, printing, onRefresh }: PrinterStatusChipProps) {
   // Re-render on a coarse timer so the relative time stays honest.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -47,9 +51,14 @@ export function PrinterStatusChip({ lastSeen, reachable, printing }: PrinterStat
   }
 
   return (
-    <div className={`printer-chip printer-chip--${variant}`} title={tooltip}>
+    <button
+      type="button"
+      className={`printer-chip printer-chip--${variant}`}
+      title={`${tooltip}. Click to re-query.`}
+      onClick={onRefresh}
+    >
       <span className="printer-chip__dot" />
       {text}
-    </div>
+    </button>
   );
 }

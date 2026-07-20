@@ -18,6 +18,7 @@ import {
   type RenderLayer,
   type NodeId,
   useImageTool,
+  getImageBitmap,
   type ToolsApi,
   type InsertNodeFactory,
 } from '@weasel-js/core';
@@ -47,15 +48,14 @@ import {
   type TapeColor,
   type TextColor,
 } from 'obwat';
-import { printsAsInk, remapNodeInk, tapeColorCss, textColorCss } from './tapeColors';
+import { printsAsInk, remapNodeInk, tapeColorCss, tapeIsClear, textColorCss } from './tapeColors';
 import { DebugPanel } from './DebugPanel';
 import { renderLabelToRgba } from './labelRender';
 import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
-import { fileToBase64, guessMimeType, getImageDimensions } from './imageUtils';
+import { fileToBase64, guessMimeType, getImageDimensions, imageDataUri } from './imageUtils';
 import { buildImageInsert, type PendingImage } from './imageInsert';
 import { tapeMismatchMessage } from './printPreflight';
-import { getImageBitmap } from './imageBitmapCache';
 import { getTextBitmap } from './textBitmapCache';
 
 type LabelNode = SceneNode<LabelNodeData, LabelLayer, LabelPose>;
@@ -123,7 +123,9 @@ function drawLabelNode(node: LabelNode, pose: LabelPose, _view: View): DrawComma
       }];
     }
     case 'image': {
-      const bmp = getImageBitmap(data.src, data.mimeType);
+      // The kit imageCache decodes async; SceneCanvas subscribes to its
+      // ready events and redraws, swapping the placeholder for the bitmap.
+      const bmp = getImageBitmap(imageDataUri(data));
       if (bmp) {
         return [{ kind: 'image', image: bmp, x, y, w: width, h: height }];
       }
@@ -255,27 +257,32 @@ export function App() {
   const liveStatus = printerReachable ? (printerLastSeen?.status ?? null) : null;
   const tapeCss =
     (cassetteColorsEnabled ? tapeColorCss(tapeColorOverride ?? liveStatus?.tapeColor) : null) ?? '#ffffff';
+  const tapeClear =
+    cassetteColorsEnabled && tapeIsClear(tapeColorOverride ?? liveStatus?.tapeColor);
   const inkCss =
     (cassetteColorsEnabled ? textColorCss(textColorOverride ?? liveStatus?.textColor) : null) ?? '#000000';
 
   // --- Paper background layer ---
-  // The tape is drawn as a solid black "raised brick": its rectangle extruded
-  // down-right by `depth` into a single filled silhouette, so the offset shadow
-  // is connected to the tape by diagonal side edges instead of floating behind
-  // it. The white tape face (with a black border) sits on top. Everything is in
-  // world units so it scales and pans with the paper; `depth` is keyed to the
-  // tape width to stay proportional across tape sizes.
+  // The tape is drawn as a black "raised brick": the shadow is the tape's
+  // rectangle extruded down-right by `depth`, connected to the tape by
+  // diagonal side edges instead of floating behind it. Only the visible
+  // L-shaped shadow region is filled (not the front face), so a translucent
+  // face — clear tape — shows the canvas background through the strip. The
+  // tape face (with a black border) sits on top. Everything is in world units
+  // so it scales and pans with the paper; `depth` is keyed to the tape width
+  // to stay proportional across tape sizes.
   const paperLayer = useMemo<RenderLayer<unknown>>(() => {
     const depth = paperHeight * 0.08;
-    // Outer silhouette of the extruded block (front face top + right, then the
-    // two diagonals to the back face, around its bottom + left, back up).
-    const brick = polygonFromPoints([
-      { x: 0, y: 0 },
+    // The brick silhouette minus the front face: from the face's top-right,
+    // out to the back face's top-right, around its right + bottom, back to
+    // the face's bottom-left, then along the face's bottom and right edges.
+    const shadow = polygonFromPoints([
       { x: paperWidth, y: 0 },
       { x: paperWidth + depth, y: depth },
       { x: paperWidth + depth, y: paperHeight + depth },
       { x: depth, y: paperHeight + depth },
       { x: 0, y: paperHeight },
+      { x: paperWidth, y: paperHeight },
     ]);
     return {
       id: 'paper',
@@ -283,20 +290,20 @@ export function App() {
       draw: () => [
         {
           kind: 'path',
-          path: brick,
+          path: shadow,
           fill: { fill: 'solid', color: '#000000' },
         },
         {
           kind: 'path',
           path: rectPath(0, 0, paperWidth, paperHeight),
-          fill: { fill: 'solid', color: tapeCss },
+          fill: { fill: 'solid', color: tapeCss, opacity: tapeClear ? 0.45 : 1 },
           // A dark tape face would vanish against its black brick — lighten
           // the border so the tape edge stays readable.
           stroke: { paint: { color: printsAsInk(tapeCss) ? '#888888' : '#000000' }, width: 0.5 },
         },
       ],
     };
-  }, [paperWidth, paperHeight, tapeCss]);
+  }, [paperWidth, paperHeight, tapeCss, tapeClear]);
 
   // --- Object creation via weasel tools ---
   // The palette activates weasel's built-in rect/line/text tools; their drag
@@ -365,25 +372,32 @@ export function App() {
     image: (b) => buildImageInsert(pendingImageRef.current, b),
   }), []);
 
-  const addImageFromFile = useCallback(async (file: File) => {
-    const mimeType = guessMimeType(file.name);
-    const base64 = await fileToBase64(file);
-    const dims = await getImageDimensions(base64, mimeType, paperWidth - 20, paperHeight - 10);
+  const toolsRef = useRef(tools);
+  toolsRef.current = tools;
 
-    const id = genNodeId();
-    scene.add({
-      kind: 'leaf',
-      id,
-      layer: 'objects' as LabelLayer,
-      pose: { x: 10, y: 5, width: dims.width, height: dims.height },
-      data: {
-        kind: 'image',
-        src: base64,
-        originalName: file.name,
-        mimeType,
-      },
-    });
-    selection.set([id]);
+  const addImageFromFile = useCallback(async (file: File) => {
+    try {
+      const mimeType = file.type || guessMimeType(file.name);
+      const base64 = await fileToBase64(file);
+      const dims = await getImageDimensions(base64, mimeType, paperWidth - 20, paperHeight - 10);
+
+      const id = genNodeId();
+      scene.add({
+        kind: 'leaf',
+        id,
+        layer: 'objects' as LabelLayer,
+        pose: { x: 10, y: 5, width: dims.width, height: dims.height },
+        data: {
+          kind: 'image',
+          src: base64,
+          originalName: file.name,
+          mimeType,
+        },
+      });
+      selection.set([id]);
+    } catch {
+      alert(`Couldn't read "${file.name}" as an image — Chrome may not decode this format.`);
+    }
   }, [scene, selection, paperWidth, paperHeight]);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -392,16 +406,24 @@ export function App() {
     const file = e.target.files?.[0];
     if (imageInputRef.current) imageInputRef.current.value = '';
     if (!file) return;
-    const mimeType = guessMimeType(file.name);
-    const src = await fileToBase64(file);
-    const dims = await getImageDimensions(src, mimeType, paperWidth - 20, paperHeight - 10);
-    pendingImageRef.current = {
-      src,
-      originalName: file.name,
-      mimeType,
-      defaultWidth: dims.width,
-      defaultHeight: dims.height,
-    };
+    try {
+      const mimeType = file.type || guessMimeType(file.name);
+      const src = await fileToBase64(file);
+      const dims = await getImageDimensions(src, mimeType, paperWidth - 20, paperHeight - 10);
+      pendingImageRef.current = {
+        src,
+        originalName: file.name,
+        mimeType,
+        defaultWidth: dims.width,
+        defaultHeight: dims.height,
+      };
+    } catch {
+      // Undecodable pick: without this, the crosshair stays armed and every
+      // drag silently inserts nothing (the factory rejects on null pending).
+      pendingImageRef.current = null;
+      if (toolsRef.current?.active === 'image') toolsRef.current.setActive('select');
+      alert(`Couldn't read "${file.name}" as an image — Chrome may not decode this format.`);
+    }
   }, [paperWidth, paperHeight]);
 
   // The palette's IMG button just does tools.setActive('image') (registry-
@@ -421,8 +443,6 @@ export function App() {
   // Dismissing the picker means "never mind": revert to select so an
   // imageless crosshair tool isn't left active. Native `cancel` event
   // (Chrome 113+); this app is Chrome-only (WebUSB).
-  const toolsRef = useRef(tools);
-  toolsRef.current = tools;
   useEffect(() => {
     const input = imageInputRef.current;
     if (!input) return;
@@ -516,6 +536,12 @@ export function App() {
       printerRef.current = null;
       printer.dispose();
     };
+  }, []);
+
+  // Chip click: immediate status poll. The reply (or timeout) lands through
+  // the same onStatus stream the keepalive feeds, so the chip just updates.
+  const handlePrinterRefresh = useCallback(() => {
+    void printerRef.current?.queryStatus();
   }, []);
 
   const handlePrint = useCallback(async () => {
@@ -655,6 +681,7 @@ export function App() {
               onZoomReset={handleZoomReset}
               printerLastSeen={printerLastSeen}
               printerReachable={printerReachable}
+              onPrinterRefresh={handlePrinterRefresh}
             />
             <input
               ref={fileInputRef}
@@ -671,8 +698,13 @@ export function App() {
               onChange={handleImagePick}
             />
             <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+              {/* `view` hoisted so the hand tool sits right below select. */}
               {tools && (
-                <ToolPalette tools={tools} orientation="vertical" />
+                <ToolPalette
+                  tools={tools}
+                  orientation="vertical"
+                  groupOrder={['select', 'view', 'shape', 'draw', 'type']}
+                />
               )}
               <div
                 ref={canvasContainerRef}

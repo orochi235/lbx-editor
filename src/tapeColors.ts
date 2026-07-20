@@ -47,6 +47,16 @@ const TEXT_CSS: Partial<Record<TextColor, string>> = {
   'blue-f': '#2149c0',
 };
 
+/** Cassettes whose tape is transparent film — the canvas draws these
+ *  translucent so the page background shows through the strip. */
+const CLEAR_TAPES: ReadonlySet<TapeColor> = new Set<TapeColor>([
+  'clear', 'clear-white-text', 'matte-clear',
+]);
+
+export function tapeIsClear(color: TapeColor | null | undefined): boolean {
+  return color != null && CLEAR_TAPES.has(color);
+}
+
 /** The representable values, for the debug override dropdowns. */
 export const TAPE_COLOR_OPTIONS = Object.keys(TAPE_CSS) as TapeColor[];
 export const TEXT_COLOR_OPTIONS = Object.keys(TEXT_CSS) as TextColor[];

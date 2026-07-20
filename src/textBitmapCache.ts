@@ -1,7 +1,7 @@
 /**
  * Cache of rasterized text ImageBitmaps keyed by text data + box size.
  * Sync (OffscreenCanvas.transferToImageBitmap), so the first paint already
- * has glyphs — no async round trip like imageBitmapCache's decode path.
+ * has glyphs — no async round trip like the kit imageCache's decode path.
  */
 import type { LabelTextData } from './label';
 import { drawLabelText } from './textRender';
