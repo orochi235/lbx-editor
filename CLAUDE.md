@@ -37,7 +37,7 @@ Key weasel APIs used:
 
 ## Current state
 
-- Print renders through weasel's headless `renderSceneToPixels` with the same `drawOne` as the screen — print is the screen's rendering at printer resolution (WYSIWYG by construction).
+- Print renders through weasel's headless `renderSceneToPixels` with the same `drawOne` as the screen — print is the screen's rendering at printer resolution (WYSIWYG by construction). Uniform dpi/72 scale on both axes; only the tape's centered printable band renders (`printableBandPt` in `src/labelRender.ts`), and the canvas dims content outside it.
 - Text renders as real glyphs via a canvas rasterizer (`src/textRender.ts`) rasterized into a 4× bitmap cache (`src/textBitmapCache.ts`) used by both screen and print; weasel MSDF text remains the eventual replacement.
 - Objects can be created, selected, moved, resized via weasel tools
 - Import/export .lbx files works end-to-end
@@ -55,6 +55,11 @@ Key weasel APIs used:
 - Printer status chip is a button — click fires `queryStatus()`. obwat's
   keepalive polls fast (3 s) while the printer is absent, so power-on shows
   up on the chip within seconds.
+- Printer panel in the right sidebar (between Properties and Debug): status
+  chip (same component as the toolbar's) + Auto cut; future printer controls
+  land there.
+- Auto-length is hidden/unimplemented: the flag round-trips .lbx but layout
+  always uses the explicit Length field.
 
 ## Governing rule
 
