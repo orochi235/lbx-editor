@@ -105,15 +105,25 @@ interface CanvasSize {
   height: number;
 }
 
-function paperBounds(paperWidth: number, paperHeight: number) {
-  return { x: 0, y: 0, width: paperWidth, height: paperHeight };
+/** The paper layer extrudes its black brick shadow this far down-right of
+ *  the tape rect (see `paperLayer`). Fit/center math counts it as content. */
+function paperShadowDepth(paperHeight: number): number {
+  return paperHeight * 0.08;
 }
 
-// View that centers the paper at 100% (scale 1) in a canvas of the given size.
+// The full drawn footprint of the tape: paper rect + brick shadow.
+function paperBounds(paperWidth: number, paperHeight: number) {
+  const depth = paperShadowDepth(paperHeight);
+  return { x: 0, y: 0, width: paperWidth + depth, height: paperHeight + depth };
+}
+
+// View that centers the drawn tape (shadow included) at 100% (scale 1) in a
+// canvas of the given size.
 function centeredView(paperWidth: number, paperHeight: number, canvas: CanvasSize): View {
+  const depth = paperShadowDepth(paperHeight);
   return {
-    x: paperWidth / 2 - canvas.width / 2,
-    y: paperHeight / 2 - canvas.height / 2,
+    x: (paperWidth + depth) / 2 - canvas.width / 2,
+    y: (paperHeight + depth) / 2 - canvas.height / 2,
     scale: { x: 1, y: 1 },
   };
 }
@@ -434,7 +444,7 @@ export function App() {
   // so it scales and pans with the paper; `depth` is keyed to the tape width
   // to stay proportional across tape sizes.
   const paperLayer = useMemo<RenderLayer<unknown>>(() => {
-    const depth = paperHeight * 0.08;
+    const depth = paperShadowDepth(paperHeight);
     // The brick silhouette minus the front face: from the face's top-right,
     // out to the back face's top-right, around its right + bottom, back to
     // the face's bottom-left, then along the face's bottom and right edges.
