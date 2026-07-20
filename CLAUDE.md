@@ -65,6 +65,9 @@ Key weasel APIs used:
   Atkinson / Bayer) feeds preview and print job alike.
 - Auto-length is hidden/unimplemented: the flag round-trips .lbx but layout
   always uses the explicit Length field.
+- The document autosaves to localStorage (`lbx-editor.doc`: scene JSON +
+  tape config, 300 ms debounce) and restores on load, so refreshes keep the
+  label being edited.
 
 ## Governing rule
 
