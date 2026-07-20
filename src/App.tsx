@@ -50,7 +50,8 @@ import {
 } from 'obwat';
 import { printsAsInk, remapNodeInk, tapeColorCss, tapeIsClear, textColorCss } from './tapeColors';
 import { DebugPanel } from './DebugPanel';
-import { renderLabelToRgba } from './labelRender';
+import { PrinterPanel } from './PrinterPanel';
+import { printableBandPt, renderLabelToRgba } from './labelRender';
 import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
 import { fileToBase64, guessMimeType, getImageDimensions, imageDataUri } from './imageUtils';
@@ -151,7 +152,9 @@ export function App() {
 
   // The "paper" is the printable area of the tape.
   // P-touch labels are landscape: tape width is the short dimension (height visually).
-  const paperWidth = autoLength ? labelLength : labelLength;
+  // Auto-length isn't implemented (the flag only round-trips through .lbx, its
+  // toolbar control is hidden); layout always uses the explicit label length.
+  const paperWidth = labelLength;
   const paperHeight = tape.width;
 
   // --- Viewport / zoom ---
@@ -628,16 +631,21 @@ export function App() {
   }, [inkCss]);
 
   // --- Printable-bounds overlay ---
-  // Content outside the label rect won't print (print crops at the label
-  // length; the tape band all prints for now via labelRender's v1 squeeze, so
-  // the rect vertically matches the tape until margin-accurate rendering
-  // lands). Draw the scene twice: a faded full copy, then a crisp copy
-  // clipped to the label rect — anything off-label reads as semitransparent.
+  // Content outside the printable area won't print: print crops at the label
+  // length horizontally and at the printhead's reach vertically (the tape's
+  // top/bottom margins — labelRender renders only the centered printable
+  // band). Draw the scene twice: a faded full copy, then a crisp copy
+  // clipped to that band — anything unprintable reads as semitransparent.
   // Commands and the clip path are world-space; weasel applies the view.
-  const printablePath = useMemo(
-    () => rectPath(0, 0, paperWidth, paperHeight),
-    [paperWidth, paperHeight],
-  );
+  const printablePath = useMemo(() => {
+    const media = Printers.ptP710bt.media(parseInt(tapeSize, 10));
+    const band = printableBandPt({
+      tapeWidthPt: paperHeight,
+      printableDots: media.printableDots,
+      dpi: media.dpi,
+    });
+    return rectPath(0, band.y, paperWidth, band.height);
+  }, [tapeSize, paperWidth, paperHeight]);
   const dimOffLabel = useCallback(
     (cmds: DrawCommand[]): DrawCommand[] =>
       cmds.length === 0
@@ -663,16 +671,12 @@ export function App() {
             <Toolbar
               tapeSize={tapeSize}
               onTapeSizeChange={setTapeSize}
-              autoLength={autoLength}
-              onAutoLengthChange={setAutoLength}
               labelLength={labelLength}
               onLabelLengthChange={setLabelLength}
               onExport={handleExport}
               onImport={() => fileInputRef.current?.click()}
               onPrint={handlePrint}
               printDisabled={printing}
-              autoCut={autoCut}
-              onAutoCutChange={handleAutoCutChange}
               zoomPercent={zoomPercent}
               onZoomIn={handleZoomIn}
               onZoomOut={handleZoomOut}
@@ -736,6 +740,14 @@ export function App() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <PropertyPanel scene={scene} selection={selection} />
+                <PrinterPanel
+                  lastSeen={printerLastSeen}
+                  reachable={printerReachable}
+                  printing={printing}
+                  onRefresh={handlePrinterRefresh}
+                  autoCut={autoCut}
+                  onAutoCutChange={handleAutoCutChange}
+                />
                 <DebugPanel
                   cassetteColorsEnabled={cassetteColorsEnabled}
                   onCassetteColorsEnabledChange={handleCassetteColorsChange}

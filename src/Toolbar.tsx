@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { TAPE_SIZES, type TapeSize } from './label';
 import { PrinterStatusChip, type PrinterStatusChipProps } from './PrinterStatusChip';
-import './toolbar.css';
 
 // Zoom slider: logarithmic mapping over weasel's zoom clamp range (0.1×–8×), so
 // equal slider travel is equal proportional zoom. Expressed in percent.
@@ -23,16 +22,12 @@ function percentToSlider(percent: number): number {
 interface ToolbarProps {
   tapeSize: TapeSize;
   onTapeSizeChange: (size: TapeSize) => void;
-  autoLength: boolean;
-  onAutoLengthChange: (auto: boolean) => void;
   labelLength: number;
   onLabelLengthChange: (len: number) => void;
   onExport: () => void;
   onImport: () => void;
   onPrint: () => void;
   printDisabled?: boolean;
-  autoCut: boolean;
-  onAutoCutChange: (on: boolean) => void;
   zoomPercent: number;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -47,16 +42,12 @@ interface ToolbarProps {
 export function Toolbar({
   tapeSize,
   onTapeSizeChange,
-  autoLength,
-  onAutoLengthChange,
   labelLength,
   onLabelLengthChange,
   onExport,
   onImport,
   onPrint,
   printDisabled,
-  autoCut,
-  onAutoCutChange,
   zoomPercent,
   onZoomIn,
   onZoomOut,
@@ -91,27 +82,18 @@ export function Toolbar({
         </select>
       </label>
 
+      {/* Auto-length is hidden for now: the flag still round-trips through
+          .lbx import/export, but the editor always lays out at labelLength. */}
       <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}>
+        Length:
         <input
-          type="checkbox"
-          checked={autoLength}
-          onChange={(e) => onAutoLengthChange(e.target.checked)}
+          type="number"
+          value={labelLength}
+          onChange={(e) => onLabelLengthChange(Number(e.target.value))}
+          style={{ width: '50px' }}
         />
-        Auto length
+        pt
       </label>
-
-      {!autoLength && (
-        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}>
-          Length:
-          <input
-            type="number"
-            value={labelLength}
-            onChange={(e) => onLabelLengthChange(Number(e.target.value))}
-            style={{ width: '50px' }}
-          />
-          pt
-        </label>
-      )}
 
       {/* Separator */}
       <div style={{ width: '1px', height: '24px', background: '#ddd' }} />
@@ -148,14 +130,6 @@ export function Toolbar({
       {/* File actions */}
       <button onClick={onImport}>Open .lbx</button>
       <button onClick={onExport}>Export .lbx</button>
-      <label className="toolbar-check" title="Cut the tape automatically after printing">
-        <input
-          type="checkbox"
-          checked={autoCut}
-          onChange={(e) => onAutoCutChange(e.target.checked)}
-        />
-        Auto cut
-      </label>
       <button type="button" onClick={onPrint} disabled={printDisabled} title="Print to label printer">
         Print
       </button>

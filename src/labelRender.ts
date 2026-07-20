@@ -24,27 +24,33 @@ interface RenderArgs extends LabelGeometry {
   drawOne: SceneViewDrawOne<LabelNodeData, LabelLayer, LabelPose>
 }
 
+/** The printable band's height and top offset in points: `printableDots` at
+ *  `dpi`, centered in the full tape width. The printhead can't reach the
+ *  tape's outer edges, so this is the only strip that prints. */
+export function printableBandPt({ tapeWidthPt, printableDots, dpi }: {
+  tapeWidthPt: number
+  printableDots: number
+  dpi: number
+}): { y: number; height: number } {
+  const height = printableDots * (72 / dpi)
+  return { y: (tapeWidthPt - height) / 2, height }
+}
+
 /**
  * Unit math mapping label geometry onto `renderSceneToPixels` arguments.
  *
- * Horizontal: points → printer dots at full resolution (`dpi/72`).
- *
- * Vertical squeeze: node y/height are authored in points against the *full*
- * tape width (`tapeWidthPt`), but `printableDots` is the narrower printable
- * band (the printhead can't reach the tape's outer edges). For v1 we squeeze
- * the full tape height onto printableDots (`scale.y = printableDots /
- * tapeWidthPt`) rather than scaling by dpi and center-cropping — this keeps
- * every node visible instead of clipping ones near the tape edges, at the
- * cost of a slight vertical squeeze. Exact print-margin fidelity is a
- * follow-up. Output height rounds back to exactly `printableDots`.
+ * Uniform scale — points → printer dots at `dpi/72` on both axes, so print
+ * preserves the screen's aspect ratio exactly. The source rect is the
+ * centered printable band, not the full tape: content in the unprintable
+ * margins is cropped, matching what the printhead physically does (the
+ * on-screen overlay dims those margins so nothing crops silently). Output
+ * height lands on exactly `printableDots`.
  */
 export function labelRenderPlan({ labelLengthPt, tapeWidthPt, printableDots, dpi }: LabelGeometry) {
+  const band = printableBandPt({ tapeWidthPt, printableDots, dpi })
   return {
-    sourceRect: { x: 0, y: 0, width: labelLengthPt, height: tapeWidthPt },
-    scale: {
-      x: dpi / 72,
-      y: tapeWidthPt > 0 ? printableDots / tapeWidthPt : 1,
-    },
+    sourceRect: { x: 0, y: band.y, width: labelLengthPt, height: band.height },
+    scale: { x: dpi / 72, y: dpi / 72 },
     background: '#ffffff',
   }
 }
