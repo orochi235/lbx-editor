@@ -44,9 +44,17 @@ Key weasel APIs used:
 - Property panel for editing text, rect, and pose properties
 - Canvas previews the loaded cassette's tape/ink colors from live printer
   status (`src/tapeColors.ts`); Debug panel (below Properties) has the enable
-  toggle and manual overrides
+  toggle and manual overrides. Clear cassettes render the tape strip
+  translucent (the paper layer draws only the brick's L-shaped shadow, so the
+  canvas shows through the face).
 - Content outside the label rect renders semitransparent via weasel's scene
   `postProcess` hook (faded full draw + clipped crisp draw in App.tsx)
+- Images render through weasel's kit `imageCache` (data-URI keys via
+  `imageDataUri`); SceneCanvas redraws when a decode lands, so no app-side
+  bitmap cache. Undecodable picks alert and revert to the select tool.
+- Printer status chip is a button — click fires `queryStatus()`. obwat's
+  keepalive polls fast (3 s) while the printer is absent, so power-on shows
+  up on the chip within seconds.
 
 ## Governing rule
 
