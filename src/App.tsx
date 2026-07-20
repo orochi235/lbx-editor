@@ -70,6 +70,15 @@ function genNodeId(): NodeId {
   return asNodeId(`node-${nextNodeId++}`);
 }
 
+/** After restoring a persisted scene, advance the id counter past every
+ *  restored `node-N` id so new nodes can't collide with them. */
+function bumpNodeIdCounter(ids: Iterable<string>): void {
+  for (const id of ids) {
+    const m = /^node-(\d+)$/.exec(id);
+    if (m) nextNodeId = Math.max(nextNodeId, Number(m[1]) + 1);
+  }
+}
+
 const FIT_PADDING = 16;
 
 /** Set once a USB device grant exists; lets us distinguish "printer asleep" from "never granted". */
@@ -78,6 +87,9 @@ const AUTOCUT_KEY = 'lbx-editor.autoCut';
 const CASSETTE_COLORS_KEY = 'lbx-editor.cassetteColors';
 const PRINT_PREVIEW_KEY = 'lbx-editor.printPreview';
 const DITHER_KEY = 'lbx-editor.dither';
+/** Autosaved document (scene + tape config) — restored on load so a refresh
+ *  doesn't lose the label being edited. */
+const DOC_KEY = 'lbx-editor.doc';
 
 const DITHER_ALGORITHMS: readonly DitherAlgorithm[] = [
   'threshold', 'floyd-steinberg', 'atkinson', 'bayer',
@@ -254,6 +266,57 @@ export function App() {
   const selection = useSelection();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const sceneVersion = useSyncExternalStore(
+    useCallback((cb: () => void) => scene.subscribe(cb), [scene]),
+    () => scene.getVersion(),
+  );
+
+  // --- Session persistence ---
+  // Restore the autosaved document once on mount (before the autosave effect
+  // below ever writes), then debounce-save scene + tape config on every
+  // committed change. Corrupt/stale snapshots are discarded, quota failures
+  // skipped — persistence must never take the editor down.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const raw = localStorage.getItem(DOC_KEY);
+    if (!raw) return;
+    try {
+      const doc = JSON.parse(raw) as {
+        tapeSize?: TapeSize;
+        autoLength?: boolean;
+        labelLength?: number;
+        scene?: Parameters<typeof scene.loadState>[0];
+      };
+      if (doc.tapeSize && doc.tapeSize in TAPE_SIZES) setTapeSize(doc.tapeSize);
+      if (typeof doc.labelLength === 'number' && Number.isFinite(doc.labelLength) && doc.labelLength > 0) {
+        setLabelLength(doc.labelLength);
+      }
+      if (typeof doc.autoLength === 'boolean') setAutoLength(doc.autoLength);
+      if (doc.scene) {
+        scene.loadState(doc.scene);
+        bumpNodeIdCounter(scene.nodes.keys());
+      }
+    } catch {
+      localStorage.removeItem(DOC_KEY);
+    }
+  }, [scene]);
+
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          DOC_KEY,
+          JSON.stringify({ tapeSize, autoLength, labelLength, scene: scene.toJSON() }),
+        );
+      } catch {
+        // Storage full (huge embedded images) or unavailable — skip this save.
+      }
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [scene, sceneVersion, tapeSize, autoLength, labelLength]);
+
   // --- Cassette-driven canvas colors ---
   // The printer's status replies (fed by keepalive ticks, see the printer
   // session effect below) report the loaded cassette's tape + ink colors; the
@@ -314,10 +377,6 @@ export function App() {
   }, []);
   const [previewBitmap, setPreviewBitmap] = useState<ImageBitmap | null>(null);
   const previewGlRef = useRef<{ canvas: OffscreenCanvas; gl: WebGL2RenderingContext } | null>(null);
-  const sceneVersion = useSyncExternalStore(
-    useCallback((cb: () => void) => scene.subscribe(cb), [scene]),
-    () => scene.getVersion(),
-  );
   // While the preview is up the live scene draw is suppressed, so nothing
   // else pulls image nodes through the kit cache — the preview render itself
   // starts the decode and this epoch re-runs it when the bitmap lands.
