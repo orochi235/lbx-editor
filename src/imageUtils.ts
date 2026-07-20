@@ -5,11 +5,29 @@
 
 /** Read a File into a base64 data string (without the data: prefix) */
 export async function fileToBase64(file: File): Promise<string> {
-  const buf = await file.arrayBuffer();
-  const bytes = new Uint8Array(buf);
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
-  return btoa(binary);
+  // FileReader encodes natively — the byte-loop + btoa alternative takes
+  // seconds on photo-sized files, and the pick flow awaits this.
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error('file read failed'));
+    reader.readAsDataURL(file);
+  });
+  return dataUrl.slice(dataUrl.indexOf(',') + 1);
+}
+
+const dataUriMemo = new WeakMap<object, string>();
+
+/** `data:` URI for an image node's embedded bytes — the cache key weasel's
+ *  imageCache loads from. Memoized per data object so repeated draws hand the
+ *  cache the same string instance instead of re-concatenating the base64. */
+export function imageDataUri(data: { src: string; mimeType: string }): string {
+  let uri = dataUriMemo.get(data);
+  if (!uri) {
+    uri = `data:${data.mimeType};base64,${data.src}`;
+    dataUriMemo.set(data, uri);
+  }
+  return uri;
 }
 
 /** Create an ImageBitmap from base64-encoded image data */

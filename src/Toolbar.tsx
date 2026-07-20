@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { TAPE_SIZES, type TapeSize } from './label';
+import { PrinterStatusChip, type PrinterStatusChipProps } from './PrinterStatusChip';
 
 // Zoom slider: logarithmic mapping over weasel's zoom clamp range (0.1×–8×), so
 // equal slider travel is equal proportional zoom. Expressed in percent.
@@ -21,43 +22,41 @@ function percentToSlider(percent: number): number {
 interface ToolbarProps {
   tapeSize: TapeSize;
   onTapeSizeChange: (size: TapeSize) => void;
-  autoLength: boolean;
-  onAutoLengthChange: (auto: boolean) => void;
   labelLength: number;
   onLabelLengthChange: (len: number) => void;
   onExport: () => void;
   onImport: () => void;
-  onAddText: () => void;
-  onAddRect: () => void;
-  onAddLine: () => void;
-  onAddImage: () => void;
+  onPrint: () => void;
+  printDisabled?: boolean;
   zoomPercent: number;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onZoomSet: (percent: number) => void;
   onZoomFit: () => void;
   onZoomReset: () => void;
+  printerLastSeen: PrinterStatusChipProps['lastSeen'];
+  printerReachable: boolean;
+  onPrinterRefresh: () => void;
 }
 
 export function Toolbar({
   tapeSize,
   onTapeSizeChange,
-  autoLength,
-  onAutoLengthChange,
   labelLength,
   onLabelLengthChange,
   onExport,
   onImport,
-  onAddText,
-  onAddRect,
-  onAddLine,
-  onAddImage,
+  onPrint,
+  printDisabled,
   zoomPercent,
   onZoomIn,
   onZoomOut,
   onZoomSet,
   onZoomFit,
   onZoomReset,
+  printerLastSeen,
+  printerReachable,
+  onPrinterRefresh,
 }: ToolbarProps) {
   return (
     <div style={{
@@ -83,36 +82,18 @@ export function Toolbar({
         </select>
       </label>
 
+      {/* Auto-length is hidden for now: the flag still round-trips through
+          .lbx import/export, but the editor always lays out at labelLength. */}
       <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}>
+        Length:
         <input
-          type="checkbox"
-          checked={autoLength}
-          onChange={(e) => onAutoLengthChange(e.target.checked)}
+          type="number"
+          value={labelLength}
+          onChange={(e) => onLabelLengthChange(Number(e.target.value))}
+          style={{ width: '50px' }}
         />
-        Auto length
+        pt
       </label>
-
-      {!autoLength && (
-        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}>
-          Length:
-          <input
-            type="number"
-            value={labelLength}
-            onChange={(e) => onLabelLengthChange(Number(e.target.value))}
-            style={{ width: '50px' }}
-          />
-          pt
-        </label>
-      )}
-
-      {/* Separator */}
-      <div style={{ width: '1px', height: '24px', background: '#ddd' }} />
-
-      {/* Object creation */}
-      <button onClick={onAddText} title="Add text object">T</button>
-      <button onClick={onAddRect} title="Add rectangle">▢</button>
-      <button onClick={onAddLine} title="Add line">―</button>
-      <button onClick={onAddImage} title="Add image">IMG</button>
 
       {/* Separator */}
       <div style={{ width: '1px', height: '24px', background: '#ddd' }} />
@@ -138,9 +119,20 @@ export function Toolbar({
       {/* Spacer */}
       <div style={{ flex: 1 }} />
 
+      {/* Printer status */}
+      <PrinterStatusChip
+        lastSeen={printerLastSeen}
+        reachable={printerReachable}
+        printing={printDisabled ?? false}
+        onRefresh={onPrinterRefresh}
+      />
+
       {/* File actions */}
       <button onClick={onImport}>Open .lbx</button>
       <button onClick={onExport}>Export .lbx</button>
+      <button type="button" onClick={onPrint} disabled={printDisabled} title="Print to label printer">
+        Print
+      </button>
     </div>
   );
 }

@@ -3,7 +3,7 @@
  * the .lbx file.
  */
 import { buildLbx, TAPE, type LabelConfig, type LabelObject as LbxObject } from 'bil-lbx';
-import type { LabelNodeData, LabelPose, TapeSize } from './label';
+import { lineEndpoints, type LabelNodeData, type LabelPose, type TapeSize } from './label';
 
 interface SceneNode {
   id: string;
@@ -62,10 +62,7 @@ export function sceneToLbxConfig(
         objects.push({
           type: 'line',
           position: { x: pose.x, y: pose.y, width: pose.width, height: pose.height },
-          points: [
-            { x: pose.x, y: pose.y },
-            { x: pose.x + pose.width, y: pose.y + pose.height },
-          ],
+          points: lineEndpoints(pose, data.descending).map((p) => ({ x: p.x, y: p.y })),
           pen: { style: 'SOLID', widthX: data.strokeWidth, widthY: data.strokeWidth, color: data.strokeStyle },
         });
         break;

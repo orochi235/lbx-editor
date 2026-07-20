@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   SceneCanvas,
   useScene,
@@ -17,11 +17,21 @@ import {
   type View,
   type RenderLayer,
   type NodeId,
+  useImageTool,
+  getImageBitmap,
+  subscribeImageReady,
+  type ToolsApi,
+  type InsertNodeFactory,
 } from '@weasel-js/core';
+// Subpath import (not the `@weasel-js/ui` barrel) so tsc/vite only pull in the
+// ToolPalette module, not sibling components like DataGrid that trip a
+// duplicate-@types/react mismatch under this app's slightly newer React types.
+import { ToolPalette } from '@weasel-js/ui/components/ToolPalette';
 import {
   TAPE_SIZES,
   DEFAULT_TAPE,
   DEFAULT_LABEL_LENGTH,
+  lineEndpoints,
   type LabelNodeData,
   type LabelLayer,
   type LabelPose,
@@ -29,10 +39,29 @@ import {
 } from './label';
 import { exportLbx } from './lbxExport';
 import { importLbx } from './lbxImport';
+import {
+  rgbaToRaster,
+  ditherToMask,
+  Printers,
+  createBrotherPrinter,
+  NoGrantedDeviceError,
+  type BrotherPrinter,
+  type DitherAlgorithm,
+  type PrinterStatus,
+  type TapeColor,
+  type TextColor,
+} from 'obwat';
+import { printsAsInk, remapNodeInk, tapeColorCss, tapeIsClear, textColorCss } from './tapeColors';
+import { DebugPanel } from './DebugPanel';
+import { PrinterPanel } from './PrinterPanel';
+import { labelRenderPlan, printableBandPt, renderLabelToRgba } from './labelRender';
+import { maskToRgba } from './printPreview';
 import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
-import { fileToBase64, guessMimeType, getImageDimensions } from './imageUtils';
-import { getImageBitmap } from './imageBitmapCache';
+import { fileToBase64, guessMimeType, getImageDimensions, imageDataUri } from './imageUtils';
+import { buildImageInsert, type PendingImage } from './imageInsert';
+import { tapeMismatchMessage } from './printPreflight';
+import { getTextBitmap } from './textBitmapCache';
 
 type LabelNode = SceneNode<LabelNodeData, LabelLayer, LabelPose>;
 
@@ -41,22 +70,60 @@ function genNodeId(): NodeId {
   return asNodeId(`node-${nextNodeId++}`);
 }
 
+/** After restoring a persisted scene, advance the id counter past every
+ *  restored `node-N` id so new nodes can't collide with them. */
+function bumpNodeIdCounter(ids: Iterable<string>): void {
+  for (const id of ids) {
+    const m = /^node-(\d+)$/.exec(id);
+    if (m) nextNodeId = Math.max(nextNodeId, Number(m[1]) + 1);
+  }
+}
+
 const FIT_PADDING = 16;
+
+/** Set once a USB device grant exists; lets us distinguish "printer asleep" from "never granted". */
+const USB_GRANT_FLAG = 'lbx-editor.hasUsbGrant';
+const AUTOCUT_KEY = 'lbx-editor.autoCut';
+const CASSETTE_COLORS_KEY = 'lbx-editor.cassetteColors';
+const PRINT_PREVIEW_KEY = 'lbx-editor.printPreview';
+const DITHER_KEY = 'lbx-editor.dither';
+/** Autosaved document (scene + tape config) — restored on load so a refresh
+ *  doesn't lose the label being edited. */
+const DOC_KEY = 'lbx-editor.doc';
+
+const DITHER_ALGORITHMS: readonly DitherAlgorithm[] = [
+  'threshold', 'floyd-steinberg', 'atkinson', 'bayer',
+];
+
+function savedDitherAlgorithm(): DitherAlgorithm {
+  const v = localStorage.getItem(DITHER_KEY) as DitherAlgorithm | null;
+  return v && DITHER_ALGORITHMS.includes(v) ? v : 'threshold';
+}
 
 interface CanvasSize {
   width: number;
   height: number;
 }
 
-function paperBounds(paperWidth: number, paperHeight: number) {
-  return { x: 0, y: 0, width: paperWidth, height: paperHeight };
+/** The paper layer extrudes its black brick shadow this far down-right of
+ *  the tape rect (see `paperLayer`). Fit/center math counts it as content. */
+function paperShadowDepth(paperHeight: number): number {
+  return paperHeight * 0.08;
 }
 
-// View that centers the paper at 100% (scale 1) in a canvas of the given size.
+// The full drawn footprint of the tape: paper rect + brick shadow.
+function paperBounds(paperWidth: number, paperHeight: number) {
+  const depth = paperShadowDepth(paperHeight);
+  return { x: 0, y: 0, width: paperWidth + depth, height: paperHeight + depth };
+}
+
+// View that centers the drawn tape (shadow included) at 100% (scale 1) in a
+// canvas of the given size.
 function centeredView(paperWidth: number, paperHeight: number, canvas: CanvasSize): View {
+  const depth = paperShadowDepth(paperHeight);
   return {
-    x: paperWidth / 2 - canvas.width / 2,
-    y: paperHeight / 2 - canvas.height / 2,
+    x: (paperWidth + depth) / 2 - canvas.width / 2,
+    y: (paperHeight + depth) / 2 - canvas.height / 2,
     scale: { x: 1, y: 1 },
   };
 }
@@ -66,13 +133,18 @@ function drawLabelNode(node: LabelNode, pose: LabelPose, _view: View): DrawComma
   const { x, y, width, height } = pose;
 
   switch (data.kind) {
-    case 'text':
-      // Light bounding box to show the text frame
+    case 'text': {
+      const bitmap = getTextBitmap(data, width, height);
+      if (bitmap) {
+        return [{ kind: 'image', image: bitmap, x, y, w: width, h: height }];
+      }
+      // Fallback: the old light frame so the node stays visible/selectable
       return [{
         kind: 'path',
         path: rectPath(x, y, width, height),
         stroke: { paint: { color: '#999999' }, width: 0.3 },
       }];
+    }
     case 'rect':
       return [{
         kind: 'path',
@@ -80,14 +152,18 @@ function drawLabelNode(node: LabelNode, pose: LabelPose, _view: View): DrawComma
         stroke: { paint: { color: data.strokeStyle }, width: data.strokeWidth },
         ...(data.fillColor ? { fill: { fill: 'solid', color: data.fillColor } } : {}),
       }];
-    case 'line':
+    case 'line': {
+      const [p, q] = lineEndpoints({ x, y, width, height }, data.descending);
       return [{
         kind: 'path',
-        path: rectPath(x, y, width, Math.max(height, 0.5)),
+        path: polygonFromPoints([p, q]),
         stroke: { paint: { color: data.strokeStyle }, width: data.strokeWidth },
       }];
+    }
     case 'image': {
-      const bmp = getImageBitmap(data.src, data.mimeType);
+      // The kit imageCache decodes async; SceneCanvas subscribes to its
+      // ready events and redraws, swapping the placeholder for the bitmap.
+      const bmp = getImageBitmap(imageDataUri(data));
       if (bmp) {
         return [{ kind: 'image', image: bmp, x, y, w: width, h: height }];
       }
@@ -113,7 +189,9 @@ export function App() {
 
   // The "paper" is the printable area of the tape.
   // P-touch labels are landscape: tape width is the short dimension (height visually).
-  const paperWidth = autoLength ? labelLength : labelLength;
+  // Auto-length isn't implemented (the flag only round-trips through .lbx, its
+  // toolbar control is hidden); layout always uses the explicit label length.
+  const paperWidth = labelLength;
   const paperHeight = tape.width;
 
   // --- Viewport / zoom ---
@@ -198,24 +276,195 @@ export function App() {
   const selection = useSelection();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const sceneVersion = useSyncExternalStore(
+    useCallback((cb: () => void) => scene.subscribe(cb), [scene]),
+    () => scene.getVersion(),
+  );
+
+  // --- Session persistence ---
+  // Restore the autosaved document once on mount (before the autosave effect
+  // below ever writes), then debounce-save scene + tape config on every
+  // committed change. Corrupt/stale snapshots are discarded, quota failures
+  // skipped — persistence must never take the editor down.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const raw = localStorage.getItem(DOC_KEY);
+    if (!raw) return;
+    try {
+      const doc = JSON.parse(raw) as {
+        tapeSize?: TapeSize;
+        autoLength?: boolean;
+        labelLength?: number;
+        scene?: Parameters<typeof scene.loadState>[0];
+      };
+      if (doc.tapeSize && doc.tapeSize in TAPE_SIZES) setTapeSize(doc.tapeSize);
+      if (typeof doc.labelLength === 'number' && Number.isFinite(doc.labelLength) && doc.labelLength > 0) {
+        setLabelLength(doc.labelLength);
+      }
+      if (typeof doc.autoLength === 'boolean') setAutoLength(doc.autoLength);
+      if (doc.scene) {
+        scene.loadState(doc.scene);
+        bumpNodeIdCounter(scene.nodes.keys());
+      }
+    } catch {
+      localStorage.removeItem(DOC_KEY);
+    }
+  }, [scene]);
+
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          DOC_KEY,
+          JSON.stringify({ tapeSize, autoLength, labelLength, scene: scene.toJSON() }),
+        );
+      } catch {
+        // Storage full (huge embedded images) or unavailable — skip this save.
+      }
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [scene, sceneVersion, tapeSize, autoLength, labelLength]);
+
+  // --- Cassette-driven canvas colors ---
+  // The printer's status replies (fed by keepalive ticks, see the printer
+  // session effect below) report the loaded cassette's tape + ink colors; the
+  // canvas previews that combination. Debug-panel overrides win over the live
+  // cassette; the toggle kills the whole behavior. Print is untouched — the
+  // printer lays down its one ink regardless of what the screen shows.
+  const [printerLastSeen, setPrinterLastSeen] = useState<{ status: PrinterStatus; at: number } | null>(null);
+  const [printerReachable, setPrinterReachable] = useState(false);
+  const [cassetteColorsEnabled, setCassetteColorsEnabled] = useState(
+    () => localStorage.getItem(CASSETTE_COLORS_KEY) !== '0',
+  );
+  const handleCassetteColorsChange = useCallback((on: boolean) => {
+    setCassetteColorsEnabled(on);
+    localStorage.setItem(CASSETTE_COLORS_KEY, on ? '1' : '0');
+  }, []);
+  const [tapeColorOverride, setTapeColorOverride] = useState<TapeColor | null>(null);
+  const [textColorOverride, setTextColorOverride] = useState<TextColor | null>(null);
+
+  const liveStatus = printerReachable ? (printerLastSeen?.status ?? null) : null;
+  const tapeCss =
+    (cassetteColorsEnabled ? tapeColorCss(tapeColorOverride ?? liveStatus?.tapeColor) : null) ?? '#ffffff';
+  const tapeClear =
+    cassetteColorsEnabled && tapeIsClear(tapeColorOverride ?? liveStatus?.tapeColor);
+  const inkCss =
+    (cassetteColorsEnabled ? textColorCss(textColorOverride ?? liveStatus?.textColor) : null) ?? '#000000';
+
+  // The printhead-reachable band of the current tape, in label points —
+  // shared by the dim overlay, the print-preview bitmap, and its placement.
+  const printableBand = useMemo(() => {
+    const media = Printers.ptP710bt.media(parseInt(tapeSize, 10));
+    return printableBandPt({
+      tapeWidthPt: paperHeight,
+      printableDots: media.printableDots,
+      dpi: media.dpi,
+    });
+  }, [tapeSize, paperHeight]);
+
+  // --- Dithered print preview ---
+  // Runs the real print pipeline (renderLabelToRgba → ditherToMask, default
+  // threshold — exactly what rgbaToRaster quantizes with) on every committed
+  // scene change and draws the resulting dots over the printable band; ink
+  // dots take the cassette ink color, everything else is transparent so the
+  // tape face shows through. One long-lived GL context is reused across
+  // renders; the debounce absorbs bursts of scene mutations.
+  const [printPreview, setPrintPreview] = useState(
+    () => localStorage.getItem(PRINT_PREVIEW_KEY) === '1',
+  );
+  const handlePrintPreviewChange = useCallback((on: boolean) => {
+    setPrintPreview(on);
+    localStorage.setItem(PRINT_PREVIEW_KEY, on ? '1' : '0');
+  }, []);
+  // Dither algorithm — one setting drives both the preview and the real
+  // print job (rgbaToRaster), so what you see is what the head lays down.
+  const [ditherAlgorithm, setDitherAlgorithm] = useState<DitherAlgorithm>(savedDitherAlgorithm);
+  const handleDitherAlgorithmChange = useCallback((algorithm: DitherAlgorithm) => {
+    setDitherAlgorithm(algorithm);
+    localStorage.setItem(DITHER_KEY, algorithm);
+  }, []);
+  const [previewBitmap, setPreviewBitmap] = useState<ImageBitmap | null>(null);
+  const previewGlRef = useRef<{ canvas: OffscreenCanvas; gl: WebGL2RenderingContext } | null>(null);
+  // While the preview is up the live scene draw is suppressed, so nothing
+  // else pulls image nodes through the kit cache — the preview render itself
+  // starts the decode and this epoch re-runs it when the bitmap lands.
+  const [imageEpoch, setImageEpoch] = useState(0);
+  useEffect(() => subscribeImageReady(() => setImageEpoch((n) => n + 1)), []);
+  useEffect(() => {
+    if (!printPreview) {
+      setPreviewBitmap((prev) => {
+        prev?.close();
+        return null;
+      });
+      return;
+    }
+    const handle = setTimeout(() => {
+      if (!previewGlRef.current) {
+        const canvas = new OffscreenCanvas(1, 1);
+        const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, stencil: true });
+        if (!gl) return;
+        previewGlRef.current = { canvas, gl };
+      }
+      const { canvas, gl } = previewGlRef.current;
+      const media = Printers.ptP710bt.media(parseInt(tapeSize, 10));
+      const geometry = {
+        labelLengthPt: labelLength,
+        tapeWidthPt: paperHeight,
+        printableDots: media.printableDots,
+        dpi: media.dpi,
+      };
+      // Size the context's drawing buffer to this render before weasel uses it.
+      const plan = labelRenderPlan(geometry);
+      canvas.width = Math.max(1, Math.round(plan.sourceRect.width * plan.scale.x));
+      canvas.height = Math.max(1, Math.round(plan.sourceRect.height * plan.scale.y));
+      const rgba = renderLabelToRgba({ scene, drawOne: drawLabelNode, gl, ...geometry });
+      const mask = ditherToMask(rgba, { algorithm: ditherAlgorithm });
+      const pixels = maskToRgba(mask, rgba.width, rgba.height, inkCss);
+      const out = new OffscreenCanvas(rgba.width, rgba.height);
+      const ctx = out.getContext('2d')!;
+      ctx.putImageData(new ImageData(pixels, rgba.width, rgba.height), 0, 0);
+      const bmp = out.transferToImageBitmap();
+      setPreviewBitmap((prev) => {
+        prev?.close();
+        return bmp;
+      });
+    }, 120);
+    return () => clearTimeout(handle);
+  }, [printPreview, sceneVersion, imageEpoch, scene, tapeSize, labelLength, paperHeight, inkCss, ditherAlgorithm]);
+
   // --- Paper background layer ---
-  // The tape is drawn as a solid black "raised brick": its rectangle extruded
-  // down-right by `depth` into a single filled silhouette, so the offset shadow
-  // is connected to the tape by diagonal side edges instead of floating behind
-  // it. The white tape face (with a black border) sits on top. Everything is in
-  // world units so it scales and pans with the paper; `depth` is keyed to the
-  // tape width to stay proportional across tape sizes.
+  // The tape is drawn as a black "raised brick": the shadow is the tape's
+  // rectangle extruded down-right by `depth`, connected to the tape by
+  // diagonal side edges instead of floating behind it. Only the visible
+  // L-shaped shadow region is filled (not the front face), so a translucent
+  // face — clear tape — shows the canvas background through the strip. The
+  // tape face (with a black border) sits on top. Everything is in world units
+  // so it scales and pans with the paper; `depth` is keyed to the tape width
+  // to stay proportional across tape sizes.
   const paperLayer = useMemo<RenderLayer<unknown>>(() => {
-    const depth = paperHeight * 0.08;
-    // Outer silhouette of the extruded block (front face top + right, then the
-    // two diagonals to the back face, around its bottom + left, back up).
-    const brick = polygonFromPoints([
-      { x: 0, y: 0 },
-      { x: paperWidth, y: 0 },
-      { x: paperWidth + depth, y: depth },
-      { x: paperWidth + depth, y: paperHeight + depth },
-      { x: depth, y: paperHeight + depth },
-      { x: 0, y: paperHeight },
+    const depth = paperShadowDepth(paperHeight);
+    // The brick silhouette minus the front face, sprung from the face
+    // stroke's OUTER boundary (the rect expanded by half the stroke width):
+    // attaching at the rect edge instead would leave the stroke's outer half
+    // poking past the top-right diagonal as a barb. From the outline's
+    // top-right, out to the back face's top-right, around its right +
+    // bottom, back to the outline's bottom-left, then along the outline's
+    // bottom and right edges.
+    const strokeW = 0.5;
+    const s = strokeW / 2;
+    const x0 = -s;
+    const y0 = -s;
+    const x1 = paperWidth + s;
+    const y1 = paperHeight + s;
+    const shadow = polygonFromPoints([
+      { x: x1, y: y0 },
+      { x: x1 + depth, y: y0 + depth },
+      { x: x1 + depth, y: y1 + depth },
+      { x: x0 + depth, y: y1 + depth },
+      { x: x0, y: y1 },
+      { x: x1, y: y1 },
     ]);
     return {
       id: 'paper',
@@ -223,27 +472,85 @@ export function App() {
       draw: () => [
         {
           kind: 'path',
-          path: brick,
+          path: shadow,
           fill: { fill: 'solid', color: '#000000' },
         },
         {
           kind: 'path',
           path: rectPath(0, 0, paperWidth, paperHeight),
-          fill: { fill: 'solid', color: '#ffffff' },
-          stroke: { paint: { color: '#000000' }, width: 0.5 },
+          fill: { fill: 'solid', color: tapeCss, opacity: tapeClear ? 0.45 : 1 },
+          // A dark tape face would vanish against its black brick — lighten
+          // the border so the tape edge stays readable.
+          stroke: { paint: { color: printsAsInk(tapeCss) ? '#888888' : '#000000' }, width: strokeW },
         },
+        // Dithered print preview: the print pipeline's ink dots over the
+        // printable band (scene content is suppressed while this is up).
+        ...(previewBitmap
+          ? [{
+              kind: 'image' as const,
+              image: previewBitmap,
+              x: 0,
+              y: printableBand.y,
+              w: paperWidth,
+              h: printableBand.height,
+            }]
+          : []),
       ],
     };
-  }, [paperWidth, paperHeight]);
+  }, [paperWidth, paperHeight, tapeCss, tapeClear, previewBitmap, printableBand]);
 
-  // --- Object creation ---
-  const addText = useCallback(() => {
-    const id = genNodeId();
-    scene.add({
-      kind: 'leaf',
-      id,
-      layer: 'objects' as LabelLayer,
-      pose: { x: 10, y: 5, width: 60, height: 20 },
+  // --- Object creation via weasel tools ---
+  // The palette activates weasel's built-in rect/line/text tools; their drag
+  // gestures route through the `insert` action, which materializes nodes via
+  // these per-kind factories. Each returns a `LabelNode`'s data + pose in the
+  // app's own shape (matching `drawLabelNode` / PropertyPanel / export) rather
+  // than the kit's default `{ path, fill }` node. `tools` is the live ToolsApi
+  // that drives the palette.
+  const [tools, setTools] = useState<ToolsApi | null>(null);
+
+  // Drag-to-place image tool. `src` is unused: the `image` insertNodeFactory
+  // below reads pendingImageRef instead of the binding's params. The tool
+  // exists for its palette button, crosshair, and drag-rect insert gesture;
+  // the picked file is staged by handleImagePick.
+  const pendingImageRef = useRef<PendingImage | null>(null);
+  const imageTool = useImageTool({ src: '', label: 'Image' });
+  const toolsPatch = useMemo(() => ({ image: imageTool }), [imageTool]);
+
+  const insertNodeFactories = useMemo<Record<string, InsertNodeFactory>>(() => ({
+    rect: (b) => ({
+      pose: { x: b.x, y: b.y, width: b.width, height: b.height },
+      data: {
+        kind: 'rect',
+        rounded: false,
+        roundness: 0,
+        strokeStyle: '#000000',
+        strokeWidth: 0.8,
+        fillColor: null,
+      } satisfies LabelNodeData,
+    }),
+    line: (b, extras) => {
+      // The line tool passes its endpoints in `extras`; fall back to the AABB
+      // diagonal. Height floors at the stroke width so the pose stays pickable.
+      const e = extras as { a?: { x: number; y: number }; b?: { x: number; y: number } };
+      const a = e.a ?? { x: b.x, y: b.y };
+      const c = e.b ?? { x: b.x + b.width, y: b.y + b.height };
+      return {
+        pose: {
+          x: Math.min(a.x, c.x),
+          y: Math.min(a.y, c.y),
+          width: Math.max(Math.abs(c.x - a.x), 1),
+          height: Math.max(Math.abs(c.y - a.y), 0.5),
+        },
+        data: {
+          kind: 'line',
+          strokeStyle: '#000000',
+          strokeWidth: 0.5,
+          descending: (c.x - a.x) * (c.y - a.y) >= 0,
+        } satisfies LabelNodeData,
+      };
+    },
+    text: (b) => ({
+      pose: { x: b.x, y: b.y, width: Math.max(b.width, 40), height: Math.max(b.height, 12) },
       data: {
         kind: 'text',
         text: 'Text',
@@ -254,74 +561,92 @@ export function App() {
         horizontalAlignment: 'LEFT',
         verticalAlignment: 'CENTER',
         color: '#000000',
-      },
-    });
-    selection.set([id]);
-  }, [scene, selection]);
+      } satisfies LabelNodeData,
+    }),
+    image: (b) => buildImageInsert(pendingImageRef.current, b),
+  }), []);
 
-  const addRect = useCallback(() => {
-    const id = genNodeId();
-    scene.add({
-      kind: 'leaf',
-      id,
-      layer: 'objects' as LabelLayer,
-      pose: { x: 10, y: 5, width: 30, height: paperHeight - 10 },
-      data: {
-        kind: 'rect',
-        rounded: false,
-        roundness: 0,
-        strokeStyle: '#000000',
-        strokeWidth: 0.8,
-        fillColor: null,
-      },
-    });
-    selection.set([id]);
-  }, [scene, selection, paperHeight]);
-
-  const addLine = useCallback(() => {
-    const id = genNodeId();
-    scene.add({
-      kind: 'leaf',
-      id,
-      layer: 'objects' as LabelLayer,
-      pose: { x: 10, y: paperHeight / 2, width: 80, height: 0.5 },
-      data: {
-        kind: 'line',
-        strokeStyle: '#000000',
-        strokeWidth: 0.5,
-      },
-    });
-    selection.set([id]);
-  }, [scene, selection, paperHeight]);
+  const toolsRef = useRef(tools);
+  toolsRef.current = tools;
 
   const addImageFromFile = useCallback(async (file: File) => {
-    const mimeType = guessMimeType(file.name);
-    const base64 = await fileToBase64(file);
-    const dims = await getImageDimensions(base64, mimeType, paperWidth - 20, paperHeight - 10);
+    try {
+      const mimeType = file.type || guessMimeType(file.name);
+      const base64 = await fileToBase64(file);
+      const dims = await getImageDimensions(base64, mimeType, paperWidth - 20, paperHeight - 10);
 
-    const id = genNodeId();
-    scene.add({
-      kind: 'leaf',
-      id,
-      layer: 'objects' as LabelLayer,
-      pose: { x: 10, y: 5, width: dims.width, height: dims.height },
-      data: {
-        kind: 'image',
-        src: base64,
-        originalName: file.name,
-        mimeType,
-      },
-    });
-    selection.set([id]);
+      const id = genNodeId();
+      scene.add({
+        kind: 'leaf',
+        id,
+        layer: 'objects' as LabelLayer,
+        pose: { x: 10, y: 5, width: dims.width, height: dims.height },
+        data: {
+          kind: 'image',
+          src: base64,
+          originalName: file.name,
+          mimeType,
+        },
+      });
+      selection.set([id]);
+    } catch {
+      alert(`Couldn't read "${file.name}" as an image — Chrome may not decode this format.`);
+    }
   }, [scene, selection, paperWidth, paperHeight]);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
 
-  const handleImagePick = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImagePick = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) addImageFromFile(file);
     if (imageInputRef.current) imageInputRef.current.value = '';
-  }, [addImageFromFile]);
+    if (!file) return;
+    try {
+      const mimeType = file.type || guessMimeType(file.name);
+      const src = await fileToBase64(file);
+      const dims = await getImageDimensions(src, mimeType, paperWidth - 20, paperHeight - 10);
+      pendingImageRef.current = {
+        src,
+        originalName: file.name,
+        mimeType,
+        defaultWidth: dims.width,
+        defaultHeight: dims.height,
+      };
+    } catch {
+      // Undecodable pick: without this, the crosshair stays armed and every
+      // drag silently inserts nothing (the factory rejects on null pending).
+      pendingImageRef.current = null;
+      if (toolsRef.current?.active === 'image') toolsRef.current.setActive('select');
+      alert(`Couldn't read "${file.name}" as an image — Chrome may not decode this format.`);
+    }
+  }, [paperWidth, paperHeight]);
+
+  // The palette's IMG button just does tools.setActive('image') (registry-
+  // driven palette, no picker hook on the tool). Observe the activation
+  // transition and open the hidden file input; a fresh pick happens on every
+  // entry into the tool. Re-picking without switching tools first is not
+  // supported (setActive on the active id is a no-op).
+  const prevActiveToolRef = useRef<string | null>(null);
+  useEffect(() => {
+    const active = tools?.active ?? null;
+    if (active === 'image' && prevActiveToolRef.current !== 'image') {
+      imageInputRef.current?.click();
+    }
+    prevActiveToolRef.current = active;
+  }, [tools]);
+
+  // Dismissing the picker means "never mind": revert to select so an
+  // imageless crosshair tool isn't left active. Native `cancel` event
+  // (Chrome 113+); this app is Chrome-only (WebUSB).
+  useEffect(() => {
+    const input = imageInputRef.current;
+    if (!input) return;
+    const onCancel = () => {
+      const t = toolsRef.current;
+      if (t?.active === 'image') t.setActive('select');
+    };
+    input.addEventListener('cancel', onCancel);
+    return () => input.removeEventListener('cancel', onCancel);
+  }, []);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -380,11 +705,154 @@ export function App() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [scene]);
 
+  // --- Print ---
+  const [printing, setPrinting] = useState(false);
+  const [autoCut, setAutoCut] = useState(() => localStorage.getItem(AUTOCUT_KEY) !== '0');
+  const handleAutoCutChange = useCallback((on: boolean) => {
+    setAutoCut(on);
+    localStorage.setItem(AUTOCUT_KEY, on ? '1' : '0');
+  }, []);
+  const printingRef = useRef(false);
+
+  // One connectionless printer session per mount. Its keepalive keeps the
+  // PT-P710BT awake (it auto-powers off after ~10 min idle); its status
+  // events — keepalive ticks and post-print statuses alike — feed the chip.
+  const printerRef = useRef<BrotherPrinter | null>(null);
+  useEffect(() => {
+    const printer = createBrotherPrinter();
+    printerRef.current = printer;
+    const off = printer.onStatus((status) => {
+      setPrinterReachable(status !== null);
+      if (status !== null) setPrinterLastSeen({ status, at: Date.now() });
+    });
+    return () => {
+      off();
+      printerRef.current = null;
+      printer.dispose();
+    };
+  }, []);
+
+  // Chip click: immediate status poll. The reply (or timeout) lands through
+  // the same onStatus stream the keepalive feeds, so the chip just updates.
+  const handlePrinterRefresh = useCallback(() => {
+    void printerRef.current?.queryStatus();
+  }, []);
+
+  const handlePrint = useCallback(async () => {
+    if (printingRef.current) return;
+    const printer = printerRef.current;
+    if (!printer) return;
+    const tapeWidthMm = parseInt(tapeSize, 10);
+    if (!('usb' in navigator) && !('serial' in navigator)) {
+      alert('Neither WebUSB nor Web Serial is supported in this browser. Use Chrome or Edge.');
+      return;
+    }
+    setPrinting(true);
+    printingRef.current = true;
+    try {
+      // Preflight: the printer tells us what tape it's holding, so a
+      // mismatched job (printer blinks red, generic error reply) is caught
+      // before it's sent. Unknown media (asleep printer, no usable width in
+      // the reply) proceeds — the printer stays the authority.
+      const loaded = await printer.queryMedia();
+      const mismatch = tapeMismatchMessage(tapeWidthMm, loaded?.tapeWidthMm ?? null);
+      if (mismatch) {
+        alert(mismatch);
+        return;
+      }
+      const media = Printers.ptP710bt.media(tapeWidthMm);
+      // Same drawOne as the screen path, through weasel's headless renderer —
+      // print is the screen's rendering at printer resolution.
+      const rgba = renderLabelToRgba({
+        scene,
+        drawOne: drawLabelNode,
+        labelLengthPt: labelLength,
+        tapeWidthPt: paperHeight,
+        printableDots: media.printableDots,
+        dpi: media.dpi,
+      });
+      const raster = rgbaToRaster(rgba, media, { algorithm: ditherAlgorithm });
+      const jobOpts = { tapeWidthMm, autoCut, marginDots: 0 };
+
+      let status: PrinterStatus;
+      try {
+        // Zero-click path: an already-granted device. The facade's mutex waits
+        // out any in-flight keepalive tick (≤2 s; Chrome's user-activation
+        // window comfortably outlives it if we fall through to the picker).
+        status = await printer.print(raster, jobOpts);
+      } catch (err) {
+        if (!(err instanceof NoGrantedDeviceError)) throw err;
+        if (localStorage.getItem(USB_GRANT_FLAG)) {
+          // One-shot hint: clearing the flag means a repeat click falls through to
+          // the picker, so a revoked permission can't dead-end the Print button.
+          localStorage.removeItem(USB_GRANT_FLAG);
+          alert(
+            'Printer not found — it may have auto-powered off. Press its power button, then print again.',
+          );
+          return;
+        }
+        await printer.requestDevice();
+        status = await printer.print(raster, jobOpts);
+      }
+      // A grant exists (the print went through) — remember for the
+      // asleep-vs-never-granted hint. Serial grants don't persist, so
+      // the flag stays USB-only.
+      if ('usb' in navigator) localStorage.setItem(USB_GRANT_FLAG, '1');
+      if (status.hasError) {
+        alert('Printer reported an error (check tape/cover).');
+      } else if (status.incomplete) {
+        alert('Print sent, but the printer status reply was incomplete — check the printer.');
+      }
+    } catch (err) {
+      // Dismissing the device/port picker is a normal cancel, not a failure.
+      if (err instanceof DOMException && err.name === 'NotFoundError') return;
+      alert(`Print failed: ${(err as Error).message}`);
+    } finally {
+      printingRef.current = false;
+      setPrinting(false);
+    }
+  }, [printing, tapeSize, scene, labelLength, paperHeight, autoCut, ditherAlgorithm]);
+
+  // Screen draw: same drawLabelNode as print, but with ink-dark node colors
+  // recolored to the cassette's ink first. Print keeps the raw node data (a
+  // white-ink remap would erase the label under the <128 luminance threshold).
+  const drawScreenNode = useCallback((node: LabelNode, pose: LabelPose, view: View) => {
+    const data = remapNodeInk(node.data, inkCss);
+    return drawLabelNode(data === node.data ? node : { ...node, data }, pose, view);
+  }, [inkCss]);
+
+  // --- Printable-bounds overlay ---
+  // Content outside the printable area won't print: print crops at the label
+  // length horizontally and at the printhead's reach vertically (the tape's
+  // top/bottom margins — labelRender renders only the centered printable
+  // band). Draw the scene twice: a faded full copy, then a crisp copy
+  // clipped to that band — anything unprintable reads as semitransparent.
+  // Commands and the clip path are world-space; weasel applies the view.
+  const printablePath = useMemo(
+    () => rectPath(0, printableBand.y, paperWidth, printableBand.height),
+    [printableBand, paperWidth],
+  );
+  const dimOffLabel = useCallback(
+    (cmds: DrawCommand[]): DrawCommand[] =>
+      cmds.length === 0
+        ? cmds
+        : [
+            { kind: 'group', alpha: 0.35, children: cmds },
+            { kind: 'group', clip: printablePath, children: cmds },
+          ],
+    [printablePath],
+  );
+
+  // While the print preview bitmap is up, the live scene draw is suppressed —
+  // the paper layer's dithered dots ARE the content. Selection handles stay.
+  const drawNothing = useCallback(() => [], []);
   const layers = useMemo(() => ({
     paper: { layer: paperLayer, before: 'scene' as const },
-    scene: { drawOne: drawLabelNode },
+    scene: previewBitmap
+      ? { drawOne: drawNothing }
+      : { drawOne: drawScreenNode, postProcess: dimOffLabel },
     selectionOverlay: { handles: { size: 5 } },
-  }), [paperLayer]);
+  }), [paperLayer, previewBitmap, drawNothing, drawScreenNode, dimOffLabel]);
 
   return (
     <DepRegistryProvider>
@@ -394,22 +862,21 @@ export function App() {
             <Toolbar
               tapeSize={tapeSize}
               onTapeSizeChange={setTapeSize}
-              autoLength={autoLength}
-              onAutoLengthChange={setAutoLength}
-              onAddImage={() => imageInputRef.current?.click()}
               labelLength={labelLength}
               onLabelLengthChange={setLabelLength}
               onExport={handleExport}
               onImport={() => fileInputRef.current?.click()}
-              onAddText={addText}
-              onAddRect={addRect}
-              onAddLine={addLine}
+              onPrint={handlePrint}
+              printDisabled={printing}
               zoomPercent={zoomPercent}
               onZoomIn={handleZoomIn}
               onZoomOut={handleZoomOut}
               onZoomSet={handleZoomSet}
               onZoomFit={handleZoomFit}
               onZoomReset={handleZoomReset}
+              printerLastSeen={printerLastSeen}
+              printerReachable={printerReachable}
+              onPrinterRefresh={handlePrinterRefresh}
             />
             <input
               ref={fileInputRef}
@@ -426,6 +893,14 @@ export function App() {
               onChange={handleImagePick}
             />
             <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+              {/* `view` hoisted so the hand tool sits right below select. */}
+              {tools && (
+                <ToolPalette
+                  tools={tools}
+                  orientation="vertical"
+                  groupOrder={['select', 'view', 'shape', 'draw', 'type']}
+                />
+              )}
               <div
                 ref={canvasContainerRef}
                 style={{ flex: 1, position: 'relative', overflow: 'hidden', background: '#e0e0e0', lineHeight: 0 }}
@@ -439,15 +914,45 @@ export function App() {
                     scene={scene}
                     selection={selection}
                     selectionMode="multi"
-                    toolBundle="standard"
+                    defaultTools={['select', 'hand', 'rect', 'line', 'text']}
+                    tools={toolsPatch}
+                    insertNodeFactories={insertNodeFactories}
+                    onToolsCreated={setTools}
                     selectTool={{ rotate: false }}
+                    // Truthy `viewport` registers the hand (pan) tool so it
+                    // appears in the palette. Wheel pan + zoom are on by default
+                    // regardless; this doesn't change them.
+                    viewport={{}}
                     view={view}
                     onViewChange={setView}
                     layers={layers}
                   />
                 )}
               </div>
-              <PropertyPanel scene={scene} />
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <PropertyPanel scene={scene} selection={selection} />
+                <PrinterPanel
+                  lastSeen={printerLastSeen}
+                  reachable={printerReachable}
+                  printing={printing}
+                  onRefresh={handlePrinterRefresh}
+                  autoCut={autoCut}
+                  onAutoCutChange={handleAutoCutChange}
+                  printPreview={printPreview}
+                  onPrintPreviewChange={handlePrintPreviewChange}
+                  ditherAlgorithm={ditherAlgorithm}
+                  onDitherAlgorithmChange={handleDitherAlgorithmChange}
+                />
+                <DebugPanel
+                  cassetteColorsEnabled={cassetteColorsEnabled}
+                  onCassetteColorsEnabledChange={handleCassetteColorsChange}
+                  tapeColorOverride={tapeColorOverride}
+                  onTapeColorOverrideChange={setTapeColorOverride}
+                  textColorOverride={textColorOverride}
+                  onTextColorOverrideChange={setTextColorOverride}
+                  liveStatus={liveStatus}
+                />
+              </div>
             </div>
           </div>
         </SelectionContextProvider>

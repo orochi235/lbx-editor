@@ -70,7 +70,10 @@ function lbxObjectToNode(obj: LabelObject): ImportedNode | null {
           fillColor: null,
         },
       };
-    case 'line':
+    case 'line': {
+      const pts = obj.points;
+      const descending =
+        pts && pts.length >= 2 ? (pts[1]!.x - pts[0]!.x) * (pts[1]!.y - pts[0]!.y) >= 0 : true;
       return {
         id: genId(),
         pose,
@@ -78,8 +81,10 @@ function lbxObjectToNode(obj: LabelObject): ImportedNode | null {
           kind: 'line',
           strokeStyle: obj.pen?.color ?? '#000000',
           strokeWidth: obj.pen?.widthX ?? 0.5,
+          descending,
         },
       };
+    }
     case 'image': {
       // Convert Uint8Array to base64
       const bytes = obj.imageData;

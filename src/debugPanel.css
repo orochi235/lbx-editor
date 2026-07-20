@@ -1,0 +1,45 @@
+.debug-panel {
+  flex: 1;
+  width: 240px;
+  border-left: 1px solid #ddd;
+  border-top: 1px solid #ddd;
+  background: #fafafa;
+  padding: 12px;
+  font-size: 12px;
+  overflow-y: auto;
+}
+
+.debug-panel h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+
+.debug-panel label {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.debug-panel select {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.debug-panel .debug-check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.debug-panel .debug-live {
+  color: #888;
+  margin-top: 8px;
+}
+
+.debug-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 1px solid #999;
+  margin-left: 6px;
+  vertical-align: middle;
+}
