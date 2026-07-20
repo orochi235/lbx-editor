@@ -21,9 +21,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # The editor builds against the *source* of two sibling repos (resolved
-      # by the Vite aliases / tsconfig paths), so all three are checked out as
-      # siblings: ../weasel and ../bil-lbx relative to the editor.
+      # The editor builds against the *source* of three sibling repos (resolved
+      # by the Vite aliases / tsconfig paths), so all are checked out as
+      # siblings: ../weasel, ../bil-lbx, and ../obwat relative to the editor.
       - name: Checkout lbx-editor
         uses: actions/checkout@v4
         with:
@@ -43,6 +43,13 @@ jobs:
           ref: main
           path: bil-lbx
 
+      - name: Checkout obwat (printing)
+        uses: actions/checkout@v4
+        with:
+          repository: orochi235/obwat
+          ref: main
+          path: obwat
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -57,6 +64,9 @@ jobs:
       - name: Install bil-lbx deps
         working-directory: bil-lbx
         run: npm ci
+
+      # obwat has no runtime deps — its source is bundled directly via the
+      # Vite alias, so no install step is needed.
 
       - name: Install editor deps
         working-directory: lbx-editor
