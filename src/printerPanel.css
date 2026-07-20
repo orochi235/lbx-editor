@@ -21,4 +21,14 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  margin-bottom: 8px;
+}
+
+.printer-panel__field {
+  display: block;
+}
+
+.printer-panel__field select {
+  width: 100%;
+  margin-top: 4px;
 }

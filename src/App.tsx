@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   SceneCanvas,
   useScene,
@@ -19,6 +19,7 @@ import {
   type NodeId,
   useImageTool,
   getImageBitmap,
+  subscribeImageReady,
   type ToolsApi,
   type InsertNodeFactory,
 } from '@weasel-js/core';
@@ -40,10 +41,12 @@ import { exportLbx } from './lbxExport';
 import { importLbx } from './lbxImport';
 import {
   rgbaToRaster,
+  ditherToMask,
   Printers,
   createBrotherPrinter,
   NoGrantedDeviceError,
   type BrotherPrinter,
+  type DitherAlgorithm,
   type PrinterStatus,
   type TapeColor,
   type TextColor,
@@ -51,7 +54,8 @@ import {
 import { printsAsInk, remapNodeInk, tapeColorCss, tapeIsClear, textColorCss } from './tapeColors';
 import { DebugPanel } from './DebugPanel';
 import { PrinterPanel } from './PrinterPanel';
-import { printableBandPt, renderLabelToRgba } from './labelRender';
+import { labelRenderPlan, printableBandPt, renderLabelToRgba } from './labelRender';
+import { maskToRgba } from './printPreview';
 import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
 import { fileToBase64, guessMimeType, getImageDimensions, imageDataUri } from './imageUtils';
@@ -72,6 +76,17 @@ const FIT_PADDING = 16;
 const USB_GRANT_FLAG = 'lbx-editor.hasUsbGrant';
 const AUTOCUT_KEY = 'lbx-editor.autoCut';
 const CASSETTE_COLORS_KEY = 'lbx-editor.cassetteColors';
+const PRINT_PREVIEW_KEY = 'lbx-editor.printPreview';
+const DITHER_KEY = 'lbx-editor.dither';
+
+const DITHER_ALGORITHMS: readonly DitherAlgorithm[] = [
+  'threshold', 'floyd-steinberg', 'atkinson', 'bayer',
+];
+
+function savedDitherAlgorithm(): DitherAlgorithm {
+  const v = localStorage.getItem(DITHER_KEY) as DitherAlgorithm | null;
+  return v && DITHER_ALGORITHMS.includes(v) ? v : 'threshold';
+}
 
 interface CanvasSize {
   width: number;
@@ -265,6 +280,91 @@ export function App() {
   const inkCss =
     (cassetteColorsEnabled ? textColorCss(textColorOverride ?? liveStatus?.textColor) : null) ?? '#000000';
 
+  // The printhead-reachable band of the current tape, in label points —
+  // shared by the dim overlay, the print-preview bitmap, and its placement.
+  const printableBand = useMemo(() => {
+    const media = Printers.ptP710bt.media(parseInt(tapeSize, 10));
+    return printableBandPt({
+      tapeWidthPt: paperHeight,
+      printableDots: media.printableDots,
+      dpi: media.dpi,
+    });
+  }, [tapeSize, paperHeight]);
+
+  // --- Dithered print preview ---
+  // Runs the real print pipeline (renderLabelToRgba → ditherToMask, default
+  // threshold — exactly what rgbaToRaster quantizes with) on every committed
+  // scene change and draws the resulting dots over the printable band; ink
+  // dots take the cassette ink color, everything else is transparent so the
+  // tape face shows through. One long-lived GL context is reused across
+  // renders; the debounce absorbs bursts of scene mutations.
+  const [printPreview, setPrintPreview] = useState(
+    () => localStorage.getItem(PRINT_PREVIEW_KEY) === '1',
+  );
+  const handlePrintPreviewChange = useCallback((on: boolean) => {
+    setPrintPreview(on);
+    localStorage.setItem(PRINT_PREVIEW_KEY, on ? '1' : '0');
+  }, []);
+  // Dither algorithm — one setting drives both the preview and the real
+  // print job (rgbaToRaster), so what you see is what the head lays down.
+  const [ditherAlgorithm, setDitherAlgorithm] = useState<DitherAlgorithm>(savedDitherAlgorithm);
+  const handleDitherAlgorithmChange = useCallback((algorithm: DitherAlgorithm) => {
+    setDitherAlgorithm(algorithm);
+    localStorage.setItem(DITHER_KEY, algorithm);
+  }, []);
+  const [previewBitmap, setPreviewBitmap] = useState<ImageBitmap | null>(null);
+  const previewGlRef = useRef<{ canvas: OffscreenCanvas; gl: WebGL2RenderingContext } | null>(null);
+  const sceneVersion = useSyncExternalStore(
+    useCallback((cb: () => void) => scene.subscribe(cb), [scene]),
+    () => scene.getVersion(),
+  );
+  // While the preview is up the live scene draw is suppressed, so nothing
+  // else pulls image nodes through the kit cache — the preview render itself
+  // starts the decode and this epoch re-runs it when the bitmap lands.
+  const [imageEpoch, setImageEpoch] = useState(0);
+  useEffect(() => subscribeImageReady(() => setImageEpoch((n) => n + 1)), []);
+  useEffect(() => {
+    if (!printPreview) {
+      setPreviewBitmap((prev) => {
+        prev?.close();
+        return null;
+      });
+      return;
+    }
+    const handle = setTimeout(() => {
+      if (!previewGlRef.current) {
+        const canvas = new OffscreenCanvas(1, 1);
+        const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, stencil: true });
+        if (!gl) return;
+        previewGlRef.current = { canvas, gl };
+      }
+      const { canvas, gl } = previewGlRef.current;
+      const media = Printers.ptP710bt.media(parseInt(tapeSize, 10));
+      const geometry = {
+        labelLengthPt: labelLength,
+        tapeWidthPt: paperHeight,
+        printableDots: media.printableDots,
+        dpi: media.dpi,
+      };
+      // Size the context's drawing buffer to this render before weasel uses it.
+      const plan = labelRenderPlan(geometry);
+      canvas.width = Math.max(1, Math.round(plan.sourceRect.width * plan.scale.x));
+      canvas.height = Math.max(1, Math.round(plan.sourceRect.height * plan.scale.y));
+      const rgba = renderLabelToRgba({ scene, drawOne: drawLabelNode, gl, ...geometry });
+      const mask = ditherToMask(rgba, { algorithm: ditherAlgorithm });
+      const pixels = maskToRgba(mask, rgba.width, rgba.height, inkCss);
+      const out = new OffscreenCanvas(rgba.width, rgba.height);
+      const ctx = out.getContext('2d')!;
+      ctx.putImageData(new ImageData(pixels, rgba.width, rgba.height), 0, 0);
+      const bmp = out.transferToImageBitmap();
+      setPreviewBitmap((prev) => {
+        prev?.close();
+        return bmp;
+      });
+    }, 120);
+    return () => clearTimeout(handle);
+  }, [printPreview, sceneVersion, imageEpoch, scene, tapeSize, labelLength, paperHeight, inkCss, ditherAlgorithm]);
+
   // --- Paper background layer ---
   // The tape is drawn as a black "raised brick": the shadow is the tape's
   // rectangle extruded down-right by `depth`, connected to the tape by
@@ -304,9 +404,21 @@ export function App() {
           // the border so the tape edge stays readable.
           stroke: { paint: { color: printsAsInk(tapeCss) ? '#888888' : '#000000' }, width: 0.5 },
         },
+        // Dithered print preview: the print pipeline's ink dots over the
+        // printable band (scene content is suppressed while this is up).
+        ...(previewBitmap
+          ? [{
+              kind: 'image' as const,
+              image: previewBitmap,
+              x: 0,
+              y: printableBand.y,
+              w: paperWidth,
+              h: printableBand.height,
+            }]
+          : []),
       ],
     };
-  }, [paperWidth, paperHeight, tapeCss, tapeClear]);
+  }, [paperWidth, paperHeight, tapeCss, tapeClear, previewBitmap, printableBand]);
 
   // --- Object creation via weasel tools ---
   // The palette activates weasel's built-in rect/line/text tools; their drag
@@ -580,7 +692,7 @@ export function App() {
         printableDots: media.printableDots,
         dpi: media.dpi,
       });
-      const raster = rgbaToRaster(rgba, media);
+      const raster = rgbaToRaster(rgba, media, { algorithm: ditherAlgorithm });
       const jobOpts = { tapeWidthMm, autoCut, marginDots: 0 };
 
       let status: PrinterStatus;
@@ -620,7 +732,7 @@ export function App() {
       printingRef.current = false;
       setPrinting(false);
     }
-  }, [printing, tapeSize, scene, labelLength, paperHeight, autoCut]);
+  }, [printing, tapeSize, scene, labelLength, paperHeight, autoCut, ditherAlgorithm]);
 
   // Screen draw: same drawLabelNode as print, but with ink-dark node colors
   // recolored to the cassette's ink first. Print keeps the raw node data (a
@@ -637,15 +749,10 @@ export function App() {
   // band). Draw the scene twice: a faded full copy, then a crisp copy
   // clipped to that band — anything unprintable reads as semitransparent.
   // Commands and the clip path are world-space; weasel applies the view.
-  const printablePath = useMemo(() => {
-    const media = Printers.ptP710bt.media(parseInt(tapeSize, 10));
-    const band = printableBandPt({
-      tapeWidthPt: paperHeight,
-      printableDots: media.printableDots,
-      dpi: media.dpi,
-    });
-    return rectPath(0, band.y, paperWidth, band.height);
-  }, [tapeSize, paperWidth, paperHeight]);
+  const printablePath = useMemo(
+    () => rectPath(0, printableBand.y, paperWidth, printableBand.height),
+    [printableBand, paperWidth],
+  );
   const dimOffLabel = useCallback(
     (cmds: DrawCommand[]): DrawCommand[] =>
       cmds.length === 0
@@ -657,11 +764,16 @@ export function App() {
     [printablePath],
   );
 
+  // While the print preview bitmap is up, the live scene draw is suppressed —
+  // the paper layer's dithered dots ARE the content. Selection handles stay.
+  const drawNothing = useCallback(() => [], []);
   const layers = useMemo(() => ({
     paper: { layer: paperLayer, before: 'scene' as const },
-    scene: { drawOne: drawScreenNode, postProcess: dimOffLabel },
+    scene: previewBitmap
+      ? { drawOne: drawNothing }
+      : { drawOne: drawScreenNode, postProcess: dimOffLabel },
     selectionOverlay: { handles: { size: 5 } },
-  }), [paperLayer, drawScreenNode, dimOffLabel]);
+  }), [paperLayer, previewBitmap, drawNothing, drawScreenNode, dimOffLabel]);
 
   return (
     <DepRegistryProvider>
@@ -747,6 +859,10 @@ export function App() {
                   onRefresh={handlePrinterRefresh}
                   autoCut={autoCut}
                   onAutoCutChange={handleAutoCutChange}
+                  printPreview={printPreview}
+                  onPrintPreviewChange={handlePrintPreviewChange}
+                  ditherAlgorithm={ditherAlgorithm}
+                  onDitherAlgorithmChange={handleDitherAlgorithmChange}
                 />
                 <DebugPanel
                   cassetteColorsEnabled={cassetteColorsEnabled}

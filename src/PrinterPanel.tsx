@@ -1,5 +1,13 @@
+import type { DitherAlgorithm } from 'obwat';
 import { PrinterStatusChip, type PrinterStatusChipProps } from './PrinterStatusChip';
 import './printerPanel.css';
+
+const DITHER_LABELS: Record<DitherAlgorithm, string> = {
+  'threshold': 'Threshold',
+  'floyd-steinberg': 'Floyd–Steinberg',
+  'atkinson': 'Atkinson',
+  'bayer': 'Bayer',
+};
 
 interface PrinterPanelProps {
   lastSeen: PrinterStatusChipProps['lastSeen'];
@@ -8,6 +16,11 @@ interface PrinterPanelProps {
   onRefresh: () => void;
   autoCut: boolean;
   onAutoCutChange: (on: boolean) => void;
+  printPreview: boolean;
+  onPrintPreviewChange: (on: boolean) => void;
+  /** Drives both the on-canvas preview and the print job's quantization. */
+  ditherAlgorithm: DitherAlgorithm;
+  onDitherAlgorithmChange: (algorithm: DitherAlgorithm) => void;
 }
 
 /** Sidebar panel for printer state and job settings. Shows the same status
@@ -19,6 +32,10 @@ export function PrinterPanel({
   onRefresh,
   autoCut,
   onAutoCutChange,
+  printPreview,
+  onPrintPreviewChange,
+  ditherAlgorithm,
+  onDitherAlgorithmChange,
 }: PrinterPanelProps) {
   return (
     <div className="printer-panel">
@@ -38,6 +55,28 @@ export function PrinterPanel({
           onChange={(e) => onAutoCutChange(e.target.checked)}
         />
         Auto cut
+      </label>
+      <label
+        className="printer-panel__check"
+        title="Show the label as the printer will render it: dithered black-and-white dots at print resolution"
+      >
+        <input
+          type="checkbox"
+          checked={printPreview}
+          onChange={(e) => onPrintPreviewChange(e.target.checked)}
+        />
+        Print preview
+      </label>
+      <label className="printer-panel__field" title="How colors and grays quantize to the printer's black dots — applies to the preview and the printed label alike">
+        Dithering
+        <select
+          value={ditherAlgorithm}
+          onChange={(e) => onDitherAlgorithmChange(e.target.value as DitherAlgorithm)}
+        >
+          {(Object.keys(DITHER_LABELS) as DitherAlgorithm[]).map((a) => (
+            <option key={a} value={a}>{DITHER_LABELS[a]}</option>
+          ))}
+        </select>
       </label>
     </div>
   );

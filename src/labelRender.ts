@@ -22,6 +22,10 @@ interface RenderArgs extends LabelGeometry {
    * (`drawLabelNode`) so print is pixel-for-pixel the screen's rendering.
    */
   drawOne: SceneViewDrawOne<LabelNodeData, LabelLayer, LabelPose>
+  /** Caller-owned WebGL2 context to render with (weasel never disposes it).
+   *  Lets repeat callers — the live print preview — reuse one context
+   *  instead of churning one per render. Omit for one-shot renders. */
+  gl?: WebGL2RenderingContext
 }
 
 /** The printable band's height and top offset in points: `printableDots` at
@@ -62,6 +66,6 @@ export function labelRenderPlan({ labelLengthPt, tapeWidthPt, printableDots, dpi
  * tape), height = printableDots. rasterCore's luminance<128 threshold
  * downstream turns this into monochrome dots.
  */
-export function renderLabelToRgba({ scene, drawOne, ...geometry }: RenderArgs): RgbaImage {
-  return renderSceneToPixels({ scene, drawOne, ...labelRenderPlan(geometry) })
+export function renderLabelToRgba({ scene, drawOne, gl, ...geometry }: RenderArgs): RgbaImage {
+  return renderSceneToPixels({ scene, drawOne, gl, ...labelRenderPlan(geometry) })
 }
