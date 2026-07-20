@@ -15,7 +15,7 @@
     "bil-lbx": "file:../bil-lbx",
     "fast-xml-parser": "^5.9.3",
     "jszip": "^3.10.1",
-    "obwat": "^0.1.0",
+    "obwat": "^0.2.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
