@@ -56,6 +56,7 @@ import { DebugPanel } from './DebugPanel';
 import { PrinterPanel } from './PrinterPanel';
 import { labelRenderPlan, printableBandPt, renderLabelToRgba } from './labelRender';
 import { maskToRgba } from './printPreview';
+import { equalCutMarks, sliceRasterAtCuts } from './cutMarks';
 import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
 import { fileToBase64, guessMimeType, getImageDimensions, imageDataUri } from './imageUtils';
@@ -184,8 +185,27 @@ export function App() {
   const [tapeSize, setTapeSize] = useState<TapeSize>(DEFAULT_TAPE);
   const [autoLength, setAutoLength] = useState(true);
   const [labelLength, setLabelLength] = useState(DEFAULT_LABEL_LENGTH);
+  // Cut positions (pt along the label): the printer cuts here, splitting the
+  // document into a strip of labels. Round-trips .lbx via style:cutLine.
+  const [cutMarks, setCutMarks] = useState<number[]>([]);
 
   const tape = TAPE_SIZES[tapeSize];
+
+  // The Labels control: N equal segments ↔ N-1 evenly spaced cut marks.
+  // Setting it replaces any custom (imported) marks with the equal split.
+  const handleLabelsCountChange = useCallback((n: number) => {
+    const labels = Math.max(1, Math.min(50, Math.round(n)));
+    setCutMarks(equalCutMarks(labelLength, labels));
+  }, [labelLength]);
+
+  // Marks past the end of a shortened label are meaningless — drop them.
+  useEffect(() => {
+    setCutMarks((marks) =>
+      marks.every((x) => x > 0 && x < labelLength)
+        ? marks
+        : marks.filter((x) => x > 0 && x < labelLength),
+    );
+  }, [labelLength]);
 
   // The "paper" is the printable area of the tape.
   // P-touch labels are landscape: tape width is the short dimension (height visually).
@@ -321,6 +341,7 @@ export function App() {
         tapeSize?: TapeSize;
         autoLength?: boolean;
         labelLength?: number;
+        cutMarks?: number[];
         scene?: Parameters<typeof scene.loadState>[0];
       };
       if (doc.tapeSize && doc.tapeSize in TAPE_SIZES) setTapeSize(doc.tapeSize);
@@ -328,6 +349,9 @@ export function App() {
         setLabelLength(doc.labelLength);
       }
       if (typeof doc.autoLength === 'boolean') setAutoLength(doc.autoLength);
+      if (Array.isArray(doc.cutMarks) && doc.cutMarks.every((x) => typeof x === 'number' && Number.isFinite(x))) {
+        setCutMarks(doc.cutMarks);
+      }
       if (doc.scene) {
         scene.loadState(doc.scene);
         bumpNodeIdCounter(scene.nodes.keys());
@@ -342,14 +366,14 @@ export function App() {
       try {
         localStorage.setItem(
           DOC_KEY,
-          JSON.stringify({ tapeSize, autoLength, labelLength, scene: scene.toJSON() }),
+          JSON.stringify({ tapeSize, autoLength, labelLength, cutMarks, scene: scene.toJSON() }),
         );
       } catch {
         // Storage full (huge embedded images) or unavailable — skip this save.
       }
     }, 300);
     return () => clearTimeout(handle);
-  }, [scene, sceneVersion, tapeSize, autoLength, labelLength]);
+  }, [scene, sceneVersion, tapeSize, autoLength, labelLength, cutMarks]);
 
   // --- Cassette-driven canvas colors ---
   // The printer's status replies (fed by keepalive ticks, see the printer
@@ -519,9 +543,16 @@ export function App() {
               h: printableBand.height,
             }]
           : []),
+        // Cut guides: dashed lines where the printer will cut the strip.
+        // Drawn last so they stay visible over the print preview.
+        ...cutMarks.map((x) => ({
+          kind: 'path' as const,
+          path: polygonFromPoints([{ x, y: 0 }, { x, y: paperHeight }]),
+          stroke: { paint: { color: '#e03131' }, width: 0.4, dash: [2, 2] },
+        })),
       ],
     };
-  }, [paperWidth, paperHeight, tapeCss, tapeClear, previewBitmap, printableBand]);
+  }, [paperWidth, paperHeight, tapeCss, tapeClear, previewBitmap, printableBand, cutMarks]);
 
   // --- Object creation via weasel tools ---
   // The palette activates weasel's built-in rect/line/text tools; their drag
@@ -691,7 +722,7 @@ export function App() {
     for (const [, node] of scene.nodes) {
       nodes.push({ id: node.id, data: node.data, pose: node.pose });
     }
-    const buf = await exportLbx(nodes, tapeSize, autoLength, labelLength);
+    const buf = await exportLbx(nodes, tapeSize, autoLength, labelLength, cutMarks);
     const blob = new Blob([buf as BlobPart], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -699,7 +730,7 @@ export function App() {
     a.download = 'label.lbx';
     a.click();
     URL.revokeObjectURL(url);
-  }, [scene, tapeSize, autoLength, labelLength]);
+  }, [scene, tapeSize, autoLength, labelLength, cutMarks]);
 
   // --- Import ---
   const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -710,6 +741,7 @@ export function App() {
     setTapeSize(result.tapeSize);
     setAutoLength(result.autoLength);
     setLabelLength(result.labelLength);
+    setCutMarks(result.cutMarks);
 
     // Clear existing scene
     for (const [id] of scene.nodes) {
@@ -796,6 +828,9 @@ export function App() {
         dpi: media.dpi,
       });
       const raster = rgbaToRaster(rgba, media, { algorithm: ditherAlgorithm });
+      // Cut marks slice the job into pages; the cutter fires between pages
+      // (with auto-cut on), printing the document as a strip of labels.
+      const job = sliceRasterAtCuts(raster, cutMarks, media.dpi);
       const jobOpts = { tapeWidthMm, autoCut, marginDots: 0 };
 
       let status: PrinterStatus;
@@ -803,7 +838,7 @@ export function App() {
         // Zero-click path: an already-granted device. The facade's mutex waits
         // out any in-flight keepalive tick (≤2 s; Chrome's user-activation
         // window comfortably outlives it if we fall through to the picker).
-        status = await printer.print(raster, jobOpts);
+        status = await printer.print(job, jobOpts);
       } catch (err) {
         if (!(err instanceof NoGrantedDeviceError)) throw err;
         if (localStorage.getItem(USB_GRANT_FLAG)) {
@@ -816,7 +851,7 @@ export function App() {
           return;
         }
         await printer.requestDevice();
-        status = await printer.print(raster, jobOpts);
+        status = await printer.print(job, jobOpts);
       }
       // A grant exists (the print went through) — remember for the
       // asleep-vs-never-granted hint. Serial grants don't persist, so
@@ -835,7 +870,7 @@ export function App() {
       printingRef.current = false;
       setPrinting(false);
     }
-  }, [printing, tapeSize, scene, labelLength, paperHeight, autoCut, ditherAlgorithm]);
+  }, [printing, tapeSize, scene, labelLength, paperHeight, autoCut, ditherAlgorithm, cutMarks]);
 
   // Screen draw: same drawLabelNode as print, but with ink-dark node colors
   // recolored to the cassette's ink first. Print keeps the raw node data (a
@@ -888,6 +923,8 @@ export function App() {
               onTapeSizeChange={setTapeSize}
               labelLength={labelLength}
               onLabelLengthChange={setLabelLength}
+              labelsCount={cutMarks.length + 1}
+              onLabelsCountChange={handleLabelsCountChange}
               onExport={handleExport}
               onImport={() => fileInputRef.current?.click()}
               onPrint={handlePrint}

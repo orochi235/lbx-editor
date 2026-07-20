@@ -25,6 +25,7 @@ export function sceneToLbxConfig(
   tapeSize: TapeSize,
   autoLength: boolean,
   labelLength?: number,
+  cutMarks: number[] = [],
 ): LabelConfig {
   const tape = TAPE_FORMAT_MAP[tapeSize];
   const objects: LbxObject[] = [];
@@ -90,6 +91,7 @@ export function sceneToLbxConfig(
       height: autoLength ? undefined : labelLength,
     },
     objects,
+    ...(cutMarks.length > 0 ? { cut: { freeCut: [...cutMarks].sort((a, b) => a - b) } } : {}),
   };
 }
 
@@ -98,7 +100,8 @@ export async function exportLbx(
   tapeSize: TapeSize,
   autoLength: boolean,
   labelLength?: number,
+  cutMarks: number[] = [],
 ): Promise<Uint8Array> {
-  const config = sceneToLbxConfig(nodes, tapeSize, autoLength, labelLength);
+  const config = sceneToLbxConfig(nodes, tapeSize, autoLength, labelLength, cutMarks);
   return await buildLbx(config);
 }

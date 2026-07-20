@@ -24,6 +24,9 @@ interface ToolbarProps {
   onTapeSizeChange: (size: TapeSize) => void;
   labelLength: number;
   onLabelLengthChange: (len: number) => void;
+  /** Segment count for the strip: N labels = N-1 evenly spaced cuts. */
+  labelsCount: number;
+  onLabelsCountChange: (n: number) => void;
   onExport: () => void;
   onImport: () => void;
   onPrint: () => void;
@@ -44,6 +47,8 @@ export function Toolbar({
   onTapeSizeChange,
   labelLength,
   onLabelLengthChange,
+  labelsCount,
+  onLabelsCountChange,
   onExport,
   onImport,
   onPrint,
@@ -93,6 +98,20 @@ export function Toolbar({
           style={{ width: '50px' }}
         />
         pt
+      </label>
+
+      <label
+        style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
+        title="Cut the strip into this many equal labels when printing"
+      >
+        Labels:
+        <input
+          type="number"
+          min={1}
+          value={labelsCount}
+          onChange={(e) => onLabelsCountChange(Number(e.target.value))}
+          style={{ width: '40px' }}
+        />
       </label>
 
       {/* Separator */}

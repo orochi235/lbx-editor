@@ -15,6 +15,9 @@ interface ImportResult {
   tapeSize: TapeSize;
   autoLength: boolean;
   labelLength: number;
+  /** Cut positions in pt along the label (style:cutLine — freeCut verbatim,
+   *  regularCut expanded into explicit positions). */
+  cutMarks: number[];
 }
 
 function detectTapeSize(widthPt: number): TapeSize {
@@ -120,5 +123,14 @@ export async function importLbx(file: File | ArrayBuffer): Promise<ImportResult>
     if (node) nodes.push(node);
   }
 
-  return { nodes, tapeSize, autoLength, labelLength };
+  // Cut marks: freeCut positions verbatim; a regularCut interval expands to
+  // explicit positions so the editor has one representation.
+  const cutMarks: number[] = [...(config.cut?.freeCut ?? [])];
+  const interval = config.cut?.regularCut ?? 0;
+  if (interval > 0) {
+    for (let x = interval; x < labelLength; x += interval) cutMarks.push(x);
+  }
+  cutMarks.sort((a, b) => a - b);
+
+  return { nodes, tapeSize, autoLength, labelLength, cutMarks };
 }

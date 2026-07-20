@@ -68,8 +68,12 @@ Key weasel APIs used:
 - Auto-length is hidden/unimplemented: the flag round-trips .lbx but layout
   always uses the explicit Length field.
 - The document autosaves to localStorage (`lbx-editor.doc`: scene JSON +
-  tape config, 300 ms debounce) and restores on load, so refreshes keep the
-  label being edited.
+  tape config + cut marks, 300 ms debounce) and restores on load, so
+  refreshes keep the label being edited.
+- Cut marks (`src/cutMarks.ts`): the toolbar's Labels control makes N-1
+  evenly spaced marks; dashed red guides show them; print slices the raster
+  into pages at the marks (obwat multi-page job — cutter fires between
+  pages); round-trips .lbx via bil-lbx's `cut` (`style:cutLine`).
 
 ## Governing rule
 
