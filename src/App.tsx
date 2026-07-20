@@ -445,16 +445,26 @@ export function App() {
   // to stay proportional across tape sizes.
   const paperLayer = useMemo<RenderLayer<unknown>>(() => {
     const depth = paperShadowDepth(paperHeight);
-    // The brick silhouette minus the front face: from the face's top-right,
-    // out to the back face's top-right, around its right + bottom, back to
-    // the face's bottom-left, then along the face's bottom and right edges.
+    // The brick silhouette minus the front face, sprung from the face
+    // stroke's OUTER boundary (the rect expanded by half the stroke width):
+    // attaching at the rect edge instead would leave the stroke's outer half
+    // poking past the top-right diagonal as a barb. From the outline's
+    // top-right, out to the back face's top-right, around its right +
+    // bottom, back to the outline's bottom-left, then along the outline's
+    // bottom and right edges.
+    const strokeW = 0.5;
+    const s = strokeW / 2;
+    const x0 = -s;
+    const y0 = -s;
+    const x1 = paperWidth + s;
+    const y1 = paperHeight + s;
     const shadow = polygonFromPoints([
-      { x: paperWidth, y: 0 },
-      { x: paperWidth + depth, y: depth },
-      { x: paperWidth + depth, y: paperHeight + depth },
-      { x: depth, y: paperHeight + depth },
-      { x: 0, y: paperHeight },
-      { x: paperWidth, y: paperHeight },
+      { x: x1, y: y0 },
+      { x: x1 + depth, y: y0 + depth },
+      { x: x1 + depth, y: y1 + depth },
+      { x: x0 + depth, y: y1 + depth },
+      { x: x0, y: y1 },
+      { x: x1, y: y1 },
     ]);
     return {
       id: 'paper',
@@ -471,7 +481,7 @@ export function App() {
           fill: { fill: 'solid', color: tapeCss, opacity: tapeClear ? 0.45 : 1 },
           // A dark tape face would vanish against its black brick — lighten
           // the border so the tape edge stays readable.
-          stroke: { paint: { color: printsAsInk(tapeCss) ? '#888888' : '#000000' }, width: 0.5 },
+          stroke: { paint: { color: printsAsInk(tapeCss) ? '#888888' : '#000000' }, width: strokeW },
         },
         // Dithered print preview: the print pipeline's ink dots over the
         // printable band (scene content is suppressed while this is up).
