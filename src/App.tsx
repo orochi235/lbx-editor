@@ -201,13 +201,30 @@ export function App() {
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState<CanvasSize>({ width: 0, height: 0 });
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: { x: 1, y: 1 } });
+  // Live mirror for callbacks that fire outside the render cycle (ResizeObserver).
+  const viewRef = useRef(view);
+  viewRef.current = view;
 
   const prevPaperSize = useRef({ w: paperWidth, h: paperHeight });
   const viewInitialized = useRef(false);
+  // The last view our own centering produced. While the live view still
+  // equals it (the user hasn't panned/zoomed), container resizes re-center
+  // instead of leaving the label drifting off-center.
+  const lastCenteredView = useRef<View | null>(null);
+
+  const applyCenteredView = useCallback((canvas: CanvasSize) => {
+    const { w, h } = prevPaperSize.current;
+    const v = centeredView(w, h, canvas);
+    lastCenteredView.current = v;
+    setView(v);
+  }, []);
 
   // Measure the container before paint and on resize. On the first valid
-  // measurement, center the paper at 100%. Resizing the container afterwards
-  // just changes the drawing surface — the view is left untouched.
+  // measurement, center the paper at 100%. Later resizes keep the label
+  // centered as long as the view is still the centered one — the palette and
+  // side panels mount a beat after the first measurement and shrink the
+  // container, which otherwise strands the label off-center. Once the user
+  // moves the view, resizes just change the drawing surface.
   useLayoutEffect(() => {
     const el = canvasContainerRef.current;
     if (!el) return;
@@ -215,20 +232,25 @@ export function App() {
       const width = el.clientWidth;
       const height = el.clientHeight;
       setCanvasSize({ width, height });
-      if (!viewInitialized.current && width > 0 && height > 0) {
+      if (width <= 0 || height <= 0) return;
+      if (!viewInitialized.current) {
         viewInitialized.current = true;
-        prevPaperSize.current = { w: paperWidth, h: paperHeight };
-        setView(centeredView(paperWidth, paperHeight, { width, height }));
+        applyCenteredView({ width, height });
+      } else {
+        // Compared OUTSIDE the state updater: mutating the ref inside a
+        // setView callback breaks under StrictMode's double-invocation.
+        const c = lastCenteredView.current;
+        const v = viewRef.current;
+        if (c && v.x === c.x && v.y === c.y && v.scale.x === c.scale.x && v.scale.y === c.scale.y) {
+          applyCenteredView({ width, height });
+        }
       }
     };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-    // Intentionally one-time: initial centering uses the mount-time paper size;
-    // later paper changes are handled by the fit effect below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [applyCenteredView]);
 
   // Fit the paper to the canvas whenever the paper size changes (tape/length
   // edits and imports both flow through here). The ref guard makes this a no-op
@@ -264,9 +286,11 @@ export function App() {
       fitViewToBounds(paperBounds(paperWidth, paperHeight), canvasSize, v, { padding: FIT_PADDING }),
     );
   }, [paperWidth, paperHeight, canvasSize]);
+  // One centering path for toolbar Reset, Cmd-0 (via viewport.recenter),
+  // and initial load.
   const handleZoomReset = useCallback(
-    () => setView(centeredView(paperWidth, paperHeight, canvasSize)),
-    [paperWidth, paperHeight, canvasSize],
+    () => applyCenteredView(canvasSize),
+    [applyCenteredView, canvasSize],
   );
 
   const scene = useScene<LabelNodeData, LabelLayer, LabelPose>({
@@ -921,8 +945,9 @@ export function App() {
                     selectTool={{ rotate: false }}
                     // Truthy `viewport` registers the hand (pan) tool so it
                     // appears in the palette. Wheel pan + zoom are on by default
-                    // regardless; this doesn't change them.
-                    viewport={{}}
+                    // regardless. `recenter` routes Cmd-0 through the same
+                    // center-the-label view as the toolbar Reset button.
+                    viewport={{ recenter: handleZoomReset }}
                     view={view}
                     onViewChange={setView}
                     layers={layers}
