@@ -703,13 +703,46 @@ export function App() {
     return () => input.removeEventListener('cancel', onCancel);
   }, []);
 
+  // Shared by the Open .lbx button and canvas drag-and-drop: replace the
+  // whole document with the file's contents.
+  const loadLbxFile = useCallback(async (file: File) => {
+    try {
+      const result = await importLbx(file);
+      setTapeSize(result.tapeSize);
+      setAutoLength(result.autoLength);
+      setLabelLength(result.labelLength);
+      setCutMarks(result.cutMarks);
+
+      // Clear existing scene
+      for (const [id] of scene.nodes) {
+        scene.remove(id);
+      }
+      // Insert imported nodes
+      for (const node of result.nodes) {
+        scene.add({
+          kind: 'leaf',
+          id: asNodeId(node.id),
+          layer: 'objects' as LabelLayer,
+          pose: node.pose,
+          data: node.data,
+        });
+      }
+    } catch {
+      alert(`Couldn't read "${file.name}" as a .lbx file.`);
+    }
+  }, [scene]);
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) {
+    if (!file) return;
+    // .lbx has no reliable MIME type (it's a zip) — go by extension.
+    if (file.name.toLowerCase().endsWith('.lbx')) {
+      void loadLbxFile(file);
+    } else if (file.type.startsWith('image/')) {
       addImageFromFile(file);
     }
-  }, [addImageFromFile]);
+  }, [loadLbxFile, addImageFromFile]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -736,30 +769,9 @@ export function App() {
   const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    const result = await importLbx(file);
-    setTapeSize(result.tapeSize);
-    setAutoLength(result.autoLength);
-    setLabelLength(result.labelLength);
-    setCutMarks(result.cutMarks);
-
-    // Clear existing scene
-    for (const [id] of scene.nodes) {
-      scene.remove(id);
-    }
-    // Insert imported nodes
-    for (const node of result.nodes) {
-      scene.add({
-        kind: 'leaf',
-        id: asNodeId(node.id),
-        layer: 'objects' as LabelLayer,
-        pose: node.pose,
-        data: node.data,
-      });
-    }
-
+    await loadLbxFile(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
-  }, [scene]);
+  }, [loadLbxFile]);
 
   // --- Print ---
   const [printing, setPrinting] = useState(false);
