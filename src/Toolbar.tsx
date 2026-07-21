@@ -40,6 +40,7 @@ interface ToolbarProps {
   printerLastSeen: PrinterStatusChipProps['lastSeen'];
   printerReachable: boolean;
   onPrinterRefresh: () => void;
+  onOpenPrefs: () => void;
 }
 
 export function Toolbar({
@@ -62,6 +63,7 @@ export function Toolbar({
   printerLastSeen,
   printerReachable,
   onPrinterRefresh,
+  onOpenPrefs,
 }: ToolbarProps) {
   return (
     <div style={{
@@ -151,6 +153,9 @@ export function Toolbar({
       <button onClick={onExport}>Export .lbx</button>
       <button type="button" onClick={onPrint} disabled={printDisabled} title="Print to label printer">
         Print
+      </button>
+      <button type="button" onClick={onOpenPrefs} title="Preferences" aria-label="Preferences">
+        ⚙
       </button>
     </div>
   );

@@ -1,13 +1,7 @@
 import type { DitherAlgorithm } from 'obwat';
 import { PrinterStatusChip, type PrinterStatusChipProps } from './PrinterStatusChip';
+import { DITHER_LABELS } from './prefs';
 import './printerPanel.css';
-
-const DITHER_LABELS: Record<DitherAlgorithm, string> = {
-  'threshold': 'Threshold',
-  'floyd-steinberg': 'Floyd–Steinberg',
-  'atkinson': 'Atkinson',
-  'bayer': 'Bayer',
-};
 
 interface PrinterPanelProps {
   lastSeen: PrinterStatusChipProps['lastSeen'];

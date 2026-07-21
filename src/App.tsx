@@ -23,10 +23,11 @@ import {
   type ToolsApi,
   type InsertNodeFactory,
 } from '@weasel-js/core';
-// Subpath import (not the `@weasel-js/ui` barrel) so tsc/vite only pull in the
-// ToolPalette module, not sibling components like DataGrid that trip a
+// Subpath imports (not the `@weasel-js/ui` barrel) so tsc/vite only pull in
+// the modules we use, not sibling components like DataGrid that trip a
 // duplicate-@types/react mismatch under this app's slightly newer React types.
 import { ToolPalette } from '@weasel-js/ui/components/ToolPalette';
+import { PrefsDialog } from '@weasel-js/ui/components/Prefs';
 import {
   TAPE_SIZES,
   DEFAULT_TAPE,
@@ -57,6 +58,7 @@ import { PrinterPanel } from './PrinterPanel';
 import { labelRenderPlan, printableBandPt, renderLabelToRgba } from './labelRender';
 import { maskToRgba } from './printPreview';
 import { equalCutMarks, sliceRasterAtCuts } from './cutMarks';
+import { PREFS_SCHEMA, type EditorPrefValues } from './prefs';
 import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
 import { fileToBase64, guessMimeType, getImageDimensions, imageDataUri } from './imageUtils';
@@ -782,6 +784,23 @@ export function App() {
   }, []);
   const printingRef = useRef(false);
 
+  // --- Preferences modal ---
+  // A second view over the settings the sidebar panels edit: each leaf path
+  // dispatches to the same persisting setter, so both surfaces stay in sync.
+  const [prefsOpen, setPrefsOpen] = useState(false);
+  const prefValues: EditorPrefValues = useMemo(() => ({
+    printing: { autoCut, printPreview, dithering: ditherAlgorithm },
+    canvas: { cassetteColors: cassetteColorsEnabled },
+  }), [autoCut, printPreview, ditherAlgorithm, cassetteColorsEnabled]);
+  const handlePrefChange = useCallback((path: string, value: unknown) => {
+    switch (path) {
+      case 'printing.autoCut': handleAutoCutChange(value as boolean); break;
+      case 'printing.printPreview': handlePrintPreviewChange(value as boolean); break;
+      case 'printing.dithering': handleDitherAlgorithmChange(value as DitherAlgorithm); break;
+      case 'canvas.cassetteColors': handleCassetteColorsChange(value as boolean); break;
+    }
+  }, [handleAutoCutChange, handlePrintPreviewChange, handleDitherAlgorithmChange, handleCassetteColorsChange]);
+
   // One connectionless printer session per mount. Its keepalive keeps the
   // PT-P710BT awake (it auto-powers off after ~10 min idle); its status
   // events — keepalive ticks and post-print statuses alike — feed the chip.
@@ -950,6 +969,14 @@ export function App() {
               printerLastSeen={printerLastSeen}
               printerReachable={printerReachable}
               onPrinterRefresh={handlePrinterRefresh}
+              onOpenPrefs={() => setPrefsOpen(true)}
+            />
+            <PrefsDialog
+              isOpen={prefsOpen}
+              onOpenChange={setPrefsOpen}
+              schema={PREFS_SCHEMA}
+              values={prefValues}
+              onChange={handlePrefChange}
             />
             <input
               ref={fileInputRef}
