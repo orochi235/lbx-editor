@@ -108,7 +108,7 @@ export async function exportLbx(
   // the file boundary, so the in-editor node keeps its original (smaller,
   // lossless-round-tripping) source bytes.
   for (const obj of config.objects) {
-    if (obj.type === 'image') obj.imageData = await ensureBmp32Bytes(obj.imageData);
+    if (obj.type === 'image') obj.imageData = await ensureBmp32Bytes(obj.imageData, obj.position);
   }
   return await buildLbx(config);
 }

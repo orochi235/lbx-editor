@@ -65,22 +65,42 @@ export async function base64ToImageBitmap(base64: string, mimeType = 'image/png'
   return createImageBitmap(blob);
 }
 
+/** Embedded-bitmap resolution: ~2× the printhead's 360 dpi (5 px/pt),
+ *  matching what native P-touch Editor stores (e.g. a 6.8pt object saved
+ *  as 73px ≈ 10.7 px/pt). Editing headroom without photo-sized files —
+ *  the .lbx zip is STOREd, so an uncapped 12MP source would embed as a
+ *  ~48MB BMP. */
+const EXPORT_PX_PER_PT = 10;
+
 /** Ensure image bytes are a BMP for .lbx embedding: BMPs pass through
  *  byte-for-byte (imported labels round-trip untouched); anything else
- *  (user-inserted PNG/JPEG/…) decodes in the browser and re-encodes as a
- *  32bpp RGB+alpha BMP via bil-lbx — the only raster encoding the format
- *  embeds, so entries named ObjectN.bmp actually contain BMP. */
-export async function ensureBmp32Bytes(bytes: Uint8Array): Promise<Uint8Array> {
+ *  (user-inserted PNG/JPEG/…) decodes in the browser, downsamples to the
+ *  object's on-label size at EXPORT_PX_PER_PT (never upscales), and
+ *  re-encodes as a 32bpp RGB+alpha BMP via bil-lbx — the only raster
+ *  encoding the format embeds, so entries named ObjectN.bmp actually
+ *  contain BMP. */
+export async function ensureBmp32Bytes(
+  bytes: Uint8Array,
+  poseSizePt: { width: number; height: number },
+): Promise<Uint8Array> {
   if (bytes.length >= 2 && bytes[0] === 0x42 && bytes[1] === 0x4d) return bytes;
   const bitmap = await createImageBitmap(new Blob([bytes as BlobPart]));
+  const scale = Math.min(
+    (poseSizePt.width * EXPORT_PX_PER_PT) / bitmap.width,
+    (poseSizePt.height * EXPORT_PX_PER_PT) / bitmap.height,
+    1,
+  );
+  const w = Math.max(1, Math.round(bitmap.width * scale));
+  const h = Math.max(1, Math.round(bitmap.height * scale));
   const canvas = document.createElement('canvas');
-  canvas.width = bitmap.width;
-  canvas.height = bitmap.height;
+  canvas.width = w;
+  canvas.height = h;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('canvas 2d context unavailable');
-  ctx.drawImage(bitmap, 0, 0);
-  const { data } = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
-  const bmp = encodeBmp32(data, bitmap.width, bitmap.height);
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  const { data } = ctx.getImageData(0, 0, w, h);
+  const bmp = encodeBmp32(data, w, h);
   bitmap.close();
   return bmp;
 }
