@@ -57,7 +57,10 @@ Key weasel APIs used:
   .lbx-embedded 32bpp BMPs are re-encoded as PNG in `imageDataUri` via
   bil-lbx's `decodeBmp32` (P-touch Editor macOS carries artwork in the BMP
   alpha byte, which browser decoders discard as reserved); nodes keep the
-  original BMP bytes so export round-trips.
+  original BMP bytes so export round-trips. On export the reverse runs:
+  non-BMP node bytes (user-inserted PNG/JPEG) transcode to 32bpp RGB+alpha
+  BMP via `ensureBmp32Bytes` → bil-lbx `encodeBmp32`, since .lbx embeds
+  only BMP.
 - Printer status chip is a button — click fires `queryStatus()`. obwat's
   keepalive polls fast (3 s) while the printer is absent, so power-on shows
   up on the chip within seconds.

@@ -3,6 +3,7 @@
  * the .lbx file.
  */
 import { buildLbx, TAPE, type LabelConfig, type LabelObject as LbxObject } from 'bil-lbx';
+import { ensureBmp32Bytes } from './imageUtils';
 import { lineEndpoints, type LabelNodeData, type LabelPose, type TapeSize } from './label';
 
 interface SceneNode {
@@ -103,5 +104,11 @@ export async function exportLbx(
   cutMarks: number[] = [],
 ): Promise<Uint8Array> {
   const config = sceneToLbxConfig(nodes, tapeSize, autoLength, labelLength, cutMarks);
+  // .lbx embeds only BMP: transcode user-inserted PNG/JPEG bytes here, at
+  // the file boundary, so the in-editor node keeps its original (smaller,
+  // lossless-round-tripping) source bytes.
+  for (const obj of config.objects) {
+    if (obj.type === 'image') obj.imageData = await ensureBmp32Bytes(obj.imageData);
+  }
   return await buildLbx(config);
 }

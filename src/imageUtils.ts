@@ -3,7 +3,7 @@
  * Handles loading images from files and creating ImageBitmaps for canvas rendering.
  */
 
-import { decodeBmp32 } from 'bil-lbx';
+import { decodeBmp32, encodeBmp32 } from 'bil-lbx';
 
 /** Read a File into a base64 data string (without the data: prefix) */
 export async function fileToBase64(file: File): Promise<string> {
@@ -63,6 +63,26 @@ export async function base64ToImageBitmap(base64: string, mimeType = 'image/png'
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   const blob = new Blob([bytes], { type: mimeType });
   return createImageBitmap(blob);
+}
+
+/** Ensure image bytes are a BMP for .lbx embedding: BMPs pass through
+ *  byte-for-byte (imported labels round-trip untouched); anything else
+ *  (user-inserted PNG/JPEG/…) decodes in the browser and re-encodes as a
+ *  32bpp RGB+alpha BMP via bil-lbx — the only raster encoding the format
+ *  embeds, so entries named ObjectN.bmp actually contain BMP. */
+export async function ensureBmp32Bytes(bytes: Uint8Array): Promise<Uint8Array> {
+  if (bytes.length >= 2 && bytes[0] === 0x42 && bytes[1] === 0x4d) return bytes;
+  const bitmap = await createImageBitmap(new Blob([bytes as BlobPart]));
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('canvas 2d context unavailable');
+  ctx.drawImage(bitmap, 0, 0);
+  const { data } = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+  const bmp = encodeBmp32(data, bitmap.width, bitmap.height);
+  bitmap.close();
+  return bmp;
 }
 
 /** Guess MIME type from filename */
