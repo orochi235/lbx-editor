@@ -54,12 +54,19 @@ Key weasel APIs used:
 - Images render through weasel's kit `imageCache` (data-URI keys via
   `imageDataUri`); SceneCanvas redraws when a decode lands, so no app-side
   bitmap cache. Undecodable picks alert and revert to the select tool.
+  .lbx-embedded 32bpp BMPs are re-encoded as PNG in `imageDataUri` via
+  bil-lbx's `decodeBmp32` (P-touch Editor macOS carries artwork in the BMP
+  alpha byte, which browser decoders discard as reserved); nodes keep the
+  original BMP bytes so export round-trips.
 - Printer status chip is a button — click fires `queryStatus()`. obwat's
   keepalive polls fast (3 s) while the printer is absent, so power-on shows
   up on the chip within seconds.
 - Printer panel in the right sidebar (between Properties and Debug): status
   chip (same component as the toolbar's), Auto cut, Print preview toggle,
   and the Dithering selector; future printer controls land there.
+- Preferences modal (toolbar gear → kit `PrefsDialog`, schema in
+  `src/prefs.ts`): a second live view over the same persisted settings the
+  panels edit (Auto cut, Print preview, Dithering, Cassette colors).
 - Print preview: runs the real print pipeline (renderLabelToRgba →
   ditherToMask) on each committed scene change and draws the ink dots over
   the printable band (ink color, transparent elsewhere) while suppressing
