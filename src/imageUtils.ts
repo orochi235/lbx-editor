@@ -3,6 +3,8 @@
  * Handles loading images from files and creating ImageBitmaps for canvas rendering.
  */
 
+import { decodeBmp32 } from 'bil-lbx';
+
 /** Read a File into a base64 data string (without the data: prefix) */
 export async function fileToBase64(file: File): Promise<string> {
   // FileReader encodes natively — the byte-loop + btoa alternative takes
@@ -20,14 +22,38 @@ const dataUriMemo = new WeakMap<object, string>();
 
 /** `data:` URI for an image node's embedded bytes — the cache key weasel's
  *  imageCache loads from. Memoized per data object so repeated draws hand the
- *  cache the same string instance instead of re-concatenating the base64. */
+ *  cache the same string instance instead of re-concatenating the base64.
+ *
+ *  32bpp BMPs (P-touch Editor macOS embeds) are re-encoded as PNG here: their
+ *  artwork lives in the alpha channel, which browser BMP decoders discard as
+ *  a reserved byte, rendering a solid black rectangle. The node keeps the
+ *  original BMP bytes so .lbx export round-trips untouched. */
 export function imageDataUri(data: { src: string; mimeType: string }): string {
   let uri = dataUriMemo.get(data);
   if (!uri) {
-    uri = `data:${data.mimeType};base64,${data.src}`;
+    uri = (data.mimeType === 'image/bmp' ? bmp32ToPngDataUri(data.src) : null)
+      ?? `data:${data.mimeType};base64,${data.src}`;
     dataUriMemo.set(data, uri);
   }
   return uri;
+}
+
+/** PNG data URI for a base64 32bpp BMP, or null when the bytes are any other
+ *  format (the browser decodes those correctly itself). */
+function bmp32ToPngDataUri(base64: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const decoded = decodeBmp32(bytes);
+  if (!decoded) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = decoded.width;
+  canvas.height = decoded.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.putImageData(new ImageData(decoded.rgba, decoded.width, decoded.height), 0, 0);
+  return canvas.toDataURL('image/png');
 }
 
 /** Create an ImageBitmap from base64-encoded image data */
