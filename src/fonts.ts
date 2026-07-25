@@ -8,6 +8,7 @@
  * registered families win over the substitution heuristic.
  */
 import { registerFont } from '@weasel-js/core';
+import type { LabelTextData } from './label';
 
 export const BUNDLED_FAMILIES = ['Inter', 'Barlow Condensed', 'JetBrains Mono'] as const;
 
@@ -64,6 +65,25 @@ export function substituteFontFamily(name: string): string {
 /** Families for the Property panel dropdown (bundled + local, sorted). */
 export function registeredFamilies(): string[] {
   return [...registered].sort();
+}
+
+/** .lbx horizontal alignment → weasel text align. LEFT and JUSTIFY both
+ *  render left (unchanged contract — weasel has no justify). */
+export function toWeaselAlign(h: LabelTextData['horizontalAlignment']): 'left' | 'center' | 'right' {
+  switch (h) {
+    case 'CENTER': return 'center';
+    case 'RIGHT': return 'right';
+    default: return 'left';
+  }
+}
+
+/** .lbx vertical alignment → weasel text verticalAlign. */
+export function toWeaselVerticalAlign(v: LabelTextData['verticalAlignment']): 'top' | 'center' | 'bottom' {
+  switch (v) {
+    case 'CENTER': return 'center';
+    case 'BOTTOM': return 'bottom';
+    default: return 'top';
+  }
 }
 
 interface LocalFontEntry {

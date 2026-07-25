@@ -6,6 +6,8 @@ import {
   registerFonts,
   BUNDLED_FAMILIES,
   _resetFontsForTests,
+  toWeaselAlign,
+  toWeaselVerticalAlign,
 } from './fonts';
 
 vi.mock('@weasel-js/core', () => ({
@@ -34,6 +36,23 @@ describe('registeredFamilies', () => {
   it('returns the bundled families sorted', () => {
     _resetFontsForTests();
     expect(registeredFamilies()).toEqual(['Barlow Condensed', 'Inter', 'JetBrains Mono']);
+  });
+});
+
+describe('toWeaselAlign', () => {
+  it('maps each .lbx horizontal alignment, with JUSTIFY falling back to left', () => {
+    expect(toWeaselAlign('LEFT')).toBe('left');
+    expect(toWeaselAlign('CENTER')).toBe('center');
+    expect(toWeaselAlign('RIGHT')).toBe('right');
+    expect(toWeaselAlign('JUSTIFY')).toBe('left');
+  });
+});
+
+describe('toWeaselVerticalAlign', () => {
+  it('maps each .lbx vertical alignment', () => {
+    expect(toWeaselVerticalAlign('TOP')).toBe('top');
+    expect(toWeaselVerticalAlign('CENTER')).toBe('center');
+    expect(toWeaselVerticalAlign('BOTTOM')).toBe('bottom');
   });
 });
 

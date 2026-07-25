@@ -65,7 +65,7 @@ import { PropertyPanel } from './PropertyPanel';
 import { fileToBase64, guessMimeType, getImageDimensions, imageDataUri } from './imageUtils';
 import { buildImageInsert, type PendingImage } from './imageInsert';
 import { tapeMismatchMessage } from './printPreflight';
-import { registerFonts, substituteFontFamily } from './fonts';
+import { registerFonts, substituteFontFamily, toWeaselAlign, toWeaselVerticalAlign } from './fonts';
 
 type LabelNode = SceneNode<LabelNodeData, LabelLayer, LabelPose>;
 
@@ -147,16 +147,12 @@ function drawLabelNode(node: LabelNode, pose: LabelPose, _view: View): DrawComma
           fontSize: data.fontSize,
           fontWeight: data.fontWeight,
           fontStyle: data.italic ? 'italic' : 'normal',
-          align: data.horizontalAlignment === 'CENTER' ? 'center'
-            : data.horizontalAlignment === 'RIGHT' ? 'right'
-            : 'left', // LEFT and JUSTIFY both render left (unchanged contract)
+          align: toWeaselAlign(data.horizontalAlignment),
           fill: { fill: 'solid', color: data.color },
         },
         width,   // maxWidth: word-wrap at the box
         height,  // box height for verticalAlign
-        data.verticalAlignment === 'CENTER' ? 'center'
-          : data.verticalAlignment === 'BOTTOM' ? 'bottom'
-          : 'top',
+        toWeaselVerticalAlign(data.verticalAlignment),
       )];
     }
     case 'rect':
@@ -201,6 +197,8 @@ export function App() {
   // having to interact with the canvas.
   const [fontsLoaded, setFontsLoaded] = useState(false);
   useEffect(() => {
+    // No cancellation guard on this async callback: App is the root
+    // component and never unmounts, so there's nothing to race.
     registerFonts().then(() => setFontsLoaded(true));
   }, []);
 
