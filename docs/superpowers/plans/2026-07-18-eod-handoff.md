@@ -80,8 +80,8 @@ asleep hint. The full pipeline prints real labels over USB from Chrome.
 6. **Deferred follow-ups** (from plan self-reviews, none blocking): vertical-squeeze
    print fidelity (margin-accurate rendering instead of squeeze), serial-path runtime
    fallback when a USB claim fails, `Toolbar` `printDisabled`-as-`printing` aliasing
-   (only valid while printing is the sole disable reason), weasel MSDF text as the
-   eventual screen-path replacement, JUSTIFY alignment renders as LEFT.
+   (only valid while printing is the sole disable reason), ~~weasel MSDF text as the
+   eventual screen-path replacement~~ **DONE 2026-07-25**, JUSTIFY alignment renders as LEFT.
 
 ## Hard constraints (unchanged)
 

@@ -92,6 +92,8 @@ function TextFields({ scene, nodeId, data }: {
     scene.update(nodeId, { data: { ...data, ...partial } });
   }, [scene, nodeId, data]);
 
+  const families = registeredFamilies();
+
   return (
     <div>
       <label className="prop-field">
@@ -107,12 +109,12 @@ function TextFields({ scene, nodeId, data }: {
           value={data.fontFamily}
           onChange={(e) => update({ fontFamily: e.target.value })}
         >
-          {!registeredFamilies().includes(data.fontFamily) && (
+          {!families.includes(data.fontFamily) && (
             <option value={data.fontFamily}>
               {data.fontFamily} → {substituteFontFamily(data.fontFamily)}
             </option>
           )}
-          {registeredFamilies().map((f) => (
+          {families.map((f) => (
             <option key={f} value={f}>{f}</option>
           ))}
         </select>

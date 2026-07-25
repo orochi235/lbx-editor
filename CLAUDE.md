@@ -40,7 +40,14 @@ Key weasel APIs used:
 ## Current state
 
 - Print renders through weasel's headless `renderSceneToPixels` with the same `drawOne` as the screen — print is the screen's rendering at printer resolution (WYSIWYG by construction). Uniform dpi/72 scale on both axes; only the tape's centered printable band renders (`printableBandPt` in `src/labelRender.ts`), and the canvas dims content outside it.
-- Text renders as real glyphs via a canvas rasterizer (`src/textRender.ts`) rasterized into a 4× bitmap cache (`src/textBitmapCache.ts`) used by both screen and print; weasel MSDF text remains the eventual replacement.
+- Text renders via weasel MSDF text (screen and print share the same
+  `textCommand` in `drawLabelNode`, so WYSIWYG holds). Bundled atlases
+  (Inter, Barlow Condensed, JetBrains Mono; 400+700, synthetic italic) in
+  `public/fonts/`; .lbx font names map through `substituteFontFamily`
+  (`src/fonts.ts`) without rewriting node data; personal atlases go in
+  gitignored `public/fonts/local/` + manifest (bake with weasel's
+  `npm run gen:font`). Text word-wraps at the box width; `\n` forces
+  breaks; JUSTIFY renders as LEFT.
 - Objects can be created, selected, moved, resized via weasel tools
 - Import/export .lbx files works end-to-end
 - Property panel for editing text, rect, and pose properties

@@ -6,6 +6,9 @@
  * a manifest.json: [{ "family", "weight", "style"?, "metrics", "atlas" }]
  * (metrics/atlas are file names relative to /fonts/local/). Locally
  * registered families win over the substitution heuristic.
+ *
+ * Also owns the .lbx→weasel alignment mappers (`toWeaselAlign`,
+ * `toWeaselVerticalAlign`).
  */
 import { registerFont } from '@weasel-js/core';
 import type { LabelTextData } from './label';
@@ -73,7 +76,7 @@ export function toWeaselAlign(h: LabelTextData['horizontalAlignment']): 'left' |
   switch (h) {
     case 'CENTER': return 'center';
     case 'RIGHT': return 'right';
-    default: return 'left';
+    case 'LEFT': case 'JUSTIFY': return 'left';
   }
 }
 
@@ -82,7 +85,7 @@ export function toWeaselVerticalAlign(v: LabelTextData['verticalAlignment']): 't
   switch (v) {
     case 'CENTER': return 'center';
     case 'BOTTOM': return 'bottom';
-    default: return 'top';
+    case 'TOP': return 'top';
   }
 }
 
