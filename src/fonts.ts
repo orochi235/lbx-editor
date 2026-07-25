@@ -11,7 +11,13 @@ import { registerFont } from '@weasel-js/core';
 
 export const BUNDLED_FAMILIES = ['Inter', 'Barlow Condensed', 'JetBrains Mono'] as const;
 
-const BUNDLED: { family: string; weight: number; file: string }[] = [
+interface BundledFontEntry {
+  family: string;
+  weight: number;
+  file: string;
+}
+
+const BUNDLED: BundledFontEntry[] = [
   { family: 'Inter', weight: 400, file: 'Inter-400' },
   { family: 'Inter', weight: 700, file: 'Inter-700' },
   { family: 'Barlow Condensed', weight: 400, file: 'BarlowCondensed-400' },
@@ -34,7 +40,7 @@ const SUBSTITUTIONS: Record<string, string> = {
   'Courier New': 'JetBrains Mono',
 };
 
-const registered = new Set<string>(BUNDLED_FAMILIES);
+let registered = new Set<string>(BUNDLED_FAMILIES);
 
 /** True for names that read as a condensed cut: "Condensed", "... Cn", or camelCase "...Cn...". */
 function looksCondensed(name: string): boolean {
@@ -70,12 +76,28 @@ interface LocalFontEntry {
 
 let fontsPromise: Promise<void> | null = null;
 
-/** Idempotent: kick off at startup; await before print/preview rasterizes. */
+/**
+ * Idempotent: kick off at startup; await before print/preview rasterizes.
+ *
+ * Best-effort, never rejects: a missing/malformed local manifest, a bad
+ * entry within it, or even a 404'd bundled asset is `console.warn`'d and
+ * skipped rather than failing the whole call — one broken font shouldn't
+ * wedge the print path (weasel already warns at draw time for a family
+ * with no registered variant). The returned promise resolves once every
+ * registration attempt has settled, success or failure; callers should
+ * gate print/preview on that settlement, not on every font having
+ * succeeded. There is no retry — a failed attempt stays failed until the
+ * next page load (`_resetFontsForTests` aside).
+ */
 export function registerFonts(): Promise<void> {
   fontsPromise ??= (async () => {
-    const bundled = BUNDLED.map((f) =>
-      registerFont(f.family, { weight: f.weight }, `/fonts/${f.file}.json`, `/fonts/${f.file}.png`),
-    );
+    const bundled = BUNDLED.map(async (f) => {
+      try {
+        await registerFont(f.family, { weight: f.weight }, `/fonts/${f.file}.json`, `/fonts/${f.file}.png`);
+      } catch (err) {
+        console.warn('lbx-editor: failed to register bundled font', f.family, err);
+      }
+    });
     const local = (async () => {
       let entries: LocalFontEntry[];
       try {
@@ -87,17 +109,27 @@ export function registerFonts(): Promise<void> {
       }
       await Promise.all(
         entries.map(async (e) => {
-          await registerFont(
-            e.family,
-            { weight: e.weight, style: e.style },
-            `/fonts/local/${e.metrics}`,
-            `/fonts/local/${e.atlas}`,
-          );
-          registered.add(e.family);
+          try {
+            await registerFont(
+              e.family,
+              { weight: e.weight, style: e.style },
+              `/fonts/local/${e.metrics}`,
+              `/fonts/local/${e.atlas}`,
+            );
+            registered.add(e.family);
+          } catch (err) {
+            console.warn('lbx-editor: failed to register local font', e.family, err);
+          }
         }),
       );
     })();
     await Promise.all([...bundled, local]);
   })();
   return fontsPromise;
+}
+
+/** Test helper. Do not call from product code. */
+export function _resetFontsForTests(): void {
+  registered = new Set<string>(BUNDLED_FAMILIES);
+  fontsPromise = null;
 }
