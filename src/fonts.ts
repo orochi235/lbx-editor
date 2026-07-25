@@ -12,6 +12,7 @@
  */
 import { registerFont } from '@weasel-js/core';
 import type { LabelTextData } from './label';
+import { registerCustomFonts } from './customFonts';
 
 export const BUNDLED_FAMILIES = ['Inter', 'Barlow Condensed', 'JetBrains Mono'] as const;
 
@@ -65,9 +66,16 @@ export function substituteFontFamily(name: string): string {
   return 'Inter';
 }
 
-/** Families for the Property panel dropdown (bundled + local, sorted). */
+/** Families for the Property panel dropdown (bundled + local + custom, sorted). */
 export function registeredFamilies(): string[] {
   return [...registered].sort();
+}
+
+/** Narrow hook for customFonts.ts to add a successfully-registered custom
+ *  family to this module's private `registered` set, without customFonts.ts
+ *  importing fonts.ts (that would cycle back through this file). */
+export function markFamilyRegistered(family: string): void {
+  registered.add(family);
 }
 
 /** .lbx horizontal alignment → weasel text align. LEFT and JUSTIFY both
@@ -146,7 +154,10 @@ export function registerFonts(): Promise<void> {
         }),
       );
     })();
-    await Promise.all([...bundled, local]);
+    const custom = registerCustomFonts(markFamilyRegistered).catch((err) => {
+      console.warn('lbx-editor: failed to register custom fonts', err);
+    });
+    await Promise.all([...bundled, local, custom]);
   })();
   return fontsPromise;
 }

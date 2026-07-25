@@ -56,6 +56,7 @@ import {
 import { printsAsInk, remapNodeInk, tapeColorCss, tapeIsClear, textColorCss } from './tapeColors';
 import { DebugPanel } from './DebugPanel';
 import { PrinterPanel } from './PrinterPanel';
+import { CustomFontsPanel } from './CustomFontsPanel';
 import { labelRenderPlan, printableBandPt, renderLabelToRgba } from './labelRender';
 import { maskToRgba } from './printPreview';
 import { equalCutMarks, sliceRasterAtCuts } from './cutMarks';
@@ -1089,6 +1090,7 @@ export function App() {
                   onTextColorOverrideChange={setTextColorOverride}
                   liveStatus={liveStatus}
                 />
+                <CustomFontsPanel />
               </div>
             </div>
           </div>
