@@ -191,3 +191,80 @@ describe('IndexedDB-less environments (no indexedDB global)', () => {
     expect(registerFont).not.toHaveBeenCalled();
   });
 });
+
+/** Minimal hand-rolled indexedDB stand-in (no fake-indexeddb dependency in
+ *  this repo) — just enough of the open/transaction/objectStore/getAll/put
+ *  surface to assert ordering: does `addCustomFont` call `put` only after
+ *  `registerFont` has resolved? */
+function makeFakeIndexedDb(putSpy: (record: unknown) => void) {
+  return {
+    open: () => {
+      const req: any = {};
+      const store = {
+        put: (record: unknown) => putSpy(record),
+        delete: () => {},
+        getAll: () => {
+          const getReq: any = { result: [] };
+          queueMicrotask(() => getReq.onsuccess?.());
+          return getReq;
+        },
+      };
+      const tx: any = { objectStore: () => store };
+      const db = {
+        objectStoreNames: { contains: () => true },
+        transaction: () => {
+          queueMicrotask(() => tx.oncomplete?.());
+          return tx;
+        },
+        close: () => {},
+      };
+      queueMicrotask(() => {
+        req.result = db;
+        req.onsuccess?.();
+      });
+      return req;
+    },
+  };
+}
+
+describe('addCustomFont: register-before-persist ordering', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.mocked(registerFont).mockReset();
+  });
+
+  it('does not persist a record when registerFont rejects', async () => {
+    const putSpy = vi.fn();
+    vi.stubGlobal('indexedDB', makeFakeIndexedDb(putSpy));
+    vi.mocked(registerFont).mockRejectedValue(new Error('malformed atlas'));
+
+    await expect(
+      addCustomFont({
+        family: 'Broken',
+        weight: 400,
+        style: 'normal',
+        metricsJson: GOOD_METRICS,
+        atlasBlob: new Blob(['fake-png']),
+      }),
+    ).rejects.toThrow('malformed atlas');
+
+    expect(putSpy).not.toHaveBeenCalled();
+  });
+
+  it('persists only after registerFont resolves', async () => {
+    const putSpy = vi.fn();
+    vi.stubGlobal('indexedDB', makeFakeIndexedDb(putSpy));
+    vi.mocked(registerFont).mockResolvedValue(undefined);
+
+    await addCustomFont({
+      family: 'Good',
+      weight: 400,
+      style: 'normal',
+      metricsJson: GOOD_METRICS,
+      atlasBlob: new Blob(['fake-png']),
+    });
+
+    expect(putSpy).toHaveBeenCalledTimes(1);
+    expect(putSpy.mock.calls[0][0]).toMatchObject({ family: 'Good', weight: 400, style: 'normal' });
+  });
+});

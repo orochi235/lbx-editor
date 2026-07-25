@@ -52,6 +52,13 @@ function openDb(): Promise<IDBDatabase> {
         db.createObjectStore(STORE_NAME, { keyPath: 'key' });
       }
     };
+    // Fires if a version bump (a future DB_VERSION increase) can't proceed
+    // because another tab holds an older-version connection open. DB_VERSION
+    // is 1 today so this can't happen yet — no retry/timeout machinery, just
+    // a warning so a future bump doesn't hang silently if it's ever added.
+    req.onblocked = () => {
+      console.warn('lbx-editor: IndexedDB open blocked by another open connection (old tab?)');
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
@@ -146,7 +153,12 @@ async function registerRecord(record: CustomFontRecord): Promise<void> {
   }
 }
 
-/** Validates, persists, and immediately registers a custom font. */
+/**
+ * Validates, registers, and persists a custom font — in that order.
+ * Registration runs first: if the atlas is malformed and weasel rejects it,
+ * nothing gets stored, so a bad upload doesn't leave a record that would
+ * warn-fail on every subsequent startup.
+ */
 export async function addCustomFont(input: CustomFontInput): Promise<void> {
   const check = validateMetricsJson(input.metricsJson);
   if (!check.ok) throw new Error(check.error);
@@ -157,18 +169,21 @@ export async function addCustomFont(input: CustomFontInput): Promise<void> {
     addedAt: Date.now(),
   };
 
+  await registerRecord(record);
+
   if (hasIndexedDb()) {
     const db = await openDb();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).put(record);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-    db.close();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).put(record);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } finally {
+      db.close();
+    }
   }
-
-  await registerRecord(record);
 }
 
 /** Lists stored custom fonts (metadata only, no blobs). No-ops to [] without
