@@ -43,9 +43,42 @@ On macOS, system and user fonts live under `/System/Library/Fonts`,
 `/Library/Fonts`, and `~/Library/Fonts`. Font Book (or `mdfind` on the
 PostScript name) can locate a specific style's `.ttf`/`.otf`/`.ttc` file.
 For Helvetica Neue Condensed specifically, look for `HelveticaNeue.ttc` in
-`/System/Library/Fonts/` — it's a collection, so you may need a font tool
-that can extract a single face, or source a standalone `.ttf`/`.otf` for the
-condensed weight you want.
+`/System/Library/Fonts/` — it's a collection; see the next section for
+extracting a face from it.
+
+## Extracting a face from a .ttc collection
+
+`gen:font` (via opentype.js) can't read `.ttc` TrueType Collections, and
+most macOS system fonts ship that way (`Futura.ttc`, `HelveticaNeue.ttc`).
+Extract the face you want with Python's fontTools first. macOS's system
+Python blocks `pip install` (PEP 668), so use a throwaway venv:
+
+```sh
+python3 -m venv /tmp/fonttools-venv
+/tmp/fonttools-venv/bin/pip install fonttools
+# (if pip is configured for a private index, add: --index-url https://pypi.org/simple
+#  and prefix the command with PIP_CONFIG_FILE=/dev/null)
+
+# List the faces in the collection:
+/tmp/fonttools-venv/bin/python -c "
+from fontTools.ttLib import TTCollection
+tc = TTCollection('/System/Library/Fonts/Supplemental/Futura.ttc')
+for i, f in enumerate(tc.fonts):
+    print(i, '|', f['name'].getDebugName(4), '| weight:', f['OS/2'].usWeightClass)
+"
+
+# Save the face you want (index from the listing above) as a loose .ttf:
+/tmp/fonttools-venv/bin/python -c "
+from fontTools.ttLib import TTCollection
+tc = TTCollection('/System/Library/Fonts/Supplemental/Futura.ttc')
+tc.fonts[3].save('/tmp/FuturaCondensedMedium.ttf')
+"
+```
+
+The saved `.ttf` then feeds `gen:font` as below. Tip: register the atlas
+under the exact font name your .lbx files use (e.g. family
+`Futura Condensed Medium`, or an alias entry for `FuturaT` pointing at the
+same files) so imported labels pick it up without any substitution.
 
 ## Baking an atlas
 
