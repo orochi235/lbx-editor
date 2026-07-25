@@ -20,6 +20,23 @@ per-machine, not part of the repo — see Licensing below.
 Locally registered families win over the substitution heuristic and show up
 in the Property panel dropdown once registered.
 
+## Two ways to load a baked atlas
+
+Both start from the same bake step below; they differ in where the files
+live afterwards:
+
+1. **In-app upload (easiest):** the "Custom fonts" panel in the right
+   sidebar (below Debug) has an "Add font…" picker. Select the baked
+   `.json` + `.png` pair together; family/weight/italic are prefilled from
+   the metrics and editable. The font registers immediately and persists in
+   the browser's IndexedDB — no files in the repo tree at all. Removing (or
+   re-uploading a corrected atlas for) a font takes effect on the next
+   reload.
+2. **`public/fonts/local/` + manifest:** drop the files in the gitignored
+   dir and list them in `manifest.json` (below). Useful when you want the
+   fonts served as plain files (e.g. shared across browser profiles or
+   synced by other means).
+
 ## Finding the font file
 
 On macOS, system and user fonts live under `/System/Library/Fonts`,

@@ -44,11 +44,12 @@ Key weasel APIs used:
   `textCommand` in `drawLabelNode`, so WYSIWYG holds). Bundled atlases
   (Inter, Barlow Condensed, JetBrains Mono; 400+700, synthetic italic) in
   `public/fonts/`; .lbx font names map through `substituteFontFamily`
-  (`src/fonts.ts`) without rewriting node data; personal atlases go in
-  gitignored `public/fonts/local/` + manifest (bake with weasel's
-  `npm run gen:font`; see docs/local-fonts.md for the local bake
-  walkthrough). Text word-wraps at the box width; `\n` forces
-  breaks; JUSTIFY renders as LEFT.
+  (`src/fonts.ts`) without rewriting node data; personal atlases (baked
+  with weasel's `npm run gen:font`) load either via the sidebar "Custom
+  fonts" panel (uploaded .json+.png pair persisted in IndexedDB,
+  `src/customFonts.ts`) or from gitignored `public/fonts/local/` +
+  manifest — see docs/local-fonts.md. Text word-wraps at the box width;
+  `\n` forces breaks; JUSTIFY renders as LEFT.
 - Objects can be created, selected, moved, resized via weasel tools
 - Import/export .lbx files works end-to-end
 - Property panel for editing text, rect, and pose properties
