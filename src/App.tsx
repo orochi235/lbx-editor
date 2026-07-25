@@ -20,6 +20,7 @@ import {
   useImageTool,
   getImageBitmap,
   subscribeImageReady,
+  textCommand,
   type ToolsApi,
   type InsertNodeFactory,
 } from '@weasel-js/core';
@@ -64,7 +65,7 @@ import { PropertyPanel } from './PropertyPanel';
 import { fileToBase64, guessMimeType, getImageDimensions, imageDataUri } from './imageUtils';
 import { buildImageInsert, type PendingImage } from './imageInsert';
 import { tapeMismatchMessage } from './printPreflight';
-import { getTextBitmap } from './textBitmapCache';
+import { registerFonts, substituteFontFamily } from './fonts';
 
 type LabelNode = SceneNode<LabelNodeData, LabelLayer, LabelPose>;
 
@@ -137,16 +138,26 @@ function drawLabelNode(node: LabelNode, pose: LabelPose, _view: View): DrawComma
 
   switch (data.kind) {
     case 'text': {
-      const bitmap = getTextBitmap(data, width, height);
-      if (bitmap) {
-        return [{ kind: 'image', image: bitmap, x, y, w: width, h: height }];
-      }
-      // Fallback: the old light frame so the node stays visible/selectable
-      return [{
-        kind: 'path',
-        path: rectPath(x, y, width, height),
-        stroke: { paint: { color: '#999999' }, width: 0.3 },
-      }];
+      return [textCommand(
+        x,
+        y,
+        data.text,
+        {
+          fontFamily: substituteFontFamily(data.fontFamily),
+          fontSize: data.fontSize,
+          fontWeight: data.fontWeight,
+          fontStyle: data.italic ? 'italic' : 'normal',
+          align: data.horizontalAlignment === 'CENTER' ? 'center'
+            : data.horizontalAlignment === 'RIGHT' ? 'right'
+            : 'left', // LEFT and JUSTIFY both render left (unchanged contract)
+          fill: { fill: 'solid', color: data.color },
+        },
+        width,   // maxWidth: word-wrap at the box
+        height,  // box height for verticalAlign
+        data.verticalAlignment === 'CENTER' ? 'center'
+          : data.verticalAlignment === 'BOTTOM' ? 'bottom'
+          : 'top',
+      )];
     }
     case 'rect':
       return [{
@@ -184,6 +195,15 @@ function drawLabelNode(node: LabelNode, pose: LabelPose, _view: View): DrawComma
 }
 
 export function App() {
+  // MSDF fonts register asynchronously; text draws blank (no glyphs) until
+  // this settles. Flipping this state forces the canvas layers to a new
+  // identity (see the `layers` memo below) so text appears without the user
+  // having to interact with the canvas.
+  const [fontsLoaded, setFontsLoaded] = useState(false);
+  useEffect(() => {
+    registerFonts().then(() => setFontsLoaded(true));
+  }, []);
+
   const [tapeSize, setTapeSize] = useState<TapeSize>(DEFAULT_TAPE);
   const [autoLength, setAutoLength] = useState(true);
   const [labelLength, setLabelLength] = useState(DEFAULT_LABEL_LENGTH);
@@ -450,7 +470,12 @@ export function App() {
       });
       return;
     }
-    const handle = setTimeout(() => {
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      // Text needs its MSDF atlases registered before renderLabelToRgba draws
+      // it; registerFonts() is idempotent so this is a no-op once settled.
+      await registerFonts();
+      if (cancelled) return;
       if (!previewGlRef.current) {
         const canvas = new OffscreenCanvas(1, 1);
         const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, stencil: true });
@@ -476,12 +501,19 @@ export function App() {
       const ctx = out.getContext('2d')!;
       ctx.putImageData(new ImageData(pixels, rgba.width, rgba.height), 0, 0);
       const bmp = out.transferToImageBitmap();
+      if (cancelled) {
+        bmp.close();
+        return;
+      }
       setPreviewBitmap((prev) => {
         prev?.close();
         return bmp;
       });
     }, 120);
-    return () => clearTimeout(handle);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
   }, [printPreview, sceneVersion, imageEpoch, scene, tapeSize, labelLength, paperHeight, inkCss, ditherAlgorithm]);
 
   // --- Paper background layer ---
@@ -848,6 +880,9 @@ export function App() {
         return;
       }
       const media = Printers.ptP710bt.media(tapeWidthMm);
+      // Text needs its MSDF atlases registered before renderLabelToRgba draws
+      // it; registerFonts() is idempotent so this is a no-op once settled.
+      await registerFonts();
       // Same drawOne as the screen path, through weasel's headless renderer —
       // print is the screen's rendering at printer resolution.
       const rgba = renderLabelToRgba({
@@ -942,7 +977,10 @@ export function App() {
       ? { drawOne: drawNothing }
       : { drawOne: drawScreenNode, postProcess: dimOffLabel },
     selectionOverlay: { handles: { size: 5 } },
-  }), [paperLayer, previewBitmap, drawNothing, drawScreenNode, dimOffLabel]);
+    // fontsLoaded isn't read here — it's a dependency only, so that the
+    // fonts-ready transition changes this object's identity and SceneCanvas
+    // redraws (mirroring how `previewBitmap` already does).
+  }), [paperLayer, previewBitmap, drawNothing, drawScreenNode, dimOffLabel, fontsLoaded]);
 
   return (
     <DepRegistryProvider>
