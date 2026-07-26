@@ -11,6 +11,7 @@ import type { EncodeResult } from './types';
 import { encodeCode39 } from './code39';
 import { encodeCode128 } from './code128';
 import { encodeEan } from './ean';
+import { encodeQr } from './qr';
 
 export interface EncodeRequest {
   protocol: BarcodeProtocol;
@@ -42,6 +43,11 @@ export function encodeBarcode(req: EncodeRequest): EncodeResult {
     case 'UPCA':
     case 'UPCE':
       return encodeEan(req.data, req.protocol, { zeroFill: req.zeroFill ?? false });
+    case 'QRCODE':
+      return encodeQr(req.data, {
+        ...(req.qrCode?.eccLevel !== undefined ? { eccLevel: req.qrCode.eccLevel } : {}),
+        ...(req.qrCode?.version !== undefined ? { version: req.qrCode.version } : {}),
+      });
     default:
       return { ok: false, reason: 'unsupported', detail: req.protocol };
   }
