@@ -10,7 +10,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { TAPE } from 'bil-lbx';
-import { TAPE_SIZES, type TapeSize } from './label';
+import { TAPE_SIZES, tapeWidthMm, type TapeSize } from './label';
 import { importLbx } from './lbxImport';
 import { exportLbx } from './lbxExport';
 
@@ -21,14 +21,19 @@ describe('tape width tables', () => {
     expect(TAPE_SIZES[size].width).toBe(TAPE[size].width);
   });
 
-  it('names every size so parseInt yields the millimetres obwat asks for', () => {
-    // App.tsx reaches the printer profile via `parseInt(tapeSize, 10)`. That
-    // holds only while every key is "<integer>mm" — a "3.5mm" key would parse
-    // to 3 and silently select the wrong media.
-    for (const size of SIZES) {
-      expect(size).toMatch(/^\d+mm$/);
-      expect(String(parseInt(size, 10))).toBe(size.replace('mm', ''));
-    }
+  it.each(SIZES)('%s declares the millimetres its name promises', (size) => {
+    // `tapeWidthMm` is what reaches obwat's media lookup. It's a declared
+    // field rather than a parse of the key, so this only has to hold the two
+    // in agreement — no key format is load-bearing, and a fractional tape
+    // ("3.5mm", which bil-lbx carries) states its own width honestly.
+    expect(tapeWidthMm(size)).toBe(Number(size.replace('mm', '')));
+  });
+
+  it.each(SIZES)('%s states the same tape in pt and mm', (size) => {
+    // The two widths describe one cassette: pt sizes the render, mm picks the
+    // media obwat encodes the job against. If they ever disagree by a tape
+    // size, the label renders for one cassette and prints for another.
+    expect((tapeWidthMm(size) / 25.4) * 72).toBeCloseTo(TAPE_SIZES[size].width, 0);
   });
 });
 

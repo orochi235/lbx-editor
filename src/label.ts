@@ -81,17 +81,33 @@ export interface LabelPose {
   height: number;
 }
 
-/** Standard tape sizes — width in pt, displayed height is the label length */
+/**
+ * Standard tape sizes. `width` is the tape's full width in pt (the paper height
+ * in the scene); the displayed height is the label length.
+ *
+ * `widthMm` is the same tape in millimetres — the unit obwat's media lookup is
+ * keyed by. It's carried explicitly rather than parsed back out of the key,
+ * because the key is a display string and not every tape P-touch supports has
+ * a whole number of millimetres in it: bil-lbx carries a 3.5mm tape, which
+ * `parseInt` reads as 3 and which obwat then answers with a computed media
+ * spec for a tape that doesn't exist. Nothing throws; the label just prints
+ * at the wrong width.
+ */
 export const TAPE_SIZES = {
-  '6mm': { width: 17, displayName: '6mm' },
-  '9mm': { width: 25.5, displayName: '9mm' },
-  '12mm': { width: 33.6, displayName: '12mm' },
-  '18mm': { width: 51, displayName: '18mm' },
-  '24mm': { width: 68, displayName: '24mm' },
-  '36mm': { width: 102, displayName: '36mm' },
+  '6mm': { width: 17, widthMm: 6, displayName: '6mm' },
+  '9mm': { width: 25.5, widthMm: 9, displayName: '9mm' },
+  '12mm': { width: 33.6, widthMm: 12, displayName: '12mm' },
+  '18mm': { width: 51, widthMm: 18, displayName: '18mm' },
+  '24mm': { width: 68, widthMm: 24, displayName: '24mm' },
+  '36mm': { width: 102, widthMm: 36, displayName: '36mm' },
 } as const;
 
 export type TapeSize = keyof typeof TAPE_SIZES;
+
+/** Tape width in millimetres — what obwat's `media()` and `profile()` want. */
+export function tapeWidthMm(size: TapeSize): number {
+  return TAPE_SIZES[size].widthMm;
+}
 
 export const DEFAULT_TAPE: TapeSize = '12mm';
 export const DEFAULT_LABEL_LENGTH = 200; // pt, for fixed-length labels

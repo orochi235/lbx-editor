@@ -36,6 +36,7 @@ import {
   TAPE_SIZES,
   DEFAULT_TAPE,
   DEFAULT_LABEL_LENGTH,
+  tapeWidthMm,
   lineEndpoints,
   type LabelNodeData,
   type LabelLayer,
@@ -517,7 +518,7 @@ export function App() {
   // The printhead-reachable band of the current tape, in label points —
   // shared by the dim overlay, the print-preview bitmap, and its placement.
   const printableBand = useMemo(() => {
-    const media = Printers.ptP710bt.media(parseInt(tapeSize, 10));
+    const media = Printers.ptP710bt.media(tapeWidthMm(tapeSize));
     return printableBandPt({
       tapeWidthPt: paperHeight,
       printableDots: media.printableDots,
@@ -532,7 +533,7 @@ export function App() {
   // offending node so the problem is attached to the thing that has it.
   const diagnostics = useMemo(() => {
     if (!documentWarnings) return [];
-    const media = Printers.ptP710bt.media(parseInt(tapeSize, 10));
+    const media = Printers.ptP710bt.media(tapeWidthMm(tapeSize));
     const nodes: CheckedNode[] = [];
     for (const [id, node] of scene.nodes) {
       nodes.push({ id: String(id), pose: node.pose, data: node.data });
@@ -636,7 +637,7 @@ export function App() {
         previewGlRef.current = { canvas, gl };
       }
       const { canvas, gl } = previewGlRef.current;
-      const media = Printers.ptP710bt.media(parseInt(tapeSize, 10));
+      const media = Printers.ptP710bt.media(tapeWidthMm(tapeSize));
       const geometry = {
         labelLengthPt: labelLength,
         tapeWidthPt: paperHeight,
@@ -1064,7 +1065,7 @@ export function App() {
     if (printingRef.current) return;
     const printer = printerRef.current;
     if (!printer) return;
-    const tapeWidthMm = parseInt(tapeSize, 10);
+    const widthMm = tapeWidthMm(tapeSize);
     if (!('usb' in navigator) && !('serial' in navigator)) {
       toast.error('Printing not supported here', {
         description: 'This browser has neither WebUSB nor Web Serial. Use Chrome or Edge.',
@@ -1108,13 +1109,13 @@ export function App() {
       // the reply) proceeds — the printer stays the authority.
       const loaded = await printer.queryMedia();
       const mismatch = preflightChecks
-        ? tapeMismatchMessage(tapeWidthMm, loaded?.tapeWidthMm ?? null)
+        ? tapeMismatchMessage(widthMm, loaded?.tapeWidthMm ?? null)
         : null;
       if (mismatch) {
         toast.error('Tape size mismatch', { description: mismatch });
         return;
       }
-      const media = Printers.ptP710bt.media(tapeWidthMm);
+      const media = Printers.ptP710bt.media(widthMm);
       // Text needs its MSDF atlases registered before renderLabelToRgba draws
       // it; registerFonts() is idempotent so this is a no-op once settled.
       await registerFonts();
@@ -1144,7 +1145,7 @@ export function App() {
       // Cut marks slice the job into pages; the cutter fires between pages
       // (with auto-cut on), printing the document as a strip of labels.
       const job = sliceRasterAtCuts(raster, cutMarks, media.dpi);
-      const jobOpts = { tapeWidthMm, autoCut, marginDots: 0 };
+      const jobOpts = { tapeWidthMm: widthMm, autoCut, marginDots: 0 };
 
       let status: PrinterStatus;
       try {
