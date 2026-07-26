@@ -8,6 +8,7 @@
  */
 import type { BarcodeProtocol } from 'bil-lbx';
 import type { EncodeResult } from './types';
+import { encodeCode39 } from './code39';
 
 export interface EncodeRequest {
   protocol: BarcodeProtocol;
@@ -28,6 +29,8 @@ export function parseRatio(barRatio: string | undefined): number {
  *  normal state the canvas renders as a placeholder. */
 export function encodeBarcode(req: EncodeRequest): EncodeResult {
   switch (req.protocol) {
+    case 'CODE39':
+      return encodeCode39(req.data, { ratio: parseRatio(req.barRatio) });
     default:
       return { ok: false, reason: 'unsupported', detail: req.protocol };
   }
