@@ -11,6 +11,23 @@ import type { BarcodeSymbol } from './types';
 /** Height reserved below a 1D symbol for its human-readable text, in pt. */
 export const HUMAN_READABLE_HEIGHT_PT = 8;
 
+/**
+ * Blank margin a scanner needs on each side to find where the symbol starts:
+ * 10 modules is the GS1 minimum shared by the 1D symbologies here, and the QR
+ * spec asks for 4 cells.
+ */
+export const QUIET_ZONE_MODULES_1D = 10;
+export const QUIET_ZONE_MODULES_2D = 4;
+
+/** The quiet zone for `symbol` drawn at `pose`, in pt. */
+export function quietZonePt(
+  symbol: BarcodeSymbol,
+  pose: { width: number; height: number },
+): number {
+  const modules = symbol.kind === '2d' ? QUIET_ZONE_MODULES_2D : QUIET_ZONE_MODULES_1D;
+  return modules * barcodeModulePt(symbol, pose);
+}
+
 export interface Rect {
   x: number;
   y: number;

@@ -84,6 +84,14 @@ Key weasel APIs used:
   the printable band (ink color, transparent elsewhere) while suppressing
   the live scene draw. The Dithering choice (threshold / Floyd–Steinberg /
   Atkinson / Bayer) feeds preview and print job alike.
+- Barcodes are exempt from dithering: `src/ditherProtect.ts` turns each
+  barcode's pose plus its quiet zone into dot-space rects and passes them as
+  obwat's `DitherOptions.protect`, which quantizes those pixels at plain
+  threshold and stops error diffusion at their boundary. Dithering is for
+  tone; a barcode's geometry is its payload, and diffusion carries a bar
+  edge's error into the bar beside it. obwat takes plain rectangles and
+  knows nothing about barcodes — what to protect is this app's call, so
+  hairlines or small type could join later.
 - Auto-length (toolbar "Auto") fits the label to its content: length =
   rightmost object edge + 5.6pt (`src/autoLength.ts`), refitted on every
   committed scene change. Content is never reflowed, only the tail moves.

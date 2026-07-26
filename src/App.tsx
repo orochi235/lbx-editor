@@ -72,6 +72,7 @@ import { PrinterPanel } from './PrinterPanel';
 import { CustomFontsPanel } from './CustomFontsPanel';
 import { labelRenderPlan, printableBandPt, renderLabelToRgba } from './labelRender';
 import { maskToRgba } from './printPreview';
+import { protectedRegions } from './ditherProtect';
 import { equalCutMarks, sliceRasterAtCuts } from './cutMarks';
 import { PREFS_SCHEMA, type EditorPrefValues } from './prefs';
 import { checkDocument, type CheckedNode, type Diagnostic } from './diagnostics';
@@ -649,7 +650,13 @@ export function App() {
       canvas.width = Math.max(1, Math.round(plan.sourceRect.width * plan.scale.x));
       canvas.height = Math.max(1, Math.round(plan.sourceRect.height * plan.scale.y));
       const rgba = renderLabelToRgba({ scene, drawOne: drawLabelNode, gl, ...geometry });
-      const mask = ditherToMask(rgba, { algorithm: ditherAlgorithm });
+      const mask = ditherToMask(rgba, {
+        algorithm: ditherAlgorithm,
+        protect: protectedRegions(scene.nodes.values(), {
+          band: printableBandPt(geometry),
+          dpi: geometry.dpi,
+        }),
+      });
       const pixels = maskToRgba(mask, rgba.width, rgba.height, inkCss);
       const out = new OffscreenCanvas(rgba.width, rgba.height);
       const ctx = out.getContext('2d')!;
@@ -1133,15 +1140,20 @@ export function App() {
       }
       // Same drawOne as the screen path, through weasel's headless renderer —
       // print is the screen's rendering at printer resolution.
-      const rgba = renderLabelToRgba({
-        scene,
-        drawOne: drawLabelNode,
+      const geometry = {
         labelLengthPt: labelLength,
         tapeWidthPt: paperHeight,
         printableDots: media.printableDots,
         dpi: media.dpi,
+      };
+      const rgba = renderLabelToRgba({ scene, drawOne: drawLabelNode, ...geometry });
+      const raster = rgbaToRaster(rgba, media, {
+        algorithm: ditherAlgorithm,
+        protect: protectedRegions(scene.nodes.values(), {
+          band: printableBandPt(geometry),
+          dpi: media.dpi,
+        }),
       });
-      const raster = rgbaToRaster(rgba, media, { algorithm: ditherAlgorithm });
       // Cut marks slice the job into pages; the cutter fires between pages
       // (with auto-cut on), printing the document as a strip of labels.
       const job = sliceRasterAtCuts(raster, cutMarks, media.dpi);

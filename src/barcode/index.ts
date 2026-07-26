@@ -5,7 +5,15 @@ export {
   isSupportedProtocol,
   type EncodeRequest,
 } from './encode';
-export { barcodeRects, barcodeModulePt, HUMAN_READABLE_HEIGHT_PT, type Rect } from './geometry';
+export {
+  barcodeRects,
+  barcodeModulePt,
+  quietZonePt,
+  HUMAN_READABLE_HEIGHT_PT,
+  QUIET_ZONE_MODULES_1D,
+  QUIET_ZONE_MODULES_2D,
+  type Rect,
+} from './geometry';
 export {
   barcodeModuleDots,
   moduleFitness,
