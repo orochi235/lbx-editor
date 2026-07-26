@@ -1,8 +1,8 @@
 # Handoff — `barcode-support`
 
-Branch: `barcode-support` (16 commits ahead of `main`, tree clean)
-Status: all green — `npx tsc --noEmit` clean, 191/191 tests pass.
-One dependency: **weasel commit `98b3ddab`** must be present (see [Cross-repo](#cross-repo-dependency)).
+Branch: `barcode-support` (18 commits ahead of `main`)
+Status: all green — `npx tsc --noEmit` clean, 203/203 tests pass.
+Depends on local weasel and bil-lbx — see [Cross-repo](#cross-repo-dependencies).
 
 ---
 
@@ -77,7 +77,8 @@ Deliberate split:
 - **Toast** for results of actions — print failed, file wouldn't parse.
   Every `alert()` is gone (`grep -c "alert(" src/App.tsx` → 0).
 
-Callout dismissal is **ours, not RAC's** — see [Gotchas](#gotchas).
+Callout dismissal is **ours, not RAC's** — weasel-ui's `onDismiss`, see
+[Gotchas](#gotchas).
 A blocked print clears all dismissals, so the reason the job was refused is put
 back on the object that caused it.
 
@@ -95,7 +96,25 @@ through `handlePrefChange` like the existing ones:
 
 ---
 
-## Cross-repo dependency
+## Cross-repo dependencies
+
+**`~/src/weasel` — two Callout changes, plus a layout move that isn't ours.**
+
+`Callout` gained `onDismiss`: the × or Escape, never the incidental close a
+non-modal popover does when focus or interaction leaves. It's what the
+diagnostic callout dismisses through.
+
+Separately, weasel's `main` moved `@weasel-js/core` into `packages/core/`
+(`core-to-packages`). Nothing in the app changed, but the wiring did:
+`tsconfig.json`'s paths and `vitest.config.ts` now point at
+`packages/core/src`, and the tests resolve weasel through `weaselAliases()`
+like the app does rather than through the linked package root, which is no
+longer a package with an entry. **If imports of `@weasel-js/core` stop
+resolving, check those two files against `scripts/vite-aliases.ts` first.**
+
+**`~/src/bil-lbx`** — `serializeLabel` derives `paper.format` from the width
+and rejects a config without one. Rebuild it (`npm run build`) after pulling;
+consumers use its `dist/`.
 
 **`~/src/weasel` commit `98b3ddab` — `fix(ui): re-anchor Callout when anchorRect changes`.**
 
@@ -114,32 +133,37 @@ check weasel is up to date first.**
 
 ## Gotchas
 
-**Callout dismissal can't go through `onOpenChange`.** A non-modal RAC popover
-closes when interaction *or focus* leaves it — in a canvas app that's every
-click on the artwork. `shouldCloseOnInteractOutside={() => false}` alone does
-not hold: the popover survives the click and then closes a few hundred ms later
-on focus. The working shape is `isOpen` pinned true while the finding stands,
-plus an app-owned footer button. Don't "simplify" this back to `showCloseButton`.
-
 **Dismissal is keyed per problem, not per callout** — `nodeId:code`, with keys
 pruned when no live finding matches. That's what makes fixing an object and
 re-breaking it raise the warning again instead of staying silenced.
 
-**`parseInt(tapeSize, 10)` is how the tape reaches obwat's media lookup.** It
-works only because every `TAPE_SIZES` key is `"<integer>mm"`. bil-lbx carries a
-`3.5mm` tape that would parse to `3` and silently select the wrong media.
-`tapeSize.test.ts` fails loudly if a non-integer key is ever added.
+**Callout dismissal still can't go through `onOpenChange`** — a non-modal RAC
+popover fires it when interaction or focus merely leaves, which on a canvas is
+every click on the artwork. It now goes through weasel-ui's `onDismiss`
+(the × or Escape only), with `isOpen` pinned true while the finding stands.
+Don't route it back through `onOpenChange`.
 
 **`detectTapeSize` is unbounded nearest-match** — any paper width maps to *some*
 tape (a 3.5mm file lands on 6mm). Deliberate: a label that opens on the wrong
 tape is recoverable where a refused import isn't.
 
-**Test fixtures**: `TAPE`'s keys are `'24mm'`, not `W24`. `TAPE.W24` is
-`undefined` and `buildLbx` silently falls back to 12mm — this cost real
-debugging time and looked like an import bug.
+### Fixed since the first draft
 
-**`.tmp-*` files** in the repo root are scratch (generated .lbx, screenshots).
-Delete them; they're untracked.
+Kept here because each one names a failure mode that doesn't announce itself.
+
+- **The tape's millimetres are declared, not parsed.** `TAPE_SIZES` carries
+  `widthMm` and `tapeWidthMm(size)` reaches obwat's media lookup; the old
+  `parseInt(tapeSize, 10)` held only while every key was `"<integer>mm"`, and
+  bil-lbx carries a `3.5mm` tape that parses to `3`. `tapeSize.test.ts` pins
+  each tape's pt and mm to the same cassette.
+- **bil-lbx no longer defaults a missing tape to 12mm.** `paper.format` is
+  derived from `paper.width` when absent, and a config with no usable width
+  throws instead of building. The shape that cost the debugging time —
+  `TAPE.W24` is `undefined`, so a 24mm label built as a 12mm one — now fails
+  at the call. The fixture in `lbxImport.test.ts` takes a `TAPE` key, so the
+  typo is also a compile error.
+- **`.tmp-*` is gitignored.** Scratch (generated .lbx, screenshots) in the repo
+  root no longer shows up as untracked noise.
 
 ---
 
