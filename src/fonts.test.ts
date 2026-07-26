@@ -86,6 +86,27 @@ describe('substituteFontFamily — installed (canvas) middle tier', () => {
     expect(substituteFontFamily('Futura')).toBe('Inter');
   });
 
+  it('baked registration evicts a family promoted to canvas tier before fonts settled', async () => {
+    // Race: the autosaved doc renders (promoting installed families to the
+    // canvas tier) before the async local-manifest registration lands.
+    stubFontsCheck(true);
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => [
+        { family: 'Futura', weight: 400, metrics: 'f.json', atlas: 'f.png' },
+      ],
+    })));
+    expect(substituteFontFamily('Futura')).toBe('Futura'); // canvas tier, pre-manifest
+    expect(isCanvasFamily('Futura')).toBe(true);
+
+    await registerFonts(); // baked local registration settles
+
+    expect(isCanvasFamily('Futura')).toBe(false);
+    expect(installedFamilies()).not.toContain('Futura');
+    expect(canvasFontsInUse(['Futura'])).toEqual([]);
+    expect(substituteFontFamily('Futura')).toBe('Futura'); // still resolves, now baked
+  });
+
   it('canvasFontsInUse reports only canvas-tier families', () => {
     stubFontsCheck(true);
     substituteFontFamily('Futura'); // becomes canvas-registered

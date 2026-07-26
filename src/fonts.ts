@@ -125,9 +125,16 @@ export function canvasFontsInUse(families: Iterable<string>): string[] {
 
 /** Narrow hook for customFonts.ts to add a successfully-registered custom
  *  family to this module's private `registered` set, without customFonts.ts
- *  importing fonts.ts (that would cycle back through this file). */
+ *  importing fonts.ts (that would cycle back through this file).
+ *
+ *  Also evicts the family from the canvas tier: a doc restored from
+ *  autosave can render (promoting its installed families to canvas-SDF)
+ *  before async baked registration settles, and once a baked atlas exists
+ *  it should own the family — no duplicate dropdown entry, no false
+ *  print-portability warning. */
 export function markFamilyRegistered(family: string): void {
   registered.add(family);
+  canvasFamilies.delete(family);
 }
 
 /** .lbx horizontal alignment → weasel text align. LEFT and JUSTIFY both
@@ -199,7 +206,7 @@ export function registerFonts(): Promise<void> {
               `/fonts/local/${e.metrics}`,
               `/fonts/local/${e.atlas}`,
             );
-            registered.add(e.family);
+            markFamilyRegistered(e.family);
           } catch (err) {
             console.warn('lbx-editor: failed to register local font', e.family, err);
           }
