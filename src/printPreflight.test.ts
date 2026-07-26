@@ -41,11 +41,11 @@ describe('unrenderableBarcodeMessage', () => {
 
 describe('undersizedBarcodeMessage', () => {
   it('blocks when a barcode is under a dot per module', () => {
-    expect(undersizedBarcodeMessage(1)).toContain('1 barcode is');
+    expect(undersizedBarcodeMessage(1)).toContain('has 1 barcode scaled too small');
   });
 
   it('pluralizes', () => {
-    expect(undersizedBarcodeMessage(2)).toContain('2 barcodes are');
+    expect(undersizedBarcodeMessage(2)).toContain('has 2 barcodes scaled too small');
   });
 
   it('passes when every barcode is big enough', () => {

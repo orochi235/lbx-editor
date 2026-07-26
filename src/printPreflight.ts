@@ -46,7 +46,7 @@ export function unrenderableBarcodeMessage(count: number): string | null {
  */
 export function undersizedBarcodeMessage(count: number): string | null {
   if (count <= 0) return null;
-  const noun = count === 1 ? '1 barcode is' : `${count} barcodes are`;
+  const noun = count === 1 ? '1 barcode' : `${count} barcodes`;
   return (
     `This label has ${noun} scaled too small to print — the bars are narrower ` +
     `than a single printer dot, so they'd merge into a smear instead of a ` +

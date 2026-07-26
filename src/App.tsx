@@ -31,6 +31,7 @@ import {
 import { ToolPalette } from '@weasel-js/ui/components/ToolPalette';
 import { PrefsDialog } from '@weasel-js/ui/components/Prefs';
 import { Callout } from '@weasel-js/ui/components/Callout';
+import { ToastRegion, toast } from '@weasel-js/ui/components/Toast';
 import {
   TAPE_SIZES,
   DEFAULT_TAPE,
@@ -72,7 +73,7 @@ import { labelRenderPlan, printableBandPt, renderLabelToRgba } from './labelRend
 import { maskToRgba } from './printPreview';
 import { equalCutMarks, sliceRasterAtCuts } from './cutMarks';
 import { PREFS_SCHEMA, type EditorPrefValues } from './prefs';
-import { checkDocument, type CheckedNode } from './diagnostics';
+import { checkDocument, type CheckedNode, type Diagnostic } from './diagnostics';
 import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
 import { fileToBase64, guessMimeType, getImageDimensions, imageDataUri } from './imageUtils';
@@ -537,13 +538,29 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentWarnings, scene, sceneVersion, tapeSize, labelLength, printableBand]);
 
+  // Dismissed findings, keyed by node and check. Dismissal is per *problem*,
+  // not per callout: fixing an object and breaking it again re-raises it,
+  // because the key stops matching a live finding and gets pruned below.
+  const [dismissedDiagnostics, setDismissedDiagnostics] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const diagnosticKey = (d: Diagnostic) => `${d.nodeId}:${d.code}`;
+
+  useEffect(() => {
+    const live = new Set(diagnostics.map(diagnosticKey));
+    setDismissedDiagnostics((prev) => {
+      const kept = [...prev].filter((k) => live.has(k));
+      return kept.length === prev.size ? prev : new Set(kept);
+    });
+  }, [diagnostics]);
+
   // One callout at a time: a stack of popovers over the canvas would obscure
   // the very objects they're about. Errors first — those block printing —
   // then document order, so the remaining findings surface as each is fixed.
-  const activeDiagnostic = useMemo(
-    () => diagnostics.find((d) => d.severity === 'error') ?? diagnostics[0] ?? null,
-    [diagnostics],
-  );
+  const activeDiagnostic = useMemo(() => {
+    const showing = diagnostics.filter((d) => !dismissedDiagnostics.has(diagnosticKey(d)));
+    return showing.find((d) => d.severity === 'error') ?? showing[0] ?? null;
+  }, [diagnostics, dismissedDiagnostics]);
 
   // Client-space rect of the flagged node: the view is a camera, so world
   // point minus view origin, scaled, offset by the canvas's own position.
@@ -847,7 +864,9 @@ export function App() {
       });
       selection.set([id]);
     } catch {
-      alert(`Couldn't read "${file.name}" as an image — Chrome may not decode this format.`);
+      toast.error('Image not readable', {
+        description: `Chrome may not decode "${file.name}". Try a PNG or JPEG.`,
+      });
     }
   }, [scene, selection, paperWidth, paperHeight]);
 
@@ -873,7 +892,9 @@ export function App() {
       // drag silently inserts nothing (the factory rejects on null pending).
       pendingImageRef.current = null;
       if (toolsRef.current?.active === 'image') toolsRef.current.setActive('select');
-      alert(`Couldn't read "${file.name}" as an image — Chrome may not decode this format.`);
+      toast.error('Image not readable', {
+        description: `Chrome may not decode "${file.name}". Try a PNG or JPEG.`,
+      });
     }
   }, [paperWidth, paperHeight]);
 
@@ -932,7 +953,9 @@ export function App() {
         });
       }
     } catch {
-      alert(`Couldn't read "${file.name}" as a .lbx file.`);
+      toast.error('Not a readable .lbx', {
+        description: `"${file.name}" couldn't be parsed as a P-touch label file.`,
+      });
     }
   }, [scene]);
 
@@ -1034,7 +1057,9 @@ export function App() {
     if (!printer) return;
     const tapeWidthMm = parseInt(tapeSize, 10);
     if (!('usb' in navigator) && !('serial' in navigator)) {
-      alert('Neither WebUSB nor Web Serial is supported in this browser. Use Chrome or Edge.');
+      toast.error('Printing not supported here', {
+        description: 'This browser has neither WebUSB nor Web Serial. Use Chrome or Edge.',
+      });
       return;
     }
     // Preflight before touching the printer: a barcode we can't encode draws
@@ -1056,7 +1081,10 @@ export function App() {
     const barcodeProblem = unrenderableBarcodeMessage(unrenderable)
       ?? undersizedBarcodeMessage(undersized);
     if (barcodeProblem) {
-      alert(barcodeProblem);
+      // Re-raise every dismissed callout: the job is being refused over a
+      // problem the user may have waved away, so put it back on the object.
+      setDismissedDiagnostics(new Set());
+      toast.error('Print blocked', { description: barcodeProblem });
       return;
     }
 
@@ -1070,7 +1098,7 @@ export function App() {
       const loaded = await printer.queryMedia();
       const mismatch = tapeMismatchMessage(tapeWidthMm, loaded?.tapeWidthMm ?? null);
       if (mismatch) {
-        alert(mismatch);
+        toast.error('Tape size mismatch', { description: mismatch });
         return;
       }
       const media = Printers.ptP710bt.media(tapeWidthMm);
@@ -1083,10 +1111,11 @@ export function App() {
       }
       const machineFonts = canvasFontsInUse(machineFamilies);
       if (machineFonts.length > 0) {
-        alert(
-          `Heads up: this label uses fonts installed on this machine (${machineFonts.join(', ')}). ` +
-          'It will print correctly here; machines without them will substitute.',
-        );
+        toast.info('Using fonts from this machine', {
+          description:
+            `${machineFonts.join(', ')} — this label prints correctly here, but machines ` +
+            'without those fonts will substitute.',
+        });
       }
       // Same drawOne as the screen path, through weasel's headless renderer —
       // print is the screen's rendering at printer resolution.
@@ -1116,9 +1145,10 @@ export function App() {
           // One-shot hint: clearing the flag means a repeat click falls through to
           // the picker, so a revoked permission can't dead-end the Print button.
           localStorage.removeItem(USB_GRANT_FLAG);
-          alert(
-            'Printer not found — it may have auto-powered off. Press its power button, then print again.',
-          );
+          toast.error('Printer not found', {
+            description:
+              'It may have auto-powered off. Press its power button, then print again.',
+          });
           return;
         }
         await printer.requestDevice();
@@ -1129,14 +1159,18 @@ export function App() {
       // the flag stays USB-only.
       if ('usb' in navigator) localStorage.setItem(USB_GRANT_FLAG, '1');
       if (status.hasError) {
-        alert('Printer reported an error (check tape/cover).');
+        toast.error('Printer reported an error', {
+          description: 'Check the tape and that the cover is closed.',
+        });
       } else if (status.incomplete) {
-        alert('Print sent, but the printer status reply was incomplete — check the printer.');
+        toast.warning('Print sent, status unclear', {
+          description: "The printer's status reply was incomplete — check the printer.",
+        });
       }
     } catch (err) {
       // Dismissing the device/port picker is a normal cancel, not a failure.
       if (err instanceof DOMException && err.name === 'NotFoundError') return;
-      alert(`Print failed: ${(err as Error).message}`);
+      toast.error('Print failed', { description: (err as Error).message });
     } finally {
       printingRef.current = false;
       setPrinting(false);
@@ -1223,6 +1257,10 @@ export function App() {
               values={prefValues}
               onChange={handlePrefChange}
             />
+            {/* Results of things the user just did — a print that failed, a
+                file that wouldn't parse. Document problems get an anchored
+                callout instead, since those have an object to point at. */}
+            <ToastRegion />
             <input
               ref={fileInputRef}
               type="file"
@@ -1274,10 +1312,9 @@ export function App() {
                     layers={layers}
                   />
                 )}
-                {/* Non-modal and uncloseable by design: it reports a live
-                    condition, so dismissing it would only bring it back on the
-                    next edit. Fixing the object clears it; the Document
-                    warnings preference turns the whole class off. */}
+                {/* Dismissable, but the dismissal only holds while the label
+                    is being edited: a blocked print clears them all, so the
+                    reason the job won't go is back in front of the user. */}
                 {activeDiagnostic && diagnosticAnchor && (
                   <Callout
                     isOpen
@@ -1285,7 +1322,12 @@ export function App() {
                     placement="top"
                     tone={activeDiagnostic.severity === 'error' ? 'danger' : 'warning'}
                     title={activeDiagnostic.title}
-                    showCloseButton={false}
+                    showCloseButton
+                    onOpenChange={(open) => {
+                      if (open) return;
+                      const key = `${activeDiagnostic.nodeId}:${activeDiagnostic.code}`;
+                      setDismissedDiagnostics((prev) => new Set(prev).add(key));
+                    }}
                     aria-label={activeDiagnostic.title}
                   >
                     <p>{activeDiagnostic.detail}</p>
