@@ -25,6 +25,7 @@ export interface EditorPrefValues {
   };
   canvas: {
     cassetteColors: boolean;
+    documentWarnings: boolean;
   };
 }
 
@@ -67,6 +68,14 @@ export const PREFS_SCHEMA: PrefGroup = {
           name: 'Cassette colors',
           description:
             "Preview the loaded cassette's tape and ink colors on the canvas (print is unaffected)",
+          default: true,
+        },
+        documentWarnings: {
+          kind: 'boolean',
+          name: 'Document warnings',
+          description:
+            'Point out objects that will not print correctly — barcodes too small to scan, ' +
+            'or anything overhanging the printable area. Printing still blocks on problems it cannot render.',
           default: true,
         },
       },

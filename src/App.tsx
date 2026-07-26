@@ -30,6 +30,7 @@ import {
 // duplicate-@types/react mismatch under this app's slightly newer React types.
 import { ToolPalette } from '@weasel-js/ui/components/ToolPalette';
 import { PrefsDialog } from '@weasel-js/ui/components/Prefs';
+import { Callout } from '@weasel-js/ui/components/Callout';
 import {
   TAPE_SIZES,
   DEFAULT_TAPE,
@@ -71,6 +72,7 @@ import { labelRenderPlan, printableBandPt, renderLabelToRgba } from './labelRend
 import { maskToRgba } from './printPreview';
 import { equalCutMarks, sliceRasterAtCuts } from './cutMarks';
 import { PREFS_SCHEMA, type EditorPrefValues } from './prefs';
+import { checkDocument, type CheckedNode } from './diagnostics';
 import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
 import { fileToBase64, guessMimeType, getImageDimensions, imageDataUri } from './imageUtils';
@@ -105,6 +107,7 @@ const FIT_PADDING = 16;
 const USB_GRANT_FLAG = 'lbx-editor.hasUsbGrant';
 const AUTOCUT_KEY = 'lbx-editor.autoCut';
 const CASSETTE_COLORS_KEY = 'lbx-editor.cassetteColors';
+const DOCUMENT_WARNINGS_KEY = 'lbx-editor.documentWarnings';
 const PRINT_PREVIEW_KEY = 'lbx-editor.printPreview';
 const DITHER_KEY = 'lbx-editor.dither';
 /** Autosaved document (scene + tape config) — restored on load so a refresh
@@ -484,6 +487,13 @@ export function App() {
     setCassetteColorsEnabled(on);
     localStorage.setItem(CASSETTE_COLORS_KEY, on ? '1' : '0');
   }, []);
+  const [documentWarnings, setDocumentWarnings] = useState(
+    () => localStorage.getItem(DOCUMENT_WARNINGS_KEY) !== '0',
+  );
+  const handleDocumentWarningsChange = useCallback((on: boolean) => {
+    setDocumentWarnings(on);
+    localStorage.setItem(DOCUMENT_WARNINGS_KEY, on ? '1' : '0');
+  }, []);
   const [tapeColorOverride, setTapeColorOverride] = useState<TapeColor | null>(null);
   const [textColorOverride, setTextColorOverride] = useState<TextColor | null>(null);
 
@@ -505,6 +515,52 @@ export function App() {
       dpi: media.dpi,
     });
   }, [tapeSize, paperHeight]);
+
+  // --- Live document checks ---
+  // Conditions the canvas draws faithfully but the printer can't honor: a
+  // barcode too fine for the printhead, an object past the printable area.
+  // Recomputed on every committed scene change; the callout anchors to the
+  // offending node so the problem is attached to the thing that has it.
+  const diagnostics = useMemo(() => {
+    if (!documentWarnings) return [];
+    const media = Printers.ptP710bt.media(parseInt(tapeSize, 10));
+    const nodes: CheckedNode[] = [];
+    for (const [id, node] of scene.nodes) {
+      nodes.push({ id: String(id), pose: node.pose, data: node.data });
+    }
+    return checkDocument(nodes, {
+      labelLengthPt: labelLength,
+      band: printableBand,
+      dpi: media.dpi,
+    });
+    // sceneVersion is the commit signal — scene mutates in place.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentWarnings, scene, sceneVersion, tapeSize, labelLength, printableBand]);
+
+  // One callout at a time: a stack of popovers over the canvas would obscure
+  // the very objects they're about. Errors first — those block printing —
+  // then document order, so the remaining findings surface as each is fixed.
+  const activeDiagnostic = useMemo(
+    () => diagnostics.find((d) => d.severity === 'error') ?? diagnostics[0] ?? null,
+    [diagnostics],
+  );
+
+  // Client-space rect of the flagged node: the view is a camera, so world
+  // point minus view origin, scaled, offset by the canvas's own position.
+  const diagnosticAnchor = useMemo(() => {
+    if (!activeDiagnostic) return undefined;
+    const node = scene.get(activeDiagnostic.nodeId as NodeId);
+    const container = canvasContainerRef.current;
+    if (!node || !container) return undefined;
+    const r = container.getBoundingClientRect();
+    return {
+      x: r.left + (node.pose.x - view.x) * view.scale.x,
+      y: r.top + (node.pose.y - view.y) * view.scale.y,
+      width: node.pose.width * view.scale.x,
+      height: node.pose.height * view.scale.y,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDiagnostic, scene, sceneVersion, view, canvasSize]);
 
   // --- Dithered print preview ---
   // Runs the real print pipeline (renderLabelToRgba → ditherToMask, default
@@ -936,16 +992,17 @@ export function App() {
   const [prefsOpen, setPrefsOpen] = useState(false);
   const prefValues: EditorPrefValues = useMemo(() => ({
     printing: { autoCut, printPreview, dithering: ditherAlgorithm },
-    canvas: { cassetteColors: cassetteColorsEnabled },
-  }), [autoCut, printPreview, ditherAlgorithm, cassetteColorsEnabled]);
+    canvas: { cassetteColors: cassetteColorsEnabled, documentWarnings },
+  }), [autoCut, printPreview, ditherAlgorithm, cassetteColorsEnabled, documentWarnings]);
   const handlePrefChange = useCallback((path: string, value: unknown) => {
     switch (path) {
       case 'printing.autoCut': handleAutoCutChange(value as boolean); break;
       case 'printing.printPreview': handlePrintPreviewChange(value as boolean); break;
       case 'printing.dithering': handleDitherAlgorithmChange(value as DitherAlgorithm); break;
       case 'canvas.cassetteColors': handleCassetteColorsChange(value as boolean); break;
+      case 'canvas.documentWarnings': handleDocumentWarningsChange(value as boolean); break;
     }
-  }, [handleAutoCutChange, handlePrintPreviewChange, handleDitherAlgorithmChange, handleCassetteColorsChange]);
+  }, [handleAutoCutChange, handlePrintPreviewChange, handleDitherAlgorithmChange, handleCassetteColorsChange, handleDocumentWarningsChange]);
 
   // One connectionless printer session per mount. Its keepalive keeps the
   // PT-P710BT awake (it auto-powers off after ~10 min idle); its status
@@ -1216,6 +1273,29 @@ export function App() {
                     onViewChange={setView}
                     layers={layers}
                   />
+                )}
+                {/* Non-modal and uncloseable by design: it reports a live
+                    condition, so dismissing it would only bring it back on the
+                    next edit. Fixing the object clears it; the Document
+                    warnings preference turns the whole class off. */}
+                {activeDiagnostic && diagnosticAnchor && (
+                  <Callout
+                    isOpen
+                    anchorRect={diagnosticAnchor}
+                    placement="top"
+                    tone={activeDiagnostic.severity === 'error' ? 'danger' : 'warning'}
+                    title={activeDiagnostic.title}
+                    showCloseButton={false}
+                    aria-label={activeDiagnostic.title}
+                  >
+                    <p>{activeDiagnostic.detail}</p>
+                    {diagnostics.length > 1 && (
+                      <p>
+                        {diagnostics.length - 1} other{' '}
+                        {diagnostics.length === 2 ? 'object needs' : 'objects need'} attention.
+                      </p>
+                    )}
+                  </Callout>
                 )}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
