@@ -2,6 +2,7 @@
  * Label-specific types bridging the weasel scene graph and the bil-lbx
  * serialization format. Each scene node carries one of these as its `data`.
  */
+import type { BarcodeProtocol, QrEccLevel } from 'bil-lbx';
 
 export interface LabelTextData {
   kind: 'text';
@@ -40,7 +41,36 @@ export interface LabelImageData {
   mimeType: string;
 }
 
-export type LabelNodeData = LabelTextData | LabelRectData | LabelLineData | LabelImageData;
+/**
+ * Mirrors bil-lbx's BarcodeObject minus `type`/`position` — those live in the
+ * node's kind and pose. Kept field-for-field so import/export is a rename
+ * rather than a lossy projection.
+ *
+ * .lbx stores barcodes semantically (protocol + payload + parameters, never a
+ * raster), so `src/barcode/` encodes them for display and print.
+ */
+export interface LabelBarcodeData {
+  kind: 'barcode';
+  protocol: BarcodeProtocol;
+  data: string;
+  /** Narrow-module width in pt as the file recorded it. Geometry uses the pose
+   *  instead — this is re-derived from the pose on export. */
+  barWidth: number;
+  /** Narrow:wide ratio for the symbologies that have one, e.g. "1:3". */
+  barRatio: string;
+  humanReadable: boolean;
+  humanReadableAlignment: 'LEFT' | 'CENTER' | 'RIGHT';
+  checkDigit: boolean;
+  zeroFill: boolean;
+  qrCode?: { model?: number; eccLevel?: QrEccLevel; cellSize?: number; version?: string };
+}
+
+export type LabelNodeData =
+  | LabelTextData
+  | LabelRectData
+  | LabelLineData
+  | LabelImageData
+  | LabelBarcodeData;
 
 export type LabelLayer = 'objects';
 

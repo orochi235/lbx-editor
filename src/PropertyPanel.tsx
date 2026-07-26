@@ -24,6 +24,7 @@ const KIND_NAMES: Record<LabelNodeData['kind'], string> = {
   rect: 'Rectangle',
   line: 'Line',
   image: 'Image',
+  barcode: 'Barcode',
 };
 
 export function PropertyPanel({ scene, selection }: PropertyPanelProps) {

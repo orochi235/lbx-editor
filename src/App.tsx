@@ -187,6 +187,15 @@ function drawLabelNode(node: LabelNode, pose: LabelPose, _view: View): DrawComma
         stroke: { paint: { color: '#cccccc' }, width: 0.5 },
       }];
     }
+    case 'barcode':
+      // Real rendering lands with src/barcode/geometry; until then a visible
+      // box beats an invisible node the user can't select or move.
+      return [{
+        kind: 'path',
+        path: rectPath(x, y, width, height),
+        fill: { fill: 'solid', color: '#f6f6f6' },
+        stroke: { paint: { color: '#999999' }, width: 0.5 },
+      }];
     default:
       return [];
   }

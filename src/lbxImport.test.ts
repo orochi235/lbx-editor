@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import JSZip from 'jszip';
-import { buildLbx, type LabelConfig } from 'bil-lbx';
+import { buildLbx, type BarcodeObject, type LabelConfig } from 'bil-lbx';
 import { importLbx } from './lbxImport';
 import { exportLbx } from './lbxExport';
 import { MIN_LABEL_LENGTH_PT } from './autoLength';
@@ -134,5 +134,56 @@ describe('export → import round trip', () => {
 
     expect(result.autoLength).toBe(false);
     expect(result.labelLength).toBeCloseTo(200, 6);
+  });
+});
+
+describe('barcode objects', () => {
+  const barcode: BarcodeObject = {
+    type: 'barcode',
+    position: { x: 20, y: 4, width: 60, height: 24 },
+    protocol: 'CODE128',
+    data: 'ABC-123',
+    barWidth: 1.2,
+    barRatio: '1:3',
+    humanReadable: true,
+    humanReadableAlignment: 'CENTER',
+    checkDigit: false,
+    zeroFill: false,
+  };
+
+  it('imports a barcode as a node instead of dropping it', async () => {
+    const config = label({ autoLength: false, paperHeight: 200, rightEdge: 100 });
+    config.objects = [barcode];
+    const result = await importLbx(toArrayBuffer(await buildLbx(config)));
+
+    expect(result.nodes).toHaveLength(1);
+    expect(result.nodes[0]!.data).toMatchObject({
+      kind: 'barcode',
+      protocol: 'CODE128',
+      data: 'ABC-123',
+      humanReadable: true,
+    });
+    expect(result.nodes[0]!.pose).toEqual({ x: 20, y: 4, width: 60, height: 24 });
+  });
+
+  it('round-trips a barcode back out to .lbx', async () => {
+    const config = label({ autoLength: false, paperHeight: 200, rightEdge: 100 });
+    config.objects = [barcode];
+    const imported = await importLbx(toArrayBuffer(await buildLbx(config)));
+
+    const out = await exportLbx(
+      imported.nodes.map((n) => ({ id: n.id, data: n.data, pose: n.pose })),
+      '12mm',
+      false,
+      200,
+      [],
+    );
+    const reimported = await importLbx(toArrayBuffer(out));
+
+    expect(reimported.nodes[0]!.data).toMatchObject({
+      kind: 'barcode',
+      protocol: 'CODE128',
+      data: 'ABC-123',
+    });
   });
 });

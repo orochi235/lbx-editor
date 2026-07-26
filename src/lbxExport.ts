@@ -75,6 +75,21 @@ export function sceneToLbxConfig(
           pen: { style: 'SOLID', widthX: data.strokeWidth, widthY: data.strokeWidth, color: data.strokeStyle },
         });
         break;
+      case 'barcode':
+        objects.push({
+          type: 'barcode',
+          position: { x: pose.x, y: pose.y, width: pose.width, height: pose.height },
+          protocol: data.protocol,
+          data: data.data,
+          barWidth: data.barWidth,
+          barRatio: data.barRatio,
+          humanReadable: data.humanReadable,
+          humanReadableAlignment: data.humanReadableAlignment,
+          checkDigit: data.checkDigit,
+          zeroFill: data.zeroFill,
+          ...(data.qrCode ? { qrCode: data.qrCode } : {}),
+        });
+        break;
       case 'image': {
         // Decode base64 to Uint8Array
         const binary = atob(data.src);

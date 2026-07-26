@@ -89,6 +89,23 @@ function lbxObjectToNode(obj: LabelObject): ImportedNode | null {
         },
       };
     }
+    case 'barcode':
+      return {
+        id: genId(),
+        pose,
+        data: {
+          kind: 'barcode',
+          protocol: obj.protocol,
+          data: obj.data,
+          barWidth: obj.barWidth ?? 1.2,
+          barRatio: obj.barRatio ?? '1:3',
+          humanReadable: obj.humanReadable ?? false,
+          humanReadableAlignment: obj.humanReadableAlignment ?? 'CENTER',
+          checkDigit: obj.checkDigit ?? false,
+          zeroFill: obj.zeroFill ?? false,
+          ...(obj.qrCode ? { qrCode: obj.qrCode } : {}),
+        },
+      };
     case 'image': {
       // Convert Uint8Array to base64
       const bytes = obj.imageData;
