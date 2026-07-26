@@ -1336,24 +1336,14 @@ export function App() {
                     placement="top"
                     tone={activeDiagnostic.severity === 'error' ? 'danger' : 'warning'}
                     title={activeDiagnostic.title}
-                    // Dismissal is ours, not RAC's. A non-modal popover closes
-                    // itself when interaction or focus leaves it — which for a
-                    // canvas app is every click on the artwork — and routing
-                    // that through onOpenChange would retire warnings the user
-                    // never read. `isOpen` stays true while the finding stands,
-                    // and the footer button is the only way out.
-                    showCloseButton={false}
+                    // Dismissal is ours: `isOpen` stays true while the finding
+                    // stands, and `onDismiss` — the × or Escape, never the
+                    // incidental close a non-modal popover does when a click
+                    // lands on the artwork — is what retires it.
+                    onDismiss={() => setDismissedDiagnostics((prev) =>
+                      new Set(prev).add(`${activeDiagnostic.nodeId}:${activeDiagnostic.code}`),
+                    )}
                     shouldCloseOnInteractOutside={() => false}
-                    footer={
-                      <button
-                        type="button"
-                        onClick={() => setDismissedDiagnostics((prev) =>
-                          new Set(prev).add(`${activeDiagnostic.nodeId}:${activeDiagnostic.code}`),
-                        )}
-                      >
-                        Dismiss
-                      </button>
-                    }
                     aria-label={activeDiagnostic.title}
                   >
                     <p>{activeDiagnostic.detail}</p>
