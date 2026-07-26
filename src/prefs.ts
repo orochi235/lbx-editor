@@ -22,6 +22,7 @@ export interface EditorPrefValues {
     autoCut: boolean;
     printPreview: boolean;
     dithering: DitherAlgorithm;
+    preflightChecks: boolean;
   };
   canvas: {
     cassetteColors: boolean;
@@ -47,6 +48,15 @@ export const PREFS_SCHEMA: PrefGroup = {
           description:
             'Show the label as the printer will render it: dithered black-and-white dots at print resolution',
           default: false,
+        },
+        preflightChecks: {
+          kind: 'boolean',
+          name: 'Pre-print checks',
+          description:
+            'Stop a print that would waste tape — a barcode too small to render, or a tape ' +
+            'size that disagrees with the loaded cassette. Turn off to print anyway; the ' +
+            'printer stays the final authority either way.',
+          default: true,
         },
         dithering: {
           kind: 'enum',

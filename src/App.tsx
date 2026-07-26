@@ -109,6 +109,7 @@ const USB_GRANT_FLAG = 'lbx-editor.hasUsbGrant';
 const AUTOCUT_KEY = 'lbx-editor.autoCut';
 const CASSETTE_COLORS_KEY = 'lbx-editor.cassetteColors';
 const DOCUMENT_WARNINGS_KEY = 'lbx-editor.documentWarnings';
+const PREFLIGHT_CHECKS_KEY = 'lbx-editor.preflightChecks';
 const PRINT_PREVIEW_KEY = 'lbx-editor.printPreview';
 const DITHER_KEY = 'lbx-editor.dither';
 /** Autosaved document (scene + tape config) — restored on load so a refresh
@@ -494,6 +495,13 @@ export function App() {
   const handleDocumentWarningsChange = useCallback((on: boolean) => {
     setDocumentWarnings(on);
     localStorage.setItem(DOCUMENT_WARNINGS_KEY, on ? '1' : '0');
+  }, []);
+  const [preflightChecks, setPreflightChecks] = useState(
+    () => localStorage.getItem(PREFLIGHT_CHECKS_KEY) !== '0',
+  );
+  const handlePreflightChecksChange = useCallback((on: boolean) => {
+    setPreflightChecks(on);
+    localStorage.setItem(PREFLIGHT_CHECKS_KEY, on ? '1' : '0');
   }, []);
   const [tapeColorOverride, setTapeColorOverride] = useState<TapeColor | null>(null);
   const [textColorOverride, setTextColorOverride] = useState<TextColor | null>(null);
@@ -1014,9 +1022,9 @@ export function App() {
   // dispatches to the same persisting setter, so both surfaces stay in sync.
   const [prefsOpen, setPrefsOpen] = useState(false);
   const prefValues: EditorPrefValues = useMemo(() => ({
-    printing: { autoCut, printPreview, dithering: ditherAlgorithm },
+    printing: { autoCut, printPreview, dithering: ditherAlgorithm, preflightChecks },
     canvas: { cassetteColors: cassetteColorsEnabled, documentWarnings },
-  }), [autoCut, printPreview, ditherAlgorithm, cassetteColorsEnabled, documentWarnings]);
+  }), [autoCut, printPreview, ditherAlgorithm, preflightChecks, cassetteColorsEnabled, documentWarnings]);
   const handlePrefChange = useCallback((path: string, value: unknown) => {
     switch (path) {
       case 'printing.autoCut': handleAutoCutChange(value as boolean); break;
@@ -1024,8 +1032,9 @@ export function App() {
       case 'printing.dithering': handleDitherAlgorithmChange(value as DitherAlgorithm); break;
       case 'canvas.cassetteColors': handleCassetteColorsChange(value as boolean); break;
       case 'canvas.documentWarnings': handleDocumentWarningsChange(value as boolean); break;
+      case 'printing.preflightChecks': handlePreflightChecksChange(value as boolean); break;
     }
-  }, [handleAutoCutChange, handlePrintPreviewChange, handleDitherAlgorithmChange, handleCassetteColorsChange, handleDocumentWarningsChange]);
+  }, [handleAutoCutChange, handlePrintPreviewChange, handleDitherAlgorithmChange, handleCassetteColorsChange, handleDocumentWarningsChange, handlePreflightChecksChange]);
 
   // One connectionless printer session per mount. Its keepalive keeps the
   // PT-P710BT awake (it auto-powers off after ~10 min idle); its status
@@ -1065,9 +1074,11 @@ export function App() {
     // Preflight before touching the printer: a barcode we can't encode draws
     // as a placeholder box, and one scaled under a dot per module prints as a
     // smear. Either way the tape is spent on a label whose barcode isn't one.
+    // Skipped wholesale when pre-print checks are off — the user has said they
+    // want the job sent regardless, and the printer remains the authority.
     let unrenderable = 0;
     let undersized = 0;
-    for (const [, node] of scene.nodes) {
+    for (const [, node] of (preflightChecks ? scene.nodes : [])) {
       if (node.data.kind !== 'barcode') continue;
       const symbol = encodeBarcode(barcodeRequest(node.data));
       if (!symbol.ok) {
@@ -1096,7 +1107,9 @@ export function App() {
       // before it's sent. Unknown media (asleep printer, no usable width in
       // the reply) proceeds — the printer stays the authority.
       const loaded = await printer.queryMedia();
-      const mismatch = tapeMismatchMessage(tapeWidthMm, loaded?.tapeWidthMm ?? null);
+      const mismatch = preflightChecks
+        ? tapeMismatchMessage(tapeWidthMm, loaded?.tapeWidthMm ?? null)
+        : null;
       if (mismatch) {
         toast.error('Tape size mismatch', { description: mismatch });
         return;
@@ -1110,7 +1123,7 @@ export function App() {
         if (node.data.kind === 'text') machineFamilies.push(node.data.fontFamily);
       }
       const machineFonts = canvasFontsInUse(machineFamilies);
-      if (machineFonts.length > 0) {
+      if (preflightChecks && machineFonts.length > 0) {
         toast.info('Using fonts from this machine', {
           description:
             `${machineFonts.join(', ')} — this label prints correctly here, but machines ` +
@@ -1175,7 +1188,7 @@ export function App() {
       printingRef.current = false;
       setPrinting(false);
     }
-  }, [printing, tapeSize, scene, labelLength, paperHeight, autoCut, ditherAlgorithm, cutMarks]);
+  }, [printing, tapeSize, scene, labelLength, paperHeight, autoCut, ditherAlgorithm, cutMarks, preflightChecks]);
 
   // Screen draw: same drawLabelNode as print, but with ink-dark node colors
   // recolored to the cassette's ink first. Print keeps the raw node data (a
@@ -1322,12 +1335,24 @@ export function App() {
                     placement="top"
                     tone={activeDiagnostic.severity === 'error' ? 'danger' : 'warning'}
                     title={activeDiagnostic.title}
-                    showCloseButton
-                    onOpenChange={(open) => {
-                      if (open) return;
-                      const key = `${activeDiagnostic.nodeId}:${activeDiagnostic.code}`;
-                      setDismissedDiagnostics((prev) => new Set(prev).add(key));
-                    }}
+                    // Dismissal is ours, not RAC's. A non-modal popover closes
+                    // itself when interaction or focus leaves it — which for a
+                    // canvas app is every click on the artwork — and routing
+                    // that through onOpenChange would retire warnings the user
+                    // never read. `isOpen` stays true while the finding stands,
+                    // and the footer button is the only way out.
+                    showCloseButton={false}
+                    shouldCloseOnInteractOutside={() => false}
+                    footer={
+                      <button
+                        type="button"
+                        onClick={() => setDismissedDiagnostics((prev) =>
+                          new Set(prev).add(`${activeDiagnostic.nodeId}:${activeDiagnostic.code}`),
+                        )}
+                      >
+                        Dismiss
+                      </button>
+                    }
                     aria-label={activeDiagnostic.title}
                   >
                     <p>{activeDiagnostic.detail}</p>
