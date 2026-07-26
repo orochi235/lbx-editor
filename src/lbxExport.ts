@@ -2,9 +2,16 @@
  * Convert the editor's scene graph into a bil-lbx LabelConfig and build
  * the .lbx file.
  */
-import { buildLbx, TAPE, type LabelConfig, type LabelObject as LbxObject } from 'bil-lbx';
+import {
+  buildLbx,
+  backgroundFor,
+  AUTO_LENGTH_MAX_PT,
+  TAPE,
+  type LabelConfig,
+  type LabelObject as LbxObject,
+} from 'bil-lbx';
 import { ensureBmp32Bytes } from './imageUtils';
-import { lineEndpoints, type LabelNodeData, type LabelPose, type TapeSize } from './label';
+import { DEFAULT_LABEL_LENGTH, lineEndpoints, type LabelNodeData, type LabelPose, type TapeSize } from './label';
 
 interface SceneNode {
   id: string;
@@ -84,13 +91,19 @@ export function sceneToLbxConfig(
     }
   }
 
+  // An auto-length label's paper height is P-touch's placeholder, so the length
+  // has nowhere to live but the background band — write it there explicitly or
+  // the file reimports at the placeholder's 1000mm.
+  const paper = {
+    width: tape.width,
+    format: tape.format,
+    autoLength,
+    height: autoLength ? AUTO_LENGTH_MAX_PT : labelLength,
+  };
+
   return {
-    paper: {
-      width: tape.width,
-      format: tape.format,
-      autoLength,
-      height: autoLength ? undefined : labelLength,
-    },
+    paper,
+    background: backgroundFor(paper, labelLength ?? DEFAULT_LABEL_LENGTH),
     objects,
     ...(cutMarks.length > 0 ? { cut: { freeCut: [...cutMarks].sort((a, b) => a - b) } } : {}),
   };

@@ -84,8 +84,18 @@ Key weasel APIs used:
   the printable band (ink color, transparent elsewhere) while suppressing
   the live scene draw. The Dithering choice (threshold / Floyd–Steinberg /
   Atkinson / Bayer) feeds preview and print job alike.
-- Auto-length is hidden/unimplemented: the flag round-trips .lbx but layout
-  always uses the explicit Length field.
+- Auto-length (toolbar "Auto") fits the label to its content: length =
+  rightmost object edge + 5.6pt (`src/autoLength.ts`), refitted on every
+  committed scene change. Content is never reflowed, only the tail moves.
+  Turning Auto off pins the length where the fit left it. New documents
+  default to Auto off at the explicit 200pt Length.
+  On import the *recorded* length wins over our own fit: `paper.height` only
+  holds the length for fixed-length files — under autoLength P-touch parks its
+  1000mm ceiling (2834.4pt) there and records the real extent in
+  `style:backGround`. bil-lbx's `labelLengthPt(config)` knows which field to
+  read; content-fitting is the fallback for files with no band. Export writes
+  the band explicitly (`backgroundFor`), since an auto-length label's length
+  has nowhere else to live.
 - The document autosaves to localStorage (`lbx-editor.doc`: scene JSON +
   tape config + cut marks, 300 ms debounce) and restores on load, so
   refreshes keep the label being edited.

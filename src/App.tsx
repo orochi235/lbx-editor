@@ -39,6 +39,7 @@ import {
   type LabelPose,
   type TapeSize,
 } from './label';
+import { fitLengthToContent } from './autoLength';
 import { exportLbx } from './lbxExport';
 import { importLbx } from './lbxImport';
 import {
@@ -203,14 +204,44 @@ export function App() {
     registerFonts().then(() => setFontsLoaded(true));
   }, []);
 
+  // Declared up here because the label length derives from the scene contents
+  // under auto-length, and everything below reads that length.
+  const scene = useScene<LabelNodeData, LabelLayer, LabelPose>({
+    systemLayers: [{ id: 'objects' as LabelLayer }],
+  });
+
   const [tapeSize, setTapeSize] = useState<TapeSize>(DEFAULT_TAPE);
-  const [autoLength, setAutoLength] = useState(true);
-  const [labelLength, setLabelLength] = useState(DEFAULT_LABEL_LENGTH);
+  const [autoLength, setAutoLength] = useState(false);
+  // The length the user typed. Under auto-length it's dormant — kept so that
+  // switching auto off doesn't teleport the label back to a stale value.
+  const [manualLength, setManualLength] = useState(DEFAULT_LABEL_LENGTH);
   // Cut positions (pt along the label): the printer cuts here, splitting the
   // document into a strip of labels. Round-trips .lbx via style:cutLine.
   const [cutMarks, setCutMarks] = useState<number[]>([]);
 
   const tape = TAPE_SIZES[tapeSize];
+
+  const sceneVersion = useSyncExternalStore(
+    useCallback((cb: () => void) => scene.subscribe(cb), [scene]),
+    () => scene.getVersion(),
+  );
+
+  // Auto-length: the label ends a margin past the rightmost object, refitting
+  // on every committed scene change. Everything downstream reads labelLength
+  // and so follows the fit for free.
+  const fittedLength = useMemo(
+    () => fitLengthToContent([...scene.nodes.values()].map((n) => n.pose)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sceneVersion is the change signal; scene is mutable.
+    [scene, sceneVersion],
+  );
+  const labelLength = autoLength ? fittedLength : manualLength;
+
+  // Turning auto off pins the length where the fit left it, rather than
+  // snapping back to whatever was last typed.
+  const handleAutoLengthChange = useCallback((auto: boolean) => {
+    if (!auto) setManualLength(fittedLength);
+    setAutoLength(auto);
+  }, [fittedLength]);
 
   // The Labels control: N equal segments ↔ N-1 evenly spaced cut marks.
   // Setting it replaces any custom (imported) marks with the equal split.
@@ -230,8 +261,6 @@ export function App() {
 
   // The "paper" is the printable area of the tape.
   // P-touch labels are landscape: tape width is the short dimension (height visually).
-  // Auto-length isn't implemented (the flag only round-trips through .lbx, its
-  // toolbar control is hidden); layout always uses the explicit label length.
   const paperWidth = labelLength;
   const paperHeight = tape.width;
 
@@ -334,17 +363,8 @@ export function App() {
     [applyCenteredView, canvasSize],
   );
 
-  const scene = useScene<LabelNodeData, LabelLayer, LabelPose>({
-    systemLayers: [{ id: 'objects' as LabelLayer }],
-  });
-
   const selection = useSelection();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const sceneVersion = useSyncExternalStore(
-    useCallback((cb: () => void) => scene.subscribe(cb), [scene]),
-    () => scene.getVersion(),
-  );
 
   // --- Session persistence ---
   // Restore the autosaved document once on mount (before the autosave effect
@@ -367,7 +387,7 @@ export function App() {
       };
       if (doc.tapeSize && doc.tapeSize in TAPE_SIZES) setTapeSize(doc.tapeSize);
       if (typeof doc.labelLength === 'number' && Number.isFinite(doc.labelLength) && doc.labelLength > 0) {
-        setLabelLength(doc.labelLength);
+        setManualLength(doc.labelLength);
       }
       if (typeof doc.autoLength === 'boolean') setAutoLength(doc.autoLength);
       if (Array.isArray(doc.cutMarks) && doc.cutMarks.every((x) => typeof x === 'number' && Number.isFinite(x))) {
@@ -387,14 +407,16 @@ export function App() {
       try {
         localStorage.setItem(
           DOC_KEY,
-          JSON.stringify({ tapeSize, autoLength, labelLength, cutMarks, scene: scene.toJSON() }),
+          // labelLength persists the manual value: under auto-length the
+          // length is derived from the scene, so it restores itself.
+          JSON.stringify({ tapeSize, autoLength, labelLength: manualLength, cutMarks, scene: scene.toJSON() }),
         );
       } catch {
         // Storage full (huge embedded images) or unavailable — skip this save.
       }
     }, 300);
     return () => clearTimeout(handle);
-  }, [scene, sceneVersion, tapeSize, autoLength, labelLength, cutMarks]);
+  }, [scene, sceneVersion, tapeSize, autoLength, manualLength, cutMarks]);
 
   // --- Cassette-driven canvas colors ---
   // The printer's status replies (fed by keepalive ticks, see the printer
@@ -743,7 +765,9 @@ export function App() {
       const result = await importLbx(file);
       setTapeSize(result.tapeSize);
       setAutoLength(result.autoLength);
-      setLabelLength(result.labelLength);
+      // Under auto-length the imported length is already the fitted one, so
+      // this only decides where a later auto-off lands.
+      setManualLength(result.labelLength);
       setCutMarks(result.cutMarks);
 
       // Clear existing scene
@@ -1000,8 +1024,10 @@ export function App() {
             <Toolbar
               tapeSize={tapeSize}
               onTapeSizeChange={setTapeSize}
+              autoLength={autoLength}
+              onAutoLengthChange={handleAutoLengthChange}
               labelLength={labelLength}
-              onLabelLengthChange={setLabelLength}
+              onLabelLengthChange={setManualLength}
               labelsCount={cutMarks.length + 1}
               onLabelsCountChange={handleLabelsCountChange}
               onExport={handleExport}

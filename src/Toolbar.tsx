@@ -22,6 +22,9 @@ function percentToSlider(percent: number): number {
 interface ToolbarProps {
   tapeSize: TapeSize;
   onTapeSizeChange: (size: TapeSize) => void;
+  /** When on, labelLength is fitted to the content and the field is read-only. */
+  autoLength: boolean;
+  onAutoLengthChange: (auto: boolean) => void;
   labelLength: number;
   onLabelLengthChange: (len: number) => void;
   /** Segment count for the strip: N labels = N-1 evenly spaced cuts. */
@@ -46,6 +49,8 @@ interface ToolbarProps {
 export function Toolbar({
   tapeSize,
   onTapeSizeChange,
+  autoLength,
+  onAutoLengthChange,
   labelLength,
   onLabelLengthChange,
   labelsCount,
@@ -89,14 +94,27 @@ export function Toolbar({
         </select>
       </label>
 
-      {/* Auto-length is hidden for now: the flag still round-trips through
-          .lbx import/export, but the editor always lays out at labelLength. */}
+      <label
+        style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
+        title="Fit the label length to the content, the way P-touch's auto length does"
+      >
+        <input
+          type="checkbox"
+          checked={autoLength}
+          onChange={(e) => onAutoLengthChange(e.target.checked)}
+        />
+        Auto
+      </label>
+
       <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}>
         Length:
         <input
           type="number"
-          value={labelLength}
+          // Fitted lengths carry float noise (145.39999…) — the field is a
+          // readout under auto, so round it for display.
+          value={autoLength ? Math.round(labelLength * 10) / 10 : labelLength}
           onChange={(e) => onLabelLengthChange(Number(e.target.value))}
+          disabled={autoLength}
           style={{ width: '50px' }}
         />
         pt

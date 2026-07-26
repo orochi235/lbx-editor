@@ -1,8 +1,9 @@
 /**
  * Import .lbx files using the bil-lbx parser, then map to editor scene nodes.
  */
-import { parseLbx, type LabelConfig, type LabelObject } from 'bil-lbx';
-import type { LabelNodeData, LabelPose, TapeSize } from './label';
+import { parseLbx, labelLengthPt, type LabelConfig, type LabelObject } from 'bil-lbx';
+import { DEFAULT_LABEL_LENGTH, type LabelNodeData, type LabelPose, type TapeSize } from './label';
+import { fitLengthToContent } from './autoLength';
 
 interface ImportedNode {
   id: string;
@@ -115,13 +116,19 @@ export async function importLbx(file: File | ArrayBuffer): Promise<ImportResult>
 
   const tapeSize = detectTapeSize(config.paper.width);
   const autoLength = config.paper.autoLength ?? true;
-  const labelLength = config.paper.height ?? 200;
 
   const nodes: ImportedNode[] = [];
   for (const obj of config.objects) {
     const node = lbxObjectToNode(obj);
     if (node) nodes.push(node);
   }
+
+  // Prefer the length the file recorded (bil-lbx knows which field holds it —
+  // under autoLength it's the background band, not the 1000mm placeholder in
+  // style:paper). Fitting our own content is the fallback: it can come up short
+  // on files holding objects this editor doesn't map, such as barcodes.
+  const labelLength =
+    labelLengthPt(config) ?? fitLengthToContent(nodes.map((n) => n.pose)) ?? DEFAULT_LABEL_LENGTH;
 
   // Cut marks: freeCut positions verbatim; a regularCut interval expands to
   // explicit positions so the editor has one representation.
