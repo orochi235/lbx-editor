@@ -40,6 +40,12 @@ import {
   type TapeSize,
 } from './label';
 import { fitLengthToContent } from './autoLength';
+import {
+  encodeBarcode,
+  barcodeRects,
+  barcodeRequest,
+  HUMAN_READABLE_HEIGHT_PT,
+} from './barcode';
 import { exportLbx } from './lbxExport';
 import { importLbx } from './lbxImport';
 import {
@@ -187,15 +193,43 @@ function drawLabelNode(node: LabelNode, pose: LabelPose, _view: View): DrawComma
         stroke: { paint: { color: '#cccccc' }, width: 0.5 },
       }];
     }
-    case 'barcode':
-      // Real rendering lands with src/barcode/geometry; until then a visible
-      // box beats an invisible node the user can't select or move.
-      return [{
+    case 'barcode': {
+      const symbol = encodeBarcode(barcodeRequest(data));
+      if (!symbol.ok) {
+        // Can't encode it — draw a box so the node stays visible and
+        // selectable. printPreflight blocks the job rather than printing this.
+        return [{
+          kind: 'path',
+          path: rectPath(x, y, width, height),
+          fill: { fill: 'solid', color: '#f6f6f6' },
+          stroke: { paint: { color: '#999999' }, width: 0.5 },
+        }];
+      }
+      const commands: DrawCommand[] = barcodeRects(symbol, pose, data.humanReadable).map((r) => ({
         kind: 'path',
-        path: rectPath(x, y, width, height),
-        fill: { fill: 'solid', color: '#f6f6f6' },
-        stroke: { paint: { color: '#999999' }, width: 0.5 },
-      }];
+        path: rectPath(r.x, r.y, r.width, r.height),
+        fill: { fill: 'solid', color: '#000000' },
+      }));
+      if (data.humanReadable && symbol.kind === '1d') {
+        commands.push(textCommand(
+          x,
+          y + height - HUMAN_READABLE_HEIGHT_PT,
+          symbol.text,
+          {
+            fontFamily: substituteFontFamily('Helvetica'),
+            fontSize: HUMAN_READABLE_HEIGHT_PT - 1,
+            fontWeight: 400,
+            fontStyle: 'normal',
+            align: toWeaselAlign(data.humanReadableAlignment),
+            fill: { fill: 'solid', color: '#000000' },
+          },
+          width,
+          HUMAN_READABLE_HEIGHT_PT,
+          toWeaselVerticalAlign('BOTTOM'),
+        ));
+      }
+      return commands;
+    }
     default:
       return [];
   }

@@ -11,6 +11,7 @@ import {
   type LabelObject as LbxObject,
 } from 'bil-lbx';
 import { ensureBmp32Bytes } from './imageUtils';
+import { encodeBarcode, barcodeRequest } from './barcode';
 import { DEFAULT_LABEL_LENGTH, lineEndpoints, type LabelNodeData, type LabelPose, type TapeSize } from './label';
 
 interface SceneNode {
@@ -75,13 +76,20 @@ export function sceneToLbxConfig(
           pen: { style: 'SOLID', widthX: data.strokeWidth, widthY: data.strokeWidth, color: data.strokeStyle },
         });
         break;
-      case 'barcode':
+      case 'barcode': {
+        // The pose is authoritative for us; P-touch sizes from barWidth. Derive
+        // it so the two agree on the symbol's width. Falls back to the imported
+        // value when the payload doesn't encode — nothing better to say.
+        const encoded = encodeBarcode(barcodeRequest(data));
+        const barWidth = encoded.ok && encoded.kind === '1d'
+          ? pose.width / encoded.totalModules
+          : data.barWidth;
         objects.push({
           type: 'barcode',
           position: { x: pose.x, y: pose.y, width: pose.width, height: pose.height },
           protocol: data.protocol,
           data: data.data,
-          barWidth: data.barWidth,
+          barWidth,
           barRatio: data.barRatio,
           humanReadable: data.humanReadable,
           humanReadableAlignment: data.humanReadableAlignment,
@@ -90,6 +98,7 @@ export function sceneToLbxConfig(
           ...(data.qrCode ? { qrCode: data.qrCode } : {}),
         });
         break;
+      }
       case 'image': {
         // Decode base64 to Uint8Array
         const binary = atob(data.src);
