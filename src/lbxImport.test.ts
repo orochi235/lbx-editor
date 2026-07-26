@@ -1,26 +1,33 @@
 import { describe, it, expect } from 'vitest';
 import JSZip from 'jszip';
-import { buildLbx, type BarcodeObject, type LabelConfig } from 'bil-lbx';
+import { buildLbx, TAPE, type BarcodeObject, type LabelConfig } from 'bil-lbx';
 import { importLbx } from './lbxImport';
 import { exportLbx } from './lbxExport';
 import { MIN_LABEL_LENGTH_PT } from './autoLength';
 import type { LabelNodeData, LabelPose } from './label';
 
 /**
- * A 12mm label shaped the way P-touch Editor writes them: one text object whose
+ * A label shaped the way P-touch Editor writes them: one text object whose
  * right edge lands at `rightEdge`, a background band recording the printable
  * extent, and — under autoLength — the 1000mm placeholder as the paper height.
+ *
+ * The tape comes from bil-lbx's `TAPE`, keyed by its real name ('12mm'), so a
+ * mistyped key is a compile error. Spelling it `TAPE.W24` reads fine, is
+ * `undefined`, and used to build a 12mm file regardless of what the test meant.
  */
 function label(opts: {
   autoLength: boolean;
   paperHeight: number;
   rightEdge: number;
   bandRight?: number;
+  tape?: keyof typeof TAPE;
 }): LabelConfig {
   const bandRight = opts.bandRight ?? opts.rightEdge;
+  const tape = TAPE[opts.tape ?? '12mm'];
   return {
     paper: {
-      width: 33.6,
+      width: tape.width,
+      format: tape.format,
       height: opts.paperHeight,
       marginLeft: 2.8,
       marginTop: 5.6,
@@ -29,7 +36,9 @@ function label(opts: {
       orientation: 'landscape',
       autoLength: opts.autoLength,
     },
-    background: { x: 5.6, y: 2.8, width: bandRight - 5.6, height: 28 },
+    // The band is the tape inset 2.8pt top and bottom, so it follows the tape
+    // rather than sitting at 12mm's height whatever the fixture asked for.
+    background: { x: 5.6, y: 2.8, width: bandRight - 5.6, height: tape.width - 5.6 },
     objects: [
       {
         type: 'text',
@@ -98,6 +107,17 @@ describe('importLbx label length', () => {
     const result = await importLbx(await stripBackground(await buildLbx(config)));
 
     expect(result.labelLength).toBe(MIN_LABEL_LENGTH_PT);
+  });
+
+  it('builds the tape the fixture asks for', async () => {
+    // Guards the fixture itself: a tape that doesn't survive into the file
+    // makes every test above quietly measure a 12mm label instead.
+    const buf = await buildLbx(
+      label({ autoLength: false, paperHeight: 200, rightEdge: 100, tape: '24mm' }),
+    );
+    const result = await importLbx(toArrayBuffer(buf));
+
+    expect(result.tapeSize).toBe('24mm');
   });
 });
 
