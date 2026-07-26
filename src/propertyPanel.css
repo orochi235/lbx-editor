@@ -75,6 +75,7 @@
 }
 
 .property-panel .prop-error,
+.property-panel .prop-warn,
 .property-panel .prop-note {
   margin: -2px 0 8px;
   padding: 6px 8px;
@@ -86,6 +87,12 @@
   color: #8a1f11;
   background: #fdecea;
   border: 1px solid #f5c6c0;
+}
+
+.property-panel .prop-warn {
+  color: #7a4a00;
+  background: #fff6e5;
+  border: 1px solid #f0d9ae;
 }
 
 .property-panel .prop-note {

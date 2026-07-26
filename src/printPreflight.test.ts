@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { tapeMismatchMessage, unrenderableBarcodeMessage } from './printPreflight';
+import {
+  tapeMismatchMessage,
+  unrenderableBarcodeMessage,
+  undersizedBarcodeMessage,
+} from './printPreflight';
 
 describe('tapeMismatchMessage', () => {
   it('names both widths on a mismatch', () => {
@@ -32,5 +36,19 @@ describe('unrenderableBarcodeMessage', () => {
 
   it('passes when everything encoded', () => {
     expect(unrenderableBarcodeMessage(0)).toBeNull();
+  });
+});
+
+describe('undersizedBarcodeMessage', () => {
+  it('blocks when a barcode is under a dot per module', () => {
+    expect(undersizedBarcodeMessage(1)).toContain('1 barcode is');
+  });
+
+  it('pluralizes', () => {
+    expect(undersizedBarcodeMessage(2)).toContain('2 barcodes are');
+  });
+
+  it('passes when every barcode is big enough', () => {
+    expect(undersizedBarcodeMessage(0)).toBeNull();
   });
 });

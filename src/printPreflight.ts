@@ -34,3 +34,22 @@ export function unrenderableBarcodeMessage(count: number): string | null {
     `Fix or remove them, then print again.`
   );
 }
+
+/**
+ * Alert copy when a barcode is scaled below one printer dot per module. The
+ * canvas draws it crisply at any size, so this failure is invisible until it's
+ * on tape: the bars have no whole dot of their own and print as a smear.
+ *
+ * Only the physically impossible case blocks. Merely small barcodes — under
+ * scanner minimums but still renderable — are flagged in the property panel
+ * instead, where the size can actually be changed.
+ */
+export function undersizedBarcodeMessage(count: number): string | null {
+  if (count <= 0) return null;
+  const noun = count === 1 ? '1 barcode is' : `${count} barcodes are`;
+  return (
+    `This label has ${noun} scaled too small to print — the bars are narrower ` +
+    `than a single printer dot, so they'd merge into a smear instead of a ` +
+    `readable symbol. Make them wider, then print again.`
+  );
+}

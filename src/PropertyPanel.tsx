@@ -8,11 +8,15 @@ import {
 } from '@weasel-js/core';
 import type { BarcodeProtocol, QrEccLevel } from 'bil-lbx';
 import type { LabelNodeData, LabelLayer, LabelPose } from './label';
+import { Printers } from 'obwat';
 import {
   encodeBarcode,
   barcodeRequest,
+  barcodeModuleDots,
+  moduleFitness,
   isSupportedProtocol,
   SUPPORTED_PROTOCOLS,
+  type BarcodeSymbol,
 } from './barcode';
 import { imageDataUri } from './imageUtils';
 import { registeredFamilies, installedFamilies, substituteFontFamily } from './fonts';
@@ -69,7 +73,7 @@ export function PropertyPanel({ scene, selection }: PropertyPanelProps) {
       )}
       {node.data.kind === 'image' && <ImageInfo data={node.data} />}
       {node.data.kind === 'barcode' && (
-        <BarcodeFields scene={scene} nodeId={nodeId} data={node.data} />
+        <BarcodeFields scene={scene} nodeId={nodeId} pose={node.pose} data={node.data} />
       )}
     </div>
   );
@@ -258,9 +262,10 @@ const ZERO_FILL_PROTOCOLS: BarcodeProtocol[] = ['EAN13', 'EAN8', 'UPCA', 'UPCE']
 
 const ECC_LEVELS: QrEccLevel[] = ['7%', '15%', '25%', '30%'];
 
-function BarcodeFields({ scene, nodeId, data }: {
+function BarcodeFields({ scene, nodeId, pose, data }: {
   scene: Scene<LabelNodeData, LabelLayer, LabelPose>;
   nodeId: NodeId;
+  pose: LabelPose;
   data: Extract<LabelNodeData, { kind: 'barcode' }>;
 }) {
   const update = useCallback((partial: Partial<typeof data>) => {
@@ -312,6 +317,7 @@ function BarcodeFields({ scene, nodeId, data }: {
       {result.ok && result.text !== data.data && (
         <p className="prop-note">Encodes as {result.text}</p>
       )}
+      {result.ok && <SizeWarning symbol={result} pose={pose} />}
 
       {RATIO_PROTOCOLS.includes(data.protocol) && (
         <label className="prop-field">
@@ -397,6 +403,29 @@ function BarcodeFields({ scene, nodeId, data }: {
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Flags a barcode scaled too small to scan. The canvas draws crisp bars at any
+ * size, so nothing on screen shows that the modules have shrunk below what the
+ * printhead resolves — the panel is where the size is set, so it's where the
+ * limit belongs. Printing blocks separately on the impossible case.
+ */
+function SizeWarning({ symbol, pose }: { symbol: BarcodeSymbol; pose: LabelPose }) {
+  const dots = barcodeModuleDots(symbol, pose, Printers.ptP710bt.dpi);
+  const fitness = moduleFitness(dots);
+  if (fitness === 'ok') return null;
+
+  const dimension = symbol.kind === '2d' ? 'W and H' : 'W';
+  return (
+    <p className={fitness === 'unrenderable' ? 'prop-error' : 'prop-warn'}>
+      {fitness === 'unrenderable'
+        ? `Too small to print: each module is ${dots.toFixed(2)} printer dots, under the
+           one dot it needs to appear at all. Printing is blocked until ${dimension} grows.`
+        : `Small enough that scanners may struggle: each module is ${dots.toFixed(2)} printer
+           dots, under the 2 that clear the usual minimums. Increase ${dimension} to be safe.`}
+    </p>
   );
 }
 

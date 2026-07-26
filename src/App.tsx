@@ -45,6 +45,8 @@ import {
   encodeBarcode,
   barcodeRects,
   barcodeRequest,
+  barcodeModuleDots,
+  moduleFitness,
   HUMAN_READABLE_HEIGHT_PT,
 } from './barcode';
 import { exportLbx } from './lbxExport';
@@ -74,7 +76,11 @@ import { PropertyPanel } from './PropertyPanel';
 import { fileToBase64, guessMimeType, getImageDimensions, imageDataUri } from './imageUtils';
 import { buildImageInsert, type PendingImage } from './imageInsert';
 import { BarcodeIcon } from './BarcodeIcon';
-import { tapeMismatchMessage, unrenderableBarcodeMessage } from './printPreflight';
+import {
+  tapeMismatchMessage,
+  unrenderableBarcodeMessage,
+  undersizedBarcodeMessage,
+} from './printPreflight';
 import { registerFonts, substituteFontFamily, canvasFontsInUse, toWeaselAlign, toWeaselVerticalAlign } from './fonts';
 
 type LabelNode = SceneNode<LabelNodeData, LabelLayer, LabelPose>;
@@ -975,15 +981,23 @@ export function App() {
       return;
     }
     // Preflight before touching the printer: a barcode we can't encode draws
-    // as a placeholder box, and printing that would burn tape on a label whose
-    // barcode is a blank rectangle.
+    // as a placeholder box, and one scaled under a dot per module prints as a
+    // smear. Either way the tape is spent on a label whose barcode isn't one.
     let unrenderable = 0;
+    let undersized = 0;
     for (const [, node] of scene.nodes) {
-      if (node.data.kind === 'barcode' && !encodeBarcode(barcodeRequest(node.data)).ok) {
+      if (node.data.kind !== 'barcode') continue;
+      const symbol = encodeBarcode(barcodeRequest(node.data));
+      if (!symbol.ok) {
         unrenderable++;
+      } else if (
+        moduleFitness(barcodeModuleDots(symbol, node.pose, Printers.ptP710bt.dpi)) === 'unrenderable'
+      ) {
+        undersized++;
       }
     }
-    const barcodeProblem = unrenderableBarcodeMessage(unrenderable);
+    const barcodeProblem = unrenderableBarcodeMessage(unrenderable)
+      ?? undersizedBarcodeMessage(undersized);
     if (barcodeProblem) {
       alert(barcodeProblem);
       return;
