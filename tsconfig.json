@@ -18,9 +18,8 @@
     // weasel's linked source. Keep in sync with vite-aliases.ts when packages
     // are added.
     "paths": {
-      "@weasel-js/core": ["../weasel/src/index.ts"],
-      "@weasel-js/core/routing": ["../weasel/src/tools/routing/index.ts"],
-      "@weasel-js/core/*": ["../weasel/src/import-shims/*.ts"],
+      "@weasel-js/core": ["../weasel/packages/core/src/index.ts"],
+      "@weasel-js/core/*": ["../weasel/packages/core/src/import-shims/*.ts"],
       "@weasel-js/geom/booleans": ["../weasel/packages/geom/src/booleans/index.ts"],
       "@weasel-js/geom": ["../weasel/packages/geom/src/index.ts"],
       "@weasel-js/geom/*": ["../weasel/packages/geom/src/*"],
@@ -38,13 +37,13 @@
       "@weasel-js/ui/*": ["../weasel/packages/ui/src/*"],
       "@weasel-js/hud": ["../weasel/packages/hud/src/index.ts"],
       "@weasel-js/hud/*": ["../weasel/packages/hud/src/*"],
-      "core/*": ["../weasel/src/core/*"],
-      "features/*": ["../weasel/src/features/*"],
-      "affordances/*": ["../weasel/src/affordances/*"],
-      "interactions/*": ["../weasel/src/interactions/*"],
-      "tools/*": ["../weasel/src/tools/*"],
-      "canvas/*": ["../weasel/src/canvas/*"],
-      "debug/*": ["../weasel/src/debug/*"],
+      "core/*": ["../weasel/packages/core/src/core/*"],
+      "features/*": ["../weasel/packages/core/src/features/*"],
+      "affordances/*": ["../weasel/packages/core/src/affordances/*"],
+      "interactions/*": ["../weasel/packages/core/src/interactions/*"],
+      "tools/*": ["../weasel/packages/core/src/tools/*"],
+      "canvas/*": ["../weasel/packages/core/src/canvas/*"],
+      "debug/*": ["../weasel/packages/core/src/debug/*"],
       "bil-lbx": ["../bil-lbx/src/index.ts"],
       "bil-lbx/*": ["../bil-lbx/src/*"]
     }
