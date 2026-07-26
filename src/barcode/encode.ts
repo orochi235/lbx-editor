@@ -9,6 +9,7 @@
 import type { BarcodeProtocol } from 'bil-lbx';
 import type { EncodeResult } from './types';
 import { encodeCode39 } from './code39';
+import { encodeCode128 } from './code128';
 
 export interface EncodeRequest {
   protocol: BarcodeProtocol;
@@ -31,6 +32,10 @@ export function encodeBarcode(req: EncodeRequest): EncodeResult {
   switch (req.protocol) {
     case 'CODE39':
       return encodeCode39(req.data, { ratio: parseRatio(req.barRatio) });
+    case 'CODE128':
+      return encodeCode128(req.data, { gs1: false });
+    case 'GS1-128':
+      return encodeCode128(req.data, { gs1: true });
     default:
       return { ok: false, reason: 'unsupported', detail: req.protocol };
   }
