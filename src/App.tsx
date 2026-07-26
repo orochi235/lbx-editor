@@ -66,7 +66,7 @@ import { PropertyPanel } from './PropertyPanel';
 import { fileToBase64, guessMimeType, getImageDimensions, imageDataUri } from './imageUtils';
 import { buildImageInsert, type PendingImage } from './imageInsert';
 import { tapeMismatchMessage } from './printPreflight';
-import { registerFonts, substituteFontFamily, toWeaselAlign, toWeaselVerticalAlign } from './fonts';
+import { registerFonts, substituteFontFamily, canvasFontsInUse, toWeaselAlign, toWeaselVerticalAlign } from './fonts';
 
 type LabelNode = SceneNode<LabelNodeData, LabelLayer, LabelPose>;
 
@@ -882,6 +882,17 @@ export function App() {
       // Text needs its MSDF atlases registered before renderLabelToRgba draws
       // it; registerFonts() is idempotent so this is a no-op once settled.
       await registerFonts();
+      const machineFamilies: string[] = [];
+      for (const [, node] of scene.nodes) {
+        if (node.data.kind === 'text') machineFamilies.push(node.data.fontFamily);
+      }
+      const machineFonts = canvasFontsInUse(machineFamilies);
+      if (machineFonts.length > 0) {
+        alert(
+          `Heads up: this label uses fonts installed on this machine (${machineFonts.join(', ')}). ` +
+          'It will print correctly here; machines without them will substitute.',
+        );
+      }
       // Same drawOne as the screen path, through weasel's headless renderer —
       // print is the screen's rendering at printer resolution.
       const rgba = renderLabelToRgba({

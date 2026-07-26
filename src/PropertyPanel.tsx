@@ -8,7 +8,7 @@ import {
 } from '@weasel-js/core';
 import type { LabelNodeData, LabelLayer, LabelPose } from './label';
 import { imageDataUri } from './imageUtils';
-import { registeredFamilies, substituteFontFamily } from './fonts';
+import { registeredFamilies, installedFamilies, substituteFontFamily } from './fonts';
 import './propertyPanel.css';
 
 interface PropertyPanelProps {
@@ -93,6 +93,7 @@ function TextFields({ scene, nodeId, data }: {
   }, [scene, nodeId, data]);
 
   const families = registeredFamilies();
+  const installed = installedFamilies();
 
   return (
     <div>
@@ -109,7 +110,7 @@ function TextFields({ scene, nodeId, data }: {
           value={data.fontFamily}
           onChange={(e) => update({ fontFamily: e.target.value })}
         >
-          {!families.includes(data.fontFamily) && (
+          {!families.includes(data.fontFamily) && !installed.includes(data.fontFamily) && (
             <option value={data.fontFamily}>
               {data.fontFamily} → {substituteFontFamily(data.fontFamily)}
             </option>
@@ -117,6 +118,13 @@ function TextFields({ scene, nodeId, data }: {
           {families.map((f) => (
             <option key={f} value={f}>{f}</option>
           ))}
+          {installed.length > 0 && (
+            <optgroup label="Installed (this machine)">
+              {installed.map((f) => (
+                <option key={f} value={f}>{f}</option>
+              ))}
+            </optgroup>
+          )}
         </select>
       </label>
       <FieldRow label="Size" value={data.fontSize} onChange={(v) => update({ fontSize: v })} />
