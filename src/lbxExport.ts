@@ -11,7 +11,7 @@ import {
   type LabelObject as LbxObject,
 } from 'bil-lbx';
 import { ensureBmp32Bytes } from './imageUtils';
-import { encodeBarcode, barcodeRequest } from './barcode';
+import { encodeBarcode, barcodeRequest, barcodeModulePt } from './barcode';
 import { DEFAULT_LABEL_LENGTH, lineEndpoints, type LabelNodeData, type LabelPose, type TapeSize } from './label';
 
 interface SceneNode {
@@ -77,13 +77,16 @@ export function sceneToLbxConfig(
         });
         break;
       case 'barcode': {
-        // The pose is authoritative for us; P-touch sizes from barWidth. Derive
-        // it so the two agree on the symbol's width. Falls back to the imported
-        // value when the payload doesn't encode — nothing better to say.
+        // The pose is authoritative for us; P-touch sizes from barWidth (1D)
+        // and qrCode.cellSize (2D). Restate the pose in whichever term applies
+        // so the two agree on the drawn size. Falls back to the imported values
+        // when the payload doesn't encode — nothing better to say.
         const encoded = encodeBarcode(barcodeRequest(data));
-        const barWidth = encoded.ok && encoded.kind === '1d'
-          ? pose.width / encoded.totalModules
-          : data.barWidth;
+        const modulePt = encoded.ok ? barcodeModulePt(encoded, pose) : undefined;
+        const barWidth = encoded.ok && encoded.kind === '1d' ? modulePt! : data.barWidth;
+        const qrCode = encoded.ok && encoded.kind === '2d'
+          ? { ...data.qrCode, cellSize: modulePt! }
+          : data.qrCode;
         objects.push({
           type: 'barcode',
           position: { x: pose.x, y: pose.y, width: pose.width, height: pose.height },
@@ -95,7 +98,7 @@ export function sceneToLbxConfig(
           humanReadableAlignment: data.humanReadableAlignment,
           checkDigit: data.checkDigit,
           zeroFill: data.zeroFill,
-          ...(data.qrCode ? { qrCode: data.qrCode } : {}),
+          ...(qrCode ? { qrCode } : {}),
         });
         break;
       }

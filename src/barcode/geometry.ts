@@ -18,16 +18,35 @@ export interface Rect {
   height: number;
 }
 
+/**
+ * The pt size of one module for `symbol` drawn at `pose`: the narrow-bar width
+ * for 1D, the cell size for 2D.
+ *
+ * Export restates the pose in these terms, because P-touch redraws a barcode
+ * from `barWidth`/`cellSize` rather than from its bounding box. Sharing this
+ * with the drawing below is what keeps a symbol resized here the same size
+ * when P-touch reopens it.
+ */
+export function barcodeModulePt(
+  symbol: BarcodeSymbol,
+  pose: { width: number; height: number },
+): number {
+  return symbol.kind === '2d'
+    ? Math.min(pose.width, pose.height) / symbol.size
+    : pose.width / symbol.totalModules;
+}
+
 export function barcodeRects(
   symbol: BarcodeSymbol,
   pose: { x: number; y: number; width: number; height: number },
   humanReadable: boolean,
 ): Rect[] {
+  const module = barcodeModulePt(symbol, pose);
+
   if (symbol.kind === '2d') {
     // 2D symbols must stay square to scan, so they take the smaller dimension
     // and centre in the pose rather than stretching to fill it.
     const side = Math.min(pose.width, pose.height);
-    const module = side / symbol.size;
     const originX = pose.x + (pose.width - side) / 2;
     const originY = pose.y + (pose.height - side) / 2;
     const rects: Rect[] = [];
@@ -46,7 +65,6 @@ export function barcodeRects(
     return rects;
   }
 
-  const module = pose.width / symbol.totalModules;
   const barsHeight = humanReadable
     ? Math.max(0, pose.height - HUMAN_READABLE_HEIGHT_PT)
     : pose.height;
