@@ -2,7 +2,14 @@
  * Import .lbx files using the bil-lbx parser, then map to editor scene nodes.
  */
 import { parseLbx, labelLengthPt, type LabelConfig, type LabelObject } from 'bil-lbx';
-import { DEFAULT_LABEL_LENGTH, type LabelNodeData, type LabelPose, type TapeSize } from './label';
+import {
+  DEFAULT_LABEL_LENGTH,
+  DEFAULT_TAPE,
+  TAPE_SIZES,
+  type LabelNodeData,
+  type LabelPose,
+  type TapeSize,
+} from './label';
 import { fitLengthToContent } from './autoLength';
 
 interface ImportedNode {
@@ -21,15 +28,18 @@ interface ImportResult {
   cutMarks: number[];
 }
 
+/**
+ * Nearest standard tape to the file's paper width. Deliberately unbounded:
+ * P-touch and its clones write slightly different widths for the same cassette,
+ * and a label that opens on the wrong tape is recoverable where a refused
+ * import isn't. Widths come from TAPE_SIZES so this can't drift from the table
+ * export and rendering use.
+ */
 function detectTapeSize(widthPt: number): TapeSize {
-  const sizes: [TapeSize, number][] = [
-    ['6mm', 17], ['9mm', 25.5], ['12mm', 33.6],
-    ['18mm', 51], ['24mm', 68], ['36mm', 102],
-  ];
-  let best: TapeSize = '12mm';
+  let best: TapeSize = DEFAULT_TAPE;
   let bestDist = Infinity;
-  for (const [name, w] of sizes) {
-    const d = Math.abs(w - widthPt);
+  for (const [name, { width }] of Object.entries(TAPE_SIZES) as [TapeSize, { width: number }][]) {
+    const d = Math.abs(width - widthPt);
     if (d < bestDist) { bestDist = d; best = name; }
   }
   return best;
