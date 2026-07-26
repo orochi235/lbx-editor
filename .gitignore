@@ -2,3 +2,5 @@ node_modules/
 dist/
 .playwright-mcp/
 public/fonts/local/
+# Scratch output from driving the app by hand — generated .lbx, screenshots.
+.tmp-*
