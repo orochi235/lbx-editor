@@ -74,6 +74,26 @@
   margin-bottom: 8px;
 }
 
+.property-panel .prop-error,
+.property-panel .prop-note {
+  margin: -2px 0 8px;
+  padding: 6px 8px;
+  border-radius: 3px;
+  overflow-wrap: anywhere;
+}
+
+.property-panel .prop-error {
+  color: #8a1f11;
+  background: #fdecea;
+  border: 1px solid #f5c6c0;
+}
+
+.property-panel .prop-note {
+  color: #555;
+  background: #f0f0f0;
+  border: 1px solid #e0e0e0;
+}
+
 .property-panel .prop-info {
   border-top: 1px solid #e5e5e5;
   padding-top: 8px;

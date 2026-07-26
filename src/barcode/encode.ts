@@ -15,6 +15,28 @@ import { encodeQr } from './qr';
 import { encodeItf } from './itf';
 import { encodeCodabar } from './codabar';
 
+/**
+ * The protocols `encodeBarcode` can actually draw, in the order the property
+ * panel offers them. The dispatcher below is the authority; `encode.test.ts`
+ * pins this list against it so the two can't drift.
+ */
+export const SUPPORTED_PROTOCOLS = [
+  'CODE128',
+  'GS1-128',
+  'CODE39',
+  'ITF',
+  'CODABAR',
+  'EAN13',
+  'EAN8',
+  'UPCA',
+  'UPCE',
+  'QRCODE',
+] as const satisfies readonly BarcodeProtocol[];
+
+export function isSupportedProtocol(protocol: BarcodeProtocol): boolean {
+  return (SUPPORTED_PROTOCOLS as readonly BarcodeProtocol[]).includes(protocol);
+}
+
 export interface EncodeRequest {
   protocol: BarcodeProtocol;
   data: string;
