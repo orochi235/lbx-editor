@@ -18,3 +18,19 @@ export function tapeMismatchMessage(labelMm: number, loadedMm: number | null): s
     `or swap the cassette, then print again.`
   );
 }
+
+/**
+ * Alert copy when the label carries barcodes this editor can't encode — an
+ * unsupported symbology, or a payload that doesn't fit the one chosen. They
+ * draw as placeholder boxes, so printing would put a blank rectangle on the
+ * tape where bars belong. Block the job instead.
+ */
+export function unrenderableBarcodeMessage(count: number): string | null {
+  if (count <= 0) return null;
+  const noun = count === 1 ? '1 barcode' : `${count} barcodes`;
+  return (
+    `This label has ${noun} the editor can't draw — either an unsupported ` +
+    `symbology or a payload that doesn't encode. They'd print as empty boxes. ` +
+    `Fix or remove them, then print again.`
+  );
+}

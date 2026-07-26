@@ -72,7 +72,7 @@ import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
 import { fileToBase64, guessMimeType, getImageDimensions, imageDataUri } from './imageUtils';
 import { buildImageInsert, type PendingImage } from './imageInsert';
-import { tapeMismatchMessage } from './printPreflight';
+import { tapeMismatchMessage, unrenderableBarcodeMessage } from './printPreflight';
 import { registerFonts, substituteFontFamily, canvasFontsInUse, toWeaselAlign, toWeaselVerticalAlign } from './fonts';
 
 type LabelNode = SceneNode<LabelNodeData, LabelLayer, LabelPose>;
@@ -932,6 +932,21 @@ export function App() {
       alert('Neither WebUSB nor Web Serial is supported in this browser. Use Chrome or Edge.');
       return;
     }
+    // Preflight before touching the printer: a barcode we can't encode draws
+    // as a placeholder box, and printing that would burn tape on a label whose
+    // barcode is a blank rectangle.
+    let unrenderable = 0;
+    for (const [, node] of scene.nodes) {
+      if (node.data.kind === 'barcode' && !encodeBarcode(barcodeRequest(node.data)).ok) {
+        unrenderable++;
+      }
+    }
+    const barcodeProblem = unrenderableBarcodeMessage(unrenderable);
+    if (barcodeProblem) {
+      alert(barcodeProblem);
+      return;
+    }
+
     setPrinting(true);
     printingRef.current = true;
     try {
