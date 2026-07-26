@@ -23,6 +23,7 @@ import {
   textCommand,
   type ToolsApi,
   type InsertNodeFactory,
+  defineTool,
 } from '@weasel-js/core';
 // Subpath imports (not the `@weasel-js/ui` barrel) so tsc/vite only pull in
 // the modules we use, not sibling components like DataGrid that trip a
@@ -72,6 +73,7 @@ import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
 import { fileToBase64, guessMimeType, getImageDimensions, imageDataUri } from './imageUtils';
 import { buildImageInsert, type PendingImage } from './imageInsert';
+import { BarcodeIcon } from './BarcodeIcon';
 import { tapeMismatchMessage, unrenderableBarcodeMessage } from './printPreflight';
 import { registerFonts, substituteFontFamily, canvasFontsInUse, toWeaselAlign, toWeaselVerticalAlign } from './fonts';
 
@@ -667,7 +669,28 @@ export function App() {
   // the picked file is staged by handleImagePick.
   const pendingImageRef = useRef<PendingImage | null>(null);
   const imageTool = useImageTool({ src: '', label: 'Image' });
-  const toolsPatch = useMemo(() => ({ image: imageTool }), [imageTool]);
+
+  // Drag-to-insert barcode, mirroring the kit's image tool: a declarative drag
+  // binding routes through the dispatcher's insert action, and the
+  // `insertNodeFactories.barcode` entry below mints the node. The kit
+  // explicitly supports factories for kinds it doesn't ship.
+  const barcodeTool = useMemo(
+    () => defineTool<null>({
+      id: 'barcode',
+      capabilities: ['creates-shapes'],
+      cursor: 'crosshair',
+      presentation: { label: 'Barcode', group: 'shape', icon: <BarcodeIcon /> },
+      bindings: [
+        { spec: { kind: 'drag' }, actionId: 'insert', opts: { params: { kind: 'barcode' } } },
+      ],
+    }),
+    [],
+  );
+
+  const toolsPatch = useMemo(
+    () => ({ image: imageTool, barcode: barcodeTool }),
+    [imageTool, barcodeTool],
+  );
 
   const insertNodeFactories = useMemo<Record<string, InsertNodeFactory>>(() => ({
     rect: (b) => ({
@@ -717,6 +740,25 @@ export function App() {
       } satisfies LabelNodeData,
     }),
     image: (b) => buildImageInsert(pendingImageRef.current, b),
+    barcode: (b) => ({
+      pose: {
+        x: b.x,
+        y: b.y,
+        width: Math.max(b.width, 40),
+        height: Math.max(b.height, 16),
+      },
+      data: {
+        kind: 'barcode',
+        protocol: 'CODE128',
+        data: '12345678',
+        barWidth: 1.2,
+        barRatio: '1:3',
+        humanReadable: true,
+        humanReadableAlignment: 'CENTER',
+        checkDigit: false,
+        zeroFill: false,
+      } satisfies LabelNodeData,
+    }),
   }), []);
 
   const toolsRef = useRef(tools);
