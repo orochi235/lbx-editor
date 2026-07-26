@@ -16,8 +16,29 @@
 
 **1D symbols** fill `pose.height`, less the human-readable text band when enabled. **2D symbols** draw as a centered square of side `min(pose.width, pose.height)`.
 
-**Supported now:** CODE39, CODE128, GS1-128, EAN13, EAN8, UPCA, UPCE, QRCODE.
-**Placeholder + print block:** ITF, CODABAR, DATAMATRIX, PDF417, MAXICODE, GS1DATABAR — and any supported protocol whose payload is invalid (bad length, bad characters, bad check digit).
+**Supported now:** CODE39, CODE128, GS1-128, EAN13, EAN8, UPCA, UPCE, QRCODE, ITF, CODABAR.
+**Placeholder + print block:** DATAMATRIX, PDF417, MAXICODE, GS1DATABAR — and any supported protocol whose payload is invalid (bad length, bad characters, bad check digit).
+
+### Deferred symbologies
+
+P-touch Editor offers 19 entries in its symbology dropdown. We cover the ones
+that are a table plus ~50 lines; what's left needs a real encoder, and each is
+its own decision rather than a v1 item:
+
+| Symbology | Why deferred | Reach |
+|---|---|---|
+| **Data Matrix** | ECC200 + Reed-Solomon over GF(256) + module placement — realistically a dependency | **Highest value of the deferred set** — industry, electronics, medical UDI |
+| PDF417 | Multi-row stacked encoder with its own error correction | Driver's licenses, boarding passes |
+| GS1 DataBar (RSS) | Several variants, each with its own encoding | Retail coupons, produce |
+| Intelligent Mail | CRC-11 plus codeword→4-state-bar tables | US mail |
+| ISBN AddOn 2/5 | Small (~40 lines on top of EAN) but no demand yet | Books, magazines |
+| Micro QR | `qrcode-generator` doesn't emit it | Niche |
+| POSTNET | Trivial to add, but **USPS retired it in 2013** | Obsolete |
+| MaxiCode | Large; essentially UPS-internal | Very narrow |
+| "Laser Bar Code" | Brother-specific, undocumented | Unknown |
+
+All of these keep their data through import/export and draw a placeholder that
+blocks printing, so nothing is silently lost by not encoding them.
 
 **Why a dev-only oracle:** a barcode that looks right but carries a wrong check digit prints an unscannable label, and hand-transcribed bit patterns are exactly where that error enters. Every encoder is cross-checked against `bwip-js`'s raw encoder rather than against patterns typed from memory.
 

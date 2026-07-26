@@ -12,6 +12,7 @@ import { encodeCode39 } from './code39';
 import { encodeCode128 } from './code128';
 import { encodeEan } from './ean';
 import { encodeQr } from './qr';
+import { encodeItf } from './itf';
 
 export interface EncodeRequest {
   protocol: BarcodeProtocol;
@@ -43,6 +44,11 @@ export function encodeBarcode(req: EncodeRequest): EncodeResult {
     case 'UPCA':
     case 'UPCE':
       return encodeEan(req.data, req.protocol, { zeroFill: req.zeroFill ?? false });
+    case 'ITF':
+      return encodeItf(req.data, {
+        ratio: parseRatio(req.barRatio),
+        checkDigit: req.checkDigit ?? false,
+      });
     case 'QRCODE':
       return encodeQr(req.data, {
         ...(req.qrCode?.eccLevel !== undefined ? { eccLevel: req.qrCode.eccLevel } : {}),
