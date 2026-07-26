@@ -10,7 +10,7 @@
  * Also owns the .lbx→weasel alignment mappers (`toWeaselAlign`,
  * `toWeaselVerticalAlign`).
  */
-import { registerFont } from '@weasel-js/core';
+import { registerFont, registerCanvasFont } from '@weasel-js/core';
 import type { LabelTextData } from './label';
 import { registerCustomFonts } from './customFonts';
 
@@ -47,6 +47,29 @@ const SUBSTITUTIONS: Record<string, string> = {
 
 let registered = new Set<string>(BUNDLED_FAMILIES);
 
+// Canvas-sourced (installed-machine) families: rendered by weasel's dynamic
+// SDF tier, not from a baked atlas. Kept separate from `registered` so the
+// dropdown can group them and print can warn about portability.
+let canvasFamilies = new Set<string>();
+let installedCheckCache = new Map<string, boolean>();
+
+/** `document.fonts.check` probe, memoized per family. False wherever the
+ *  API is missing (node tests, headless print contexts). */
+function isInstalledFont(name: string): boolean {
+  const cached = installedCheckCache.get(name);
+  if (cached !== undefined) return cached;
+  let installed = false;
+  if (typeof document !== 'undefined' && typeof document.fonts?.check === 'function') {
+    try {
+      installed = document.fonts.check(`12px ${JSON.stringify(name)}`);
+    } catch {
+      installed = false;
+    }
+  }
+  installedCheckCache.set(name, installed);
+  return installed;
+}
+
 /** True for names that read as a condensed cut: "Condensed", "... Cn", or camelCase "...Cn...". */
 function looksCondensed(name: string): boolean {
   if (/cond/i.test(name)) return true;
@@ -57,9 +80,17 @@ function looksCondensed(name: string): boolean {
   return false;
 }
 
-/** Registered family for a node's fontFamily; never rewrites node data. */
+/** Registered family for a node's fontFamily; never rewrites node data.
+ *  Tiers: baked atlas match → installed on this machine (canvas-SDF tier,
+ *  registered with weasel on first sight) → substitution table → heuristic. */
 export function substituteFontFamily(name: string): string {
   if (registered.has(name)) return name;
+  if (canvasFamilies.has(name)) return name;
+  if (isInstalledFont(name)) {
+    registerCanvasFont(name);
+    canvasFamilies.add(name);
+    return name;
+  }
   const exact = SUBSTITUTIONS[name];
   if (exact) return exact;
   if (looksCondensed(name)) return 'Barlow Condensed';
@@ -69,6 +100,27 @@ export function substituteFontFamily(name: string): string {
 /** Families for the Property panel dropdown (bundled + local + custom, sorted). */
 export function registeredFamilies(): string[] {
   return [...registered].sort();
+}
+
+/** Canvas-sourced families seen so far (the dropdown's
+ *  "Installed (this machine)" group), sorted. */
+export function installedFamilies(): string[] {
+  return [...canvasFamilies].sort();
+}
+
+/** True if `name` renders through weasel's canvas-SDF tier. */
+export function isCanvasFamily(name: string): boolean {
+  return canvasFamilies.has(name);
+}
+
+/** The canvas-tier families a set of node fontFamily values resolves to —
+ *  the print-portability warning list. Sorted, deduped. */
+export function canvasFontsInUse(families: Iterable<string>): string[] {
+  const used = new Set<string>();
+  for (const f of families) {
+    if (isCanvasFamily(substituteFontFamily(f))) used.add(f);
+  }
+  return [...used].sort();
 }
 
 /** Narrow hook for customFonts.ts to add a successfully-registered custom
@@ -165,5 +217,7 @@ export function registerFonts(): Promise<void> {
 /** Test helper. Do not call from product code. */
 export function _resetFontsForTests(): void {
   registered = new Set<string>(BUNDLED_FAMILIES);
+  canvasFamilies = new Set();
+  installedCheckCache = new Map();
   fontsPromise = null;
 }

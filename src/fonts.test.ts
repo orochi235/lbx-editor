@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { registerFont } from '@weasel-js/core';
+import { registerFont, registerCanvasFont } from '@weasel-js/core';
 import {
   substituteFontFamily,
   registeredFamilies,
+  installedFamilies,
+  isCanvasFamily,
+  canvasFontsInUse,
   registerFonts,
   BUNDLED_FAMILIES,
   _resetFontsForTests,
@@ -12,6 +15,7 @@ import {
 
 vi.mock('@weasel-js/core', () => ({
   registerFont: vi.fn(),
+  registerCanvasFont: vi.fn(),
 }));
 
 describe('substituteFontFamily', () => {
@@ -29,6 +33,64 @@ describe('substituteFontFamily', () => {
     expect(substituteFontFamily('Roboto Condensed')).toBe('Barlow Condensed');
     expect(substituteFontFamily('SomeUnknownCn Font')).toBe('Barlow Condensed');
     expect(substituteFontFamily('Comic Sans MS')).toBe('Inter');
+  });
+});
+
+describe('substituteFontFamily — installed (canvas) middle tier', () => {
+  const stubFontsCheck = (result: boolean) => {
+    const check = vi.fn().mockReturnValue(result);
+    vi.stubGlobal('document', { fonts: { check } });
+    return check;
+  };
+
+  beforeEach(() => _resetFontsForTests());
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('registers and returns an installed family verbatim', () => {
+    const check = stubFontsCheck(true);
+    expect(substituteFontFamily('Futura')).toBe('Futura');
+    expect(check).toHaveBeenCalledWith('12px "Futura"');
+    expect(registerCanvasFont).toHaveBeenCalledWith('Futura');
+    expect(isCanvasFamily('Futura')).toBe(true);
+    expect(installedFamilies()).toContain('Futura');
+  });
+
+  it('installed check wins over the substitution table', () => {
+    stubFontsCheck(true);
+    expect(substituteFontFamily('Arial')).toBe('Arial'); // table would say Inter
+  });
+
+  it('falls through to the table/heuristic when not installed', () => {
+    stubFontsCheck(false);
+    expect(substituteFontFamily('Arial')).toBe('Inter');
+    expect(substituteFontFamily('SomeUnknownCn Font')).toBe('Barlow Condensed');
+    expect(substituteFontFamily('Mystery Sans')).toBe('Inter');
+    expect(installedFamilies()).toEqual([]);
+  });
+
+  it('baked families never hit the installed check', () => {
+    const check = stubFontsCheck(true);
+    expect(substituteFontFamily('Inter')).toBe('Inter');
+    expect(check).not.toHaveBeenCalled();
+  });
+
+  it('memoizes the check per family', () => {
+    const check = stubFontsCheck(false);
+    substituteFontFamily('Mystery Sans');
+    substituteFontFamily('Mystery Sans');
+    expect(check).toHaveBeenCalledTimes(1);
+  });
+
+  it('is safe with no document (node/print env)', () => {
+    // No stub: bare node environment.
+    expect(substituteFontFamily('Futura')).toBe('Inter');
+  });
+
+  it('canvasFontsInUse reports only canvas-tier families', () => {
+    stubFontsCheck(true);
+    substituteFontFamily('Futura'); // becomes canvas-registered
+    expect(canvasFontsInUse(['Futura', 'Inter', 'Futura'])).toEqual(['Futura']);
+    expect(canvasFontsInUse(['Inter', 'JetBrains Mono'])).toEqual([]);
   });
 });
 
