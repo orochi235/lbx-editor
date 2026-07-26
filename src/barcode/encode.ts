@@ -10,6 +10,7 @@ import type { BarcodeProtocol } from 'bil-lbx';
 import type { EncodeResult } from './types';
 import { encodeCode39 } from './code39';
 import { encodeCode128 } from './code128';
+import { encodeEan } from './ean';
 
 export interface EncodeRequest {
   protocol: BarcodeProtocol;
@@ -36,6 +37,11 @@ export function encodeBarcode(req: EncodeRequest): EncodeResult {
       return encodeCode128(req.data, { gs1: false });
     case 'GS1-128':
       return encodeCode128(req.data, { gs1: true });
+    case 'EAN13':
+    case 'EAN8':
+    case 'UPCA':
+    case 'UPCE':
+      return encodeEan(req.data, req.protocol, { zeroFill: req.zeroFill ?? false });
     default:
       return { ok: false, reason: 'unsupported', detail: req.protocol };
   }

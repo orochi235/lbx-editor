@@ -7,9 +7,7 @@ describe('encodeBarcode', () => {
     expect(result).toEqual({ ok: false, reason: 'unsupported', detail: 'MAXICODE' });
   });
 
-  // Unskipped once EAN lands — until then EAN13 is genuinely unsupported, and
-  // weakening this assertion to match the stub would defeat its purpose.
-  it.skip('reports invalid payloads', () => {
+  it('reports invalid payloads', () => {
     const result = encodeBarcode({ protocol: 'EAN13', data: 'nope' });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('invalid');
