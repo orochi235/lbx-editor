@@ -1,11 +1,11 @@
 name: Deploy to GitHub Pages
 
-# Manual-only for now: run from the Actions tab or `gh workflow run deploy.yml`.
-# To deploy automatically on every push to main, uncomment the `push` trigger.
+# Deploys on every push to main; also runnable by hand from the Actions tab
+# or `gh workflow run deploy.yml`.
 on:
   workflow_dispatch:
-  # push:
-  #   branches: [main]
+  push:
+    branches: [main]
 
 permissions:
   contents: read
