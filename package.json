@@ -11,7 +11,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@weasel-js/core": "file:../weasel",
+    "@weasel-js/core": "^0.6.0",
+    "@weasel-js/theme": "^0.6.0",
+    "@weasel-js/ui": "^0.6.0",
     "bil-lbx": "file:../bil-lbx",
     "fast-xml-parser": "^5.9.3",
     "jszip": "^3.10.1",

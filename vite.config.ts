@@ -1,23 +1,21 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'node:path';
-import { weaselAliases } from '../weasel/scripts/vite-aliases';
-
-const weaselRoot = resolve(__dirname, '../weasel');
 
 export default defineConfig({
   // Served from https://orochi235.github.io/lbx-editor/ on Pages; root locally.
   base: process.env.GITHUB_ACTIONS ? '/lbx-editor/' : '/',
   plugins: [react()],
   resolve: {
-    alias: weaselAliases(weaselRoot, [
-      // bil-lbx local source. (obwat now resolves to the published npm
-      // package — `npm link ../obwat` to develop it against the editor.)
+    alias: [
+      // bil-lbx local source. (weasel and obwat resolve to their published
+      // packages — `npm link ../weasel` or `../obwat` to develop against the
+      // editor, and remember both consumers use built `dist/`.)
       {
         find: 'bil-lbx',
         replacement: resolve(__dirname, '../bil-lbx/src/index.ts'),
       },
-    ]),
+    ],
   },
   server: { port: 5180 },
 });

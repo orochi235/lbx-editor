@@ -11,39 +11,11 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "baseUrl": ".",
-    // These paths mirror `weaselAliases()` (../weasel/scripts/vite-aliases.ts),
-    // which vite.config.ts uses at runtime. tsc has no way to run that script,
-    // so the kit's internal bare-path imports (core/*, features/*, …) and the
-    // workspace package aliases must be replicated here or tsc can't resolve
-    // weasel's linked source. Keep in sync with vite-aliases.ts when packages
-    // are added.
+    // weasel resolves as an ordinary dependency now — its own `exports` map
+    // answers both the barrel and the `@weasel-js/ui/components/*` subpaths, so
+    // nothing here has to mirror its source layout. bil-lbx is the one sibling
+    // still consumed from source, matching vite.config.ts.
     "paths": {
-      "@weasel-js/core": ["../weasel/packages/core/src/index.ts"],
-      "@weasel-js/core/*": ["../weasel/packages/core/src/import-shims/*.ts"],
-      "@weasel-js/geom/booleans": ["../weasel/packages/geom/src/booleans/index.ts"],
-      "@weasel-js/geom": ["../weasel/packages/geom/src/index.ts"],
-      "@weasel-js/geom/*": ["../weasel/packages/geom/src/*"],
-      "@weasel-js/gestures": ["../weasel/packages/gestures/src/index.ts"],
-      "@weasel-js/gestures/*": ["../weasel/packages/gestures/src/*"],
-      "@weasel-js/history": ["../weasel/packages/history/src/index.ts"],
-      "@weasel-js/history/*": ["../weasel/packages/history/src/*"],
-      "@weasel-js/modes": ["../weasel/packages/modes/src/index.ts"],
-      "@weasel-js/modes/*": ["../weasel/packages/modes/src/*"],
-      "@weasel-js/svg": ["../weasel/packages/svg/src/index.ts"],
-      "@weasel-js/svg/*": ["../weasel/packages/svg/src/*"],
-      "@weasel-js/theme": ["../weasel/packages/theme/src/index.ts"],
-      "@weasel-js/theme/*": ["../weasel/packages/theme/src/*"],
-      "@weasel-js/ui": ["../weasel/packages/ui/src/index.ts"],
-      "@weasel-js/ui/*": ["../weasel/packages/ui/src/*"],
-      "@weasel-js/hud": ["../weasel/packages/hud/src/index.ts"],
-      "@weasel-js/hud/*": ["../weasel/packages/hud/src/*"],
-      "core/*": ["../weasel/packages/core/src/core/*"],
-      "features/*": ["../weasel/packages/core/src/features/*"],
-      "affordances/*": ["../weasel/packages/core/src/affordances/*"],
-      "interactions/*": ["../weasel/packages/core/src/interactions/*"],
-      "tools/*": ["../weasel/packages/core/src/tools/*"],
-      "canvas/*": ["../weasel/packages/core/src/canvas/*"],
-      "debug/*": ["../weasel/packages/core/src/debug/*"],
       "bil-lbx": ["../bil-lbx/src/index.ts"],
       "bil-lbx/*": ["../bil-lbx/src/*"]
     }

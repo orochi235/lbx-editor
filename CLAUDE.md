@@ -5,9 +5,10 @@ Web-based visual editor for Brother P-touch label files (.lbx).
 ## Architecture
 
 Standalone Vite + React app consuming:
-- `@weasel-js/core` (linked from `../weasel`) — 2D scene graph, canvas rendering, tools
+- `@weasel-js/core`, `/ui`, `/theme` (from npm, `^0.6.0`) — 2D scene graph,
+  canvas rendering, tools, and the UI kit
 - `bil-lbx` (linked from `../bil-lbx`) — .lbx serialization/parsing
-- `obwat` (from npm, `^0.1.0`) — Brother P-touch printing: raster encoding,
+- `obwat` (from npm, `^0.3.0`) — Brother P-touch printing: raster encoding,
   WebUSB/Web Serial transports, and the `createBrotherPrinter` facade (device
   acquisition, keepalive, status events). Weasel renders pixels for print via
   `renderSceneToPixels` (`src/labelRender.ts` is just the unit math); obwat
@@ -21,15 +22,22 @@ npm install
 npm run dev    # starts on http://localhost:5180
 ```
 
-Requires sibling repos: `~/src/weasel` and `~/src/bil-lbx`. obwat installs
-from npm; to develop it against the editor, `npm link ../obwat` (and remember
-obwat consumers use its built `dist/` — run its `npm run build` after edits).
+Requires one sibling repo: `~/src/bil-lbx`. weasel and obwat install from npm;
+to develop either against the editor, `npm link ../weasel` or `npm link
+../obwat` — and remember both consumers use built `dist/`, so run the sibling's
+`npm run build` after edits (a stale Vite dep cache will also keep serving the
+old bundle; `npm run dev -- --force` re-optimizes).
 
 ## Weasel integration
 
-Uses `weaselAliases()` from weasel's scripts to resolve all `@weasel-js/*` imports
-and the kit's internal bare-path imports (`core/...`, `features/...`, etc.) to
-local weasel source.
+weasel resolves as an ordinary dependency: its own `exports` map answers the
+barrel and the `@weasel-js/ui/components/*` subpaths, so nothing mirrors its
+source layout. Subpath imports (not the `@weasel-js/ui` barrel) are deliberate
+— the barrel pulls in sibling components like DataGrid that trip a
+duplicate-`@types/react` mismatch against this app's newer React types.
+
+Until 0.6.0 this went through `weaselAliases()` against a sibling checkout,
+because the published `ui` package shipped neither types nor subpaths.
 
 Key weasel APIs used:
 - `SceneCanvas` with `layers.scene.drawOne` for custom rendering
