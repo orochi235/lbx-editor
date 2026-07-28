@@ -18,10 +18,10 @@ for localhost:5180).
 
 Don't drag-draw nodes — import a generated .lbx instead:
 
-1. Write a small script importing `../bil-lbx/src/index.ts` (`buildLbx`,
-   `TAPE`), run with `npx -y tsx` **from the bil-lbx dir** (deps resolve
-   there; name the script `.mts` or tsx treats it as CJS and top-level
-   await fails).
+1. Write a small script importing `bil-lbx` (`buildLbx`, `TAPE`), run with
+   `npx -y tsx` **from the editor dir** — bil-lbx is an ordinary npm
+   dependency, so it resolves from `node_modules` (name the script `.mts`
+   or tsx treats it as CJS and top-level await fails).
 2. The upload tool only accepts files inside the workspace — copy the
    .lbx into the repo first (and delete it afterwards).
 3. `upload_file` on the **"Open .lbx" button** uid — the hidden file

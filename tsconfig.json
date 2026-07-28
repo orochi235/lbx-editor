@@ -9,16 +9,10 @@
     "noEmit": true,
     "isolatedModules": true,
     "esModuleInterop": true,
-    "skipLibCheck": true,
-    "baseUrl": ".",
-    // weasel resolves as an ordinary dependency now — its own `exports` map
-    // answers both the barrel and the `@weasel-js/ui/components/*` subpaths, so
-    // nothing here has to mirror its source layout. bil-lbx is the one sibling
-    // still consumed from source, matching vite.config.ts.
-    "paths": {
-      "bil-lbx": ["../bil-lbx/src/index.ts"],
-      "bil-lbx/*": ["../bil-lbx/src/*"]
-    }
+    "skipLibCheck": true
+    // Every dependency resolves through its own `exports` map now — weasel's
+    // answers the barrel and the `@weasel-js/ui/components/*` subpaths, and
+    // bil-lbx ships its own types — so nothing here mirrors a source layout.
   },
   "include": ["src"]
 }

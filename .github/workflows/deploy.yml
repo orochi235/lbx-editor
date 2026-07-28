@@ -21,39 +21,20 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # The editor builds against the *source* of bil-lbx (resolved by the Vite
-      # alias / tsconfig path), so it's checked out as a sibling: ../bil-lbx
-      # relative to the editor. weasel and obwat come from npm like any other
-      # dependency.
+      # bil-lbx, weasel and obwat all come from npm now, so there are no sibling
+      # checkouts left — this is an ordinary single-repo build.
       - name: Checkout lbx-editor
         uses: actions/checkout@v7
-        with:
-          path: lbx-editor
-
-      - name: Checkout bil-lbx (.lbx parser)
-        uses: actions/checkout@v7
-        with:
-          repository: orochi235/bil-lbx
-          ref: main
-          path: bil-lbx
 
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
           node-version: 22
 
-      # bil-lbx is bundled from source; install its runtime deps so Vite can
-      # resolve them (fast-xml-parser/jszip).
-      - name: Install bil-lbx deps
-        working-directory: bil-lbx
-        run: npm ci
-
-      - name: Install editor deps
-        working-directory: lbx-editor
+      - name: Install deps
         run: npm ci
 
       - name: Build
-        working-directory: lbx-editor
         run: npm run build
 
       - name: Configure Pages
@@ -62,7 +43,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          path: lbx-editor/dist
+          path: dist
 
   deploy:
     needs: build
