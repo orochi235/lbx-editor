@@ -215,8 +215,8 @@ stays black.
 
 ## Follow-up: the quiet zone is inconsistent between encoders
 
-**Deferred, not overlooked.** Named here so the next person reads it as a known
-wart rather than rediscovering it.
+**Deferred, but no longer undecided — see "Measured against P-touch" below,
+which settles the direction the fix has to go.**
 
 `quietZonePt` returns a flat 10 modules for every 1D symbology and applies it
 *outside* the pose. But the encoders disagree about where the quiet zone lives:
@@ -260,3 +260,62 @@ constant carries its own caveat.
 - No diagnostic for "this background is hiding something." The mask is visible
   on canvas, so unlike the barcode size and clipping checks, the screen does
   show it.
+
+## Measured against P-touch (2026-07-28)
+
+The question the follow-up above couldn't answer — does P-touch's barcode
+object box include the quiet zone? — is now settled empirically, against a
+P-touch Editor-authored file: `~/src/bil-lbx/docs/samples/barcodes.lbx`,
+five barcodes chosen to separate the variables.
+
+`box` is `position.width`; `bars` is our encoder's `totalModules × barWidth`.
+
+| protocol | `margin` | `barWidth` | box | bars | extra |
+|---|---|---|---|---|---|
+| CODE128 | true | 0.8pt | 100pt | 63.2pt | **36.8pt** |
+| CODE128 | true | **1.6pt** | 163.2pt | 126.4pt | **36.8pt** |
+| EAN13 | true | 0.8pt | 112.8pt | 76pt (95 mod) | **36.8pt** |
+| CODE128 | **false** | 0.8pt | 64pt | 63.2pt | 0.8pt |
+| QRCODE | true | (cell 1.6pt) | 40pt | 33.6pt (21 cells) | 6.4pt = 4 cells |
+
+Three conclusions:
+
+1. **The 1D margin is a fixed 36.8pt, not a module count.** Doubling
+   `barWidth` left the extra unchanged at 36.8pt — 46 modules at 0.8pt, 23 at
+   1.6pt. So P-touch's box never encodes a quiet zone in module terms, and the
+   "~95 vs ~113" test proposed earlier was asking the wrong question.
+2. **With `margin="false"` the box is the bars** (64pt vs our 63.2pt — one
+   module of slop, most likely P-touch counting the stop pattern as 14 rather
+   than 13). Our exporter already hardcodes `margin="false"`.
+3. **EAN13's box is bars + the same fixed 36.8pt**, with no module-proportional
+   component — the row that rules out the alternative directly.
+
+**Therefore the pose means bars only, and `ean.ts`'s baked-in `QUIET = 9` is
+wrong.** Under `margin="false"` P-touch fits the 95 bars to whatever box we
+give it, and we size that box for 113 modules, so a round-tripped EAN draws
+~19% narrower here than P-touch will redraw it. Code 128, Code 39, ITF and
+Codabar were correct already.
+
+The fix, now unblocked:
+
+- Strip `QUIET = 9` from `ean.ts` — `totalModules` becomes `modules.length`,
+  and `bars[].x` loses the offset.
+- `quietZonePt` becomes the only quiet zone, applied outside the pose, uniform
+  across every 1D symbology. `barcodeBackgroundRect` and `protectedRegions`
+  then stop double-counting on the EAN family.
+- The oracle tests in `ean.test.ts` are insensitive to this: `bitstring()`
+  trims leading and trailing zeros.
+- **Existing EAN labels will redraw ~19% wider and export a ~19% larger
+  `barWidth`.** That is the correction, not a regression, but it changes
+  documents that already exist.
+
+Two things this also turned up, both separate work:
+
+- **QR's margin is proportional** — 4 cells total, 2 per side — where 1D's is
+  fixed pt. `QUIET_ZONE_MODULES_2D = 4` is per side, so ours is 8 total: wider
+  than P-touch's, and wider than the QR spec's 4-per-side is *not*, so ours
+  matches the spec and P-touch is the tight one. No action, but don't "fix"
+  ours to match P-touch.
+- **We hardcode `margin="false"` on export** and never read it on import. That
+  is currently load-bearing for conclusion 2. If it ever becomes settable, the
+  pose's meaning changes with it.
