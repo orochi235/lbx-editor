@@ -35,23 +35,50 @@ correct behavior and the familiar one.
 opaqueBackground: boolean;
 ```
 
-### Round-trip
+### Round-trip: on is persisted, off is not
 
-`.lbx`'s `BarcodeObject` already carries a `brush`, and `BrushStyle` is
-`"NULL" | "SOLID" | "HATCHED"` — exactly this distinction:
+`.lbx`'s `BarcodeObject` carries a `brush`, and `BrushStyle` is
+`"NULL" | "SOLID" | "HATCHED"`, which looks like exactly this distinction. It
+isn't, quite:
 
-| state | `brush` |
+- bil-lbx's `parseBrush` returns `undefined` when `style === "NULL"`.
+- bil-lbx's `brushNode` serializes an absent brush *as* `style="NULL"`.
+
+So **"no brush" and "NULL brush" are the same state in a `.lbx`**, and that
+collapse is correct for the objects it was written for: on a rect, no brush and
+a null brush both mean no fill. There is no third value to spend on "opaque
+background off" without squatting on `HATCHED`, which would mean something else
+entirely to any other reader.
+
+Therefore:
+
+| direction | behavior |
 |---|---|
-| on | `{ style: 'SOLID', color: '#FFFFFF' }` |
-| off | `{ style: 'NULL' }` |
-| absent (P-touch-authored file) | reads as **on** |
+| export, on | `brush: { style: 'SOLID', color: '#FFFFFF' }` |
+| export, off | `brush: { style: 'NULL' }` |
+| import, any | `opaqueBackground: true` |
 
-Absent-means-on is what makes a P-touch file land where P-touch draws it.
+**Off survives the session and the localStorage autosave, but not an `.lbx`
+round-trip.** A file exported with the background off reopens with it on.
+
+That is the safe direction to be lossy in: a reopened barcode is opaque, which
+is scannable. The alternative encoding — `brush?.style === 'SOLID'` → on —
+makes every P-touch-authored barcode import *transparent*, since P-touch's
+files have no `SOLID` brush to find, and the failure mode there is labels that
+print unscannable.
+
+Export still writes `SOLID`/`NULL` faithfully rather than always writing
+`SOLID`, so the file states what we drew and P-touch gets the chance to honor
+it if it reads the field at all (unverified — see below).
 
 **Assumption, unverified:** whether P-touch itself honors `brush` on a barcode
-object. If it ignores the field, our own files still round-trip correctly and
-P-touch's still land on the default — that is the entire exposure, and it is
-smaller than storing nothing and losing the off state on every export.
+object. Nothing depends on the answer: if it ignores the field, the field is
+inert and our import behavior is unchanged.
+
+Making this lossless is a bil-lbx change — `parseBrush` preserving
+`{ style: 'NULL' }` instead of collapsing it to `undefined`, with `lbxImport`'s
+rect path made explicit about NULL meaning no fill. Cross-repo plus a version
+bump; noted as a follow-up, not done here.
 
 ## Geometry
 
@@ -163,14 +190,23 @@ sits with the universal controls rather than the per-encoder ones.
 | `geometry.test.ts` | `barcodeBackgroundRect` = pose + quiet zone, 1D and 2D |
 | `ditherProtect.test.ts` | protected regions unchanged — the point is they now come from one place |
 | `barcodeExport.test.ts` | on → `SOLID`, off → `NULL` |
-| `lbxImport.test.ts` | `SOLID` → on, `NULL` → off, absent → on |
+| `lbxImport.test.ts` | `SOLID`, `NULL`, and absent all → on — pinning the lossy direction as deliberate |
 
-The color parameter has no unit seam today: `drawLabelNode` is module-private
-in `App.tsx`. Export it and add `drawLabelNode.test.ts` covering the property
-the defaults exist for — **omitting `colors` yields `#000000` bars on an
-`#ffffff` background**, i.e. a call site that forgets the argument still prints
-correctly. Passing `{ ink, paper }` yields those instead. Cheap, and it pins the
-one mistake that would otherwise print a black box over the label.
+The color parameter has no unit seam today, and exporting `drawLabelNode` from
+`App.tsx` doesn't create one: a test that imports `./App` fails before it runs,
+because `App.tsx` imports obwat and obwat's `dist` uses extensionless relative
+imports that vitest's node resolution won't follow. (Existing tests only import
+obwat *types*, which are erased at compile time.) So `drawLabelNode` moves to
+its own `src/drawLabelNode.ts` — every one of its own dependencies was checked
+and imports cleanly. That is a prerequisite for testing it at all, not a
+stylistic split, though `App.tsx` is 60KB and the node→commands mapping is a
+self-contained unit that belongs on its own regardless.
+
+`drawLabelNode.test.ts` then covers the property the defaults exist for —
+**omitting `colors` yields `#000000` bars on an `#ffffff` background**, i.e. a
+call site that forgets the argument still prints correctly. Passing
+`{ ink, paper }` yields those instead. Cheap, and it pins the one mistake that
+would otherwise print a black box over the label.
 
 Visual confirmation through `.claude/skills/verify`: a barcode over an image,
 printed, should show blank tape in the spaces and the quiet zone; and a
