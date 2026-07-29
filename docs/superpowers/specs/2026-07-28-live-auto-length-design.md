@@ -48,9 +48,18 @@ drag must not move it.
 
 ### Gesture extent
 
-A rAF loop runs while — and only while — a gesture is in flight.
-`tools.gestureTick` (weasel bumps it when a gesture starts, transitions phase,
-or ends) plus `dispatcher.hasActiveGesture()` start and stop it.
+A rAF loop runs while — and only while — a pointer gesture is in flight. It
+starts on `pointerdown` over the canvas container and stops on `pointerup` /
+`pointercancel` (listened for on `window`, so a release outside the canvas
+still ends it).
+
+Weasel's own `tools.gestureTick` would be the more obvious trigger, but the app
+captures `ToolsApi` once via `onToolsCreated` and holds it in state, so the
+`gestureTick` it can see is frozen at the value from first mount. The
+`dispatcher` on that captured object *is* stable and its `hasActiveGesture()`
+is a live getter, but nothing re-renders App when it flips. Driving off raw
+pointer events sidesteps weasel's phase bookkeeping entirely and is both
+simpler and more robust: the loop's lifetime is exactly the pointer's.
 
 Each frame the loop unions `helpersRef.getEffectiveBounds(id)` over the scene's
 nodes. That helper is documented as returning the drag/resize/rotate overlay
@@ -161,15 +170,27 @@ second weasel change and doesn't block the feature.
     /** The label span that fits `poses`, allowing a negative head. */
     fitExtentToContent(poses): { originX: number; length: number }
 
-    /** Rightward shift that normalizes a negative-origin extent to x=0. */
+    /** Rightward shift that normalizes a negative-origin extent to x=0.
+     *  Equals −originX: shift right by however far the label overhangs. */
     rebaseShift(originX: number): number
 
 Both are pure geometry over poses — no React, no weasel, unit-testable in
-isolation, and they express the whole of the head/tail rule. `fitLengthToContent`
-becomes a thin wrapper over `fitExtentToContent` so the two can't drift.
+isolation, and they express the whole of the head/tail rule.
 
-App.tsx owns only the wiring: the rAF loop, the display pair, and the rebase
-commit.
+`fitLengthToContent` stays as it is and does **not** become a wrapper over
+`fitExtentToContent`. The two answer different questions: the committed fit
+assumes an origin at 0 and deliberately ignores negative-x content (a pinned
+behavior — see the existing "ignores negative-x content" test), while the live
+extent is the one that grows a head. Drift is guarded by a test asserting they
+agree whenever all content is non-negative, which is every committed document
+once the rebase has run.
+
+`src/useLiveExtent.ts` holds the gesture bookkeeping — the rAF loop, its
+pointer-driven start/stop, and the per-frame union. It takes a node-id getter
+and the `helpersRef`, not the `Scene`, so it stays free of weasel's scene
+generics and can be exercised with a stub helpers object. App.tsx keeps only
+the display pair, the rebase commit, and the `helpersRef` wiring — it is
+already 1400 lines and shouldn't absorb another gesture subsystem.
 
 ## Testing
 
