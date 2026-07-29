@@ -56,16 +56,19 @@ Both go through `barcodeModulePt`. Covered by `barcodeExport.test.ts`.
 
 ### 4. Document checks (`src/diagnostics.ts`)
 
-Pure geometry in, findings out. Two checks today:
+Pure document state in, findings out. Four checks today:
 
 | code | severity | condition |
 |---|---|---|
 | `barcode-unprintable` | error | module < 1 printer dot |
 | `barcode-marginal` | warning | module < 2 printer dots |
 | `clipped` | warning | object overhangs the printable band or label length |
+| `qr-model-substituted` | warning | file names a QR model we don't encode (i.e. not 2) |
 
-Both are conditions the canvas draws *correctly* — crisp sub-pixel bars, an
-object past the head's reach — so the screen can't show them.
+Every one is a condition the canvas draws *correctly* — crisp sub-pixel bars,
+an object past the head's reach, a valid QR that isn't the one the file asked
+for — so the screen can't show them. That is the entry criterion for this file:
+if the canvas can show it, it doesn't belong here.
 
 ### 5. Reporting surfaces
 
@@ -172,9 +175,27 @@ Kept here because each one names a failure mode that doesn't announce itself.
 In the order previously agreed (reverse of how they were listed):
 
 1. ~~Minimum-size guard~~ — done.
-2. **QR `model` has no UI.** `qrCode.model` (QR Model 1/2) round-trips through
-   import and export untouched but isn't editable. Small: one more control in
-   `BarcodeFields`, alongside ECC and version.
+2. ~~QR `model` has no UI~~ — closed, but **not** by adding the control.
+   `qrcode-generator` builds Model 2 only (`moduleCount = version * 4 + 17`
+   plus alignment patterns is the ISO 18004 construction; there is no Model 1
+   path). A `model` select would have changed the exported file while the
+   canvas and the print raster stayed Model 2 — P-touch would then redraw a
+   symbol the user never saw, which is the WYSIWYG break the rest of this work
+   exists to prevent, and the panel's own rule against controls that do nothing
+   already forbade it.
+
+   The real defect was the silence: a Model 1 file imported today is redrawn
+   and printed as Model 2 with nothing said. So it became a diagnostic,
+   `qr-model-substituted` — same family as the size and clipping checks, a
+   thing the canvas draws correctly and therefore cannot report. `model` still
+   round-trips untouched (pinned in `barcodeExport.test.ts`, since the
+   message's wording promises it), so P-touch still draws the Model 1 it was
+   asked for.
+
+   Reopening the control only makes sense with a real Model 1 encoder behind
+   it — different sizing formula, no alignment patterns, its own capacity
+   tables, and no oracle to check against, for a 1994 symbology modern
+   scanners read poorly.
 3. **Four symbologies still fail closed**: `DATAMATRIX`, `PDF417`, `MAXICODE`,
    `GS1DATABAR`. They import, draw as a placeholder box, and block printing.
    Each is a real encoder's worth of work — this is the big remaining chunk.
