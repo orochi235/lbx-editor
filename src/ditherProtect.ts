@@ -16,7 +16,7 @@
  * Pure: nodes and geometry in, dot-space rectangles out.
  */
 import type { PixelRect } from 'obwat';
-import { encodeBarcode, barcodeRequest, quietZonePt } from './barcode';
+import { encodeBarcode, barcodeRequest, barcodeBackgroundRect } from './barcode';
 import type { LabelNodeData, LabelPose } from './label';
 
 interface ProtectableNode {
@@ -35,12 +35,13 @@ interface RenderGeometry {
  * space: dots along the tape, measured from the top of the printable band —
  * the same origin and scale `labelRenderPlan` renders with.
  *
- * Each barcode's whole pose is protected, plus its quiet zone. The pose
- * includes the human-readable text below the bars, which is small type that
- * gains nothing from a dither either, and the quiet zone keeps the diffuser
- * from dropping a speck into the blank margin a scanner reads as the symbol's
- * edge. Barcodes that don't encode draw as a placeholder box and are skipped —
- * there's no symbol whose geometry needs preserving.
+ * Each barcode's region is `barcodeBackgroundRect` — its pose plus its quiet
+ * zone, the same rectangle the barcode paints its opaque background over. The
+ * pose includes the human-readable text below the bars, which is small type
+ * that gains nothing from a dither either, and the quiet zone keeps the
+ * diffuser from dropping a speck into the blank margin a scanner reads as the
+ * symbol's edge. Barcodes that don't encode draw as a placeholder box and are
+ * skipped — there's no symbol whose geometry needs preserving.
  */
 export function protectedRegions(
   nodes: Iterable<ProtectableNode>,
@@ -53,13 +54,14 @@ export function protectedRegions(
     const symbol = encodeBarcode(barcodeRequest(node.data));
     if (!symbol.ok) continue;
 
-    const { pose } = node;
-    const quiet = quietZonePt(symbol, pose);
+    // The same rectangle the barcode draws its opaque background over: what we
+    // blank and what we exempt from dithering are one region, not two.
+    const rect = barcodeBackgroundRect(symbol, node.pose);
     regions.push({
-      x: (pose.x - quiet) * scale,
-      y: (pose.y - geometry.band.y - quiet) * scale,
-      width: (pose.width + quiet * 2) * scale,
-      height: (pose.height + quiet * 2) * scale,
+      x: rect.x * scale,
+      y: (rect.y - geometry.band.y) * scale,
+      width: rect.width * scale,
+      height: rect.height * scale,
     });
   }
   return regions;
