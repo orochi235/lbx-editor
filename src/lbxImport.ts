@@ -50,7 +50,28 @@ function genId(): string {
   return `imported-${nextId++}`;
 }
 
-function lbxObjectToNode(obj: LabelObject): ImportedNode | null {
+/**
+ * Whether this file's `brush` means what it says on a barcode.
+ *
+ * P-touch writes boilerplate for attributes it doesn't use — every `pt:brush`
+ * it authors is `style="NULL"`, on text and image objects too, where a fill
+ * means nothing — and it draws its barcodes opaque anyway. So in a P-touch
+ * file the field carries no information, and reading NULL as "off" there would
+ * import every P-touch barcode transparent over whatever it sits on.
+ *
+ * Only `bil-lbx` counts, deliberately **not** its former name `brother-lbx`.
+ * Files we wrote before the opaque background existed carry that older stamp
+ * and no brush at all, so trusting it would read them as "off" and reopen a
+ * barcode transparent — the failure the background exists to prevent. Files we
+ * wrote with a deliberate brush but an older bil-lbx share the same stamp and
+ * can't be told apart from those, so they lose their "off" instead. That is
+ * the direction it's safe to lose: a barcode that comes back opaque scans.
+ */
+function fileMeansItsBrush(generator: string | undefined): boolean {
+  return generator === 'bil-lbx';
+}
+
+function lbxObjectToNode(obj: LabelObject, brushIsMeaningful: boolean): ImportedNode | null {
   const pos = obj.position;
   const pose: LabelPose = { x: pos.x, y: pos.y, width: pos.width, height: pos.height };
 
@@ -113,12 +134,10 @@ function lbxObjectToNode(obj: LabelObject): ImportedNode | null {
           humanReadableAlignment: obj.humanReadableAlignment ?? 'CENTER',
           checkDigit: obj.checkDigit ?? false,
           zeroFill: obj.zeroFill ?? false,
-          // Not readable from the file: bil-lbx's parseBrush collapses a NULL
-          // brush to undefined, and its serializer writes an absent brush as
-          // NULL, so "off" and "never set" are the same state in a .lbx. Always
-          // importing it on is the safe direction to be lossy in — a reopened
-          // barcode is opaque, which is scannable. See the design doc.
-          opaqueBackground: true,
+          // A solid brush is the background; NULL and absent are both "off",
+          // since bil-lbx collapses them to the same thing. Only trustworthy
+          // in a file we wrote — see `fileMeansItsBrush`.
+          opaqueBackground: brushIsMeaningful ? obj.brush?.style === 'SOLID' : true,
           ...(obj.qrCode ? { qrCode: obj.qrCode } : {}),
         },
       };
@@ -150,9 +169,10 @@ export async function importLbx(file: File | ArrayBuffer): Promise<ImportResult>
   const tapeSize = detectTapeSize(config.paper.width);
   const autoLength = config.paper.autoLength ?? true;
 
+  const brushIsMeaningful = fileMeansItsBrush(config.generator);
   const nodes: ImportedNode[] = [];
   for (const obj of config.objects) {
-    const node = lbxObjectToNode(obj);
+    const node = lbxObjectToNode(obj, brushIsMeaningful);
     if (node) nodes.push(node);
   }
 

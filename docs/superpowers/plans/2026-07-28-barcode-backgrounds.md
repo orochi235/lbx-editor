@@ -978,6 +978,10 @@ Recorded in the spec's **Follow-up** section, in
   is gone, so `quietZonePt` is the only quiet zone and the EAN family stopped
   double-counting. `encode.test.ts` now pins the invariant across all nine 1D
   symbologies. See the spec's **Follow-up**.
-- **The off state doesn't survive an `.lbx` round-trip.** bil-lbx collapses a
-  NULL brush to `undefined` on parse, so "off" and "never set" are one state in
-  the file. Making it lossless is a bil-lbx change plus a version bump.
+- ~~**The off state doesn't survive an `.lbx` round-trip.**~~ Deferred past
+  this plan, then done once bil-lbx 0.2.2 shipped `generator` on `LabelConfig`:
+  a brush is read literally in files we wrote and ignored in everyone else's.
+  The obstacle was never `parseBrush` — `SOLID` and `NULL` always survived
+  distinctly — it was telling our files from P-touch's. See the spec's
+  **Making it lossless**, including the correction about the legacy
+  `brother-lbx` stamp.
