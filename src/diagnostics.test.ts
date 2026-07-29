@@ -19,6 +19,7 @@ const BARCODE: LabelNodeData = {
   humanReadableAlignment: 'CENTER',
   checkDigit: false,
   zeroFill: false,
+  opaqueBackground: true,
 };
 
 const RECT: LabelNodeData = {

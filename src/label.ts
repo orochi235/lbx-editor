@@ -62,6 +62,9 @@ export interface LabelBarcodeData {
   humanReadableAlignment: 'LEFT' | 'CENTER' | 'RIGHT';
   checkDigit: boolean;
   zeroFill: boolean;
+  /** Mask the label under the symbol and its quiet zone, so nothing prints
+   *  into a space a scanner would read as light. */
+  opaqueBackground: boolean;
   qrCode?: { model?: number; eccLevel?: QrEccLevel; cellSize?: number; version?: string };
 }
 

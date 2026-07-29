@@ -886,6 +886,7 @@ export function App() {
         humanReadableAlignment: 'CENTER',
         checkDigit: false,
         zeroFill: false,
+        opaqueBackground: true,
       } satisfies LabelNodeData,
     }),
   }), []);

@@ -19,6 +19,7 @@ const BASE: LabelBarcodeData = {
   humanReadableAlignment: 'CENTER',
   checkDigit: false,
   zeroFill: false,
+  opaqueBackground: true,
 };
 
 function exportOne(data: LabelBarcodeData, pose: { width: number; height: number }) {
