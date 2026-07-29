@@ -181,6 +181,20 @@ In the order previously agreed (reverse of how they were listed):
    Add to `SUPPORTED_PROTOCOLS` and the dispatcher; `encode.test.ts` will then
    require them to actually encode.
 
+4. **The quiet zone is inconsistent between encoders.** `quietZonePt` returns a
+   flat 10 modules for every 1D symbology and applies it *outside* the pose,
+   but `ean.ts` bakes `QUIET = 9` *inside* `totalModules` while Code 128, Code
+   39, ITF, and Codabar bake none. So the EAN family counts its quiet zone
+   twice, and everything derived from it — `protectedRegions`, and the barcode
+   background — is about twice as wide as needed there. Not local: fixing it
+   changes `barcodeModulePt` (`pose.width / totalModules`), which redraws
+   existing EAN labels ~19% wider and shifts their exported `barWidth`. Which
+   direction is correct depends on whether P-touch's object box includes the
+   quiet zone — a P-touch-authored EAN file settles it
+   (`position.width / barWidth` is ~95 for bars-only, ~113 for bars+quiet).
+   Full write-up in
+   `docs/superpowers/specs/2026-07-28-barcode-backgrounds-design.md`.
+
 Also worth considering, not agreed:
 
 - The clipping check runs on every node type but nothing tells the user *which*
