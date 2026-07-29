@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { checkDocument, type CheckedNode, type DocumentGeometry } from './diagnostics';
-import type { LabelNodeData } from './label';
+import type { LabelBarcodeData, LabelNodeData } from './label';
 
 // 24mm tape at 180dpi: the head reaches a 128-dot band, centred in 68pt.
 const GEOMETRY: DocumentGeometry = {
@@ -9,7 +9,7 @@ const GEOMETRY: DocumentGeometry = {
   dpi: 180,
 };
 
-const BARCODE: LabelNodeData = {
+const BARCODE: LabelBarcodeData = {
   kind: 'barcode',
   protocol: 'CODE128',
   data: '12345678',
@@ -64,6 +64,44 @@ describe('barcode size checks', () => {
     // Reported by the property panel and blocked at print; not a size finding.
     const broken = { ...BARCODE, protocol: 'EAN13', data: 'nope' } as LabelNodeData;
     expect(checkDocument([node('a', SAFE, broken)], GEOMETRY)).toEqual([]);
+  });
+});
+
+describe('QR model checks', () => {
+  const QR: LabelBarcodeData = {
+    ...BARCODE,
+    protocol: 'QRCODE',
+    data: 'https://example.com',
+    qrCode: { eccLevel: '15%', version: 'auto', cellSize: 2 },
+  };
+
+  const square = { x: 20, y: 12, width: 40, height: 40 };
+
+  it('says nothing about a Model 2 QR', () => {
+    const qr: LabelBarcodeData = { ...QR, qrCode: { ...QR.qrCode, model: 2 } };
+    expect(checkDocument([node('a', square, qr)], GEOMETRY)).toEqual([]);
+  });
+
+  it('says nothing when the file names no model', () => {
+    expect(checkDocument([node('a', square, QR)], GEOMETRY)).toEqual([]);
+  });
+
+  it('warns that a Model 1 QR is drawn and printed as Model 2', () => {
+    const qr: LabelBarcodeData = { ...QR, qrCode: { ...QR.qrCode, model: 1 } };
+    const found = checkDocument([node('a', square, qr)], GEOMETRY);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({
+      nodeId: 'a',
+      severity: 'warning',
+      code: 'qr-model-substituted',
+    });
+    expect(found[0]!.detail).toContain('Model 2');
+  });
+
+  it('leaves non-QR barcodes alone whatever the qrCode field says', () => {
+    // qrCode rides along on every barcode node; only QRCODE reads it.
+    const code128: LabelBarcodeData = { ...BARCODE, qrCode: { model: 1 } };
+    expect(checkDocument([node('a', SAFE, code128)], GEOMETRY)).toEqual([]);
   });
 });
 

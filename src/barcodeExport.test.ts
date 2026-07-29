@@ -96,6 +96,15 @@ describe('QR export', () => {
     expect(out.qrCode?.eccLevel).toBe('15%');
     expect(out.qrCode?.version).toBe('auto');
   });
+
+  it('hands back a model it cannot draw rather than restating it as 2', () => {
+    // We encode Model 2 only, and `qr-model-substituted` says so out loud. The
+    // wording promises the file keeps what it came in with, so P-touch draws
+    // the Model 1 it was asked for — silently rewriting it to 2 here would
+    // make that message a lie and lose the user's setting.
+    const model1 = { ...qr, qrCode: { ...qr.qrCode, model: 1 } } as LabelBarcodeData;
+    expect(exportOne(model1, { width: 46, height: 46 }).qrCode?.model).toBe(1);
+  });
 });
 
 describe('opaque background export', () => {

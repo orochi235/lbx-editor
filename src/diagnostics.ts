@@ -19,7 +19,7 @@ export interface Diagnostic {
   nodeId: string;
   severity: DiagnosticSeverity;
   /** Stable per node+check, so a finding can be tracked across re-checks. */
-  code: 'barcode-unprintable' | 'barcode-marginal' | 'clipped';
+  code: 'barcode-unprintable' | 'barcode-marginal' | 'clipped' | 'qr-model-substituted';
   title: string;
   detail: string;
 }
@@ -77,6 +77,41 @@ function checkBarcode(node: CheckedNode, geometry: DocumentGeometry): Diagnostic
 }
 
 /**
+ * A QR the file asks for in a model we don't encode.
+ *
+ * `qrcode-generator` builds Model 2 only — `moduleCount = version * 4 + 17`
+ * with alignment patterns, the ISO 18004 construction. A file that names
+ * Model 1 (P-touch offers it; the 1994 original) therefore draws and prints
+ * here as Model 2: a valid QR, but not the symbol the file specified.
+ *
+ * Same family as the checks above — the canvas draws it correctly, so nothing
+ * on screen can show that a substitution happened. The alternative, a `model`
+ * control in the property panel, would be worse: it would change the exported
+ * file while the screen and the print raster stayed Model 2, breaking the
+ * WYSIWYG the rest of the barcode work rests on.
+ *
+ * `model` still round-trips untouched, so the file keeps saying what it said
+ * and P-touch will draw its own Model 1 from it.
+ */
+function checkQrModel(node: CheckedNode): Diagnostic | null {
+  if (node.data.kind !== 'barcode' || node.data.protocol !== 'QRCODE') return null;
+  const model = node.data.qrCode?.model;
+  if (model === undefined || model === 2) return null;
+
+  return {
+    nodeId: node.id,
+    severity: 'warning',
+    code: 'qr-model-substituted',
+    title: `QR Model ${model} prints as Model 2`,
+    detail:
+      `This file asks for QR Model ${model}, which this editor doesn't generate. ` +
+      `What you see and what prints is Model 2 — the modern standard, and what ` +
+      `scanners expect — so it will scan, but it isn't the symbol the file names. ` +
+      `The file keeps its Model ${model} setting for P-touch Editor.`,
+  };
+}
+
+/**
  * Anything sticking outside the printable area. The printhead can't reach the
  * tape's outer edges and nothing exists past the label's length, so whatever
  * lands there is cropped — the canvas dims those regions, but a large object
@@ -120,6 +155,8 @@ export function checkDocument(
   for (const node of nodes) {
     const barcode = checkBarcode(node, geometry);
     if (barcode) found.push(barcode);
+    const qrModel = checkQrModel(node);
+    if (qrModel) found.push(qrModel);
     const clipped = checkClipping(node, geometry);
     if (clipped) found.push(clipped);
   }

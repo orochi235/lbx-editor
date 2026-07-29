@@ -121,6 +121,17 @@ Key weasel APIs used:
   to bake in 9, drawing ~19% narrow and double-counting its quiet zone in the
   background and the dither-protected region.) Still simplified: EAN-13's
   standard is asymmetric, 11 left / 7 right.
+- Document checks (`src/diagnostics.ts`, pure: document state in, findings
+  out) report what the canvas *can't*: a barcode whose modules fall under 1
+  printer dot (error) or 2 (warning), an object overhanging the printable band
+  or the label length, and a QR the file asks for in a model we don't encode
+  (`qr-model-substituted` — `qrcode-generator` builds Model 2 only, so a
+  Model 1 file draws and prints as Model 2). That's the entry criterion: every
+  check is a thing the canvas draws correctly and therefore cannot show as
+  wrong. It is also why `model` has no control in the property panel — one
+  would change the exported file while the screen kept drawing Model 2. The
+  findings surface as anchored callouts; presentation and the pref gating them
+  live in App.tsx.
 - A barcode's two colors are picked by the renderer, not stored on the node,
   so they come through `drawLabelNode`'s `colors` argument: bars in the
   cassette ink, background in the tape color, both screen-only. The defaults
