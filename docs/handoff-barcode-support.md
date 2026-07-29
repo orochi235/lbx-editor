@@ -181,7 +181,17 @@ In the order previously agreed (reverse of how they were listed):
    Add to `SUPPORTED_PROTOCOLS` and the dispatcher; `encode.test.ts` will then
    require them to actually encode.
 
-4. **The quiet zone is inconsistent between encoders.** `quietZonePt` returns a
+4. **The quiet zone is inconsistent between encoders — now measured, fix
+   unblocked.** A real P-touch file
+   (`~/src/bil-lbx/docs/samples/barcodes.lbx`) settles it: P-touch's 1D margin
+   is a *fixed 36.8pt*, unchanged when `barWidth` doubles, so its box never
+   encoded a quiet zone in modules; and with `margin="false"` — which we
+   always export — the box is exactly the bars. So the pose means bars only
+   and `ean.ts`'s baked-in `QUIET = 9` is wrong, costing ~19%. Full table and
+   fix steps in
+   `docs/superpowers/specs/2026-07-28-barcode-backgrounds-design.md`
+   ("Measured against P-touch"). Original statement of the problem:
+   `quietZonePt` returns a
    flat 10 modules for every 1D symbology and applies it *outside* the pose,
    but `ean.ts` bakes `QUIET = 9` *inside* `totalModules` while Code 128, Code
    39, ITF, and Codabar bake none. So the EAN family counts its quiet zone
