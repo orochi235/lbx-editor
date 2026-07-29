@@ -44,6 +44,18 @@ describe('1D barcode export', () => {
     expect(exportOne(BASE, pose).barWidth).toBeCloseTo(pose.width / symbol.totalModules, 6);
   });
 
+  it('agrees with P-touch on a measured EAN-13', () => {
+    // From a P-touch Editor-authored file (bil-lbx docs/samples/barcodes.lbx):
+    // an EAN-13 at barWidth 0.8pt has a 112.8pt box, of which a fixed 36.8pt
+    // is P-touch's own margin — so its 95 bar modules occupy 76pt. Under the
+    // `margin="false"` we export, the box is the bars, so a 76pt pose has to
+    // come back out as barWidth 0.8 or P-touch redraws the symbol at the wrong
+    // size. The relative tests above can't catch this: they'd hold at any
+    // module count.
+    const ean: LabelBarcodeData = { ...BASE, protocol: 'EAN13', data: '5901234123457' };
+    expect(exportOne(ean, { width: 76, height: 46 }).barWidth).toBeCloseTo(0.8, 6);
+  });
+
   it('tracks a resize rather than keeping the imported barWidth', () => {
     const narrow = exportOne(BASE, { width: 60, height: 46 }).barWidth!;
     const wide = exportOne(BASE, { width: 240, height: 46 }).barWidth!;

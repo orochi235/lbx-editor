@@ -16,14 +16,18 @@ export const HUMAN_READABLE_HEIGHT_PT = 8;
  * 10 modules is the GS1 minimum shared by the 1D symbologies here, and the QR
  * spec asks for 4 cells.
  *
- * KNOWN INCONSISTENCY, deferred: this is applied *outside* the pose, but
- * `ean.ts` bakes 9 quiet modules *inside* its `totalModules` while code128 /
- * code39 / itf / codabar bake none. So the EAN family counts its quiet zone
- * twice and everything derived from this — the drawn background and the
- * dither-protected region — is about twice as wide as it needs to be there.
- * Fixing it changes `barcodeModulePt` and so redraws existing EAN labels ~19%
- * wider; which direction is correct needs a P-touch-authored file to settle.
- * See docs/superpowers/specs/2026-07-28-barcode-backgrounds-design.md.
+ * This is the *only* quiet zone, and it lives outside the pose — no encoder
+ * bakes one into its `totalModules` (pinned across all of them in
+ * `encode.test.ts`). The pose is the bars, which is what P-touch's object box
+ * means under the `margin="false"` we always export; measured against a
+ * P-touch-authored file in
+ * docs/superpowers/specs/2026-07-28-barcode-backgrounds-design.md.
+ *
+ * Still simplified: a flat 10 both sides. The EAN family's real requirement is
+ * asymmetric (EAN-13 is 11 left / 7 right), which would mean each encoder
+ * owning its own `quiet: { left, right }` — only the encoder knows its
+ * symbology. Ours is wider than 7 and narrower than 11, so an EAN-13's right
+ * margin is generous and its left one is 1 module short of the standard.
  */
 export const QUIET_ZONE_MODULES_1D = 10;
 export const QUIET_ZONE_MODULES_2D = 4;

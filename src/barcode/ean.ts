@@ -157,18 +157,24 @@ function upceModules(digits: string): string {
   return `${out}010101`;
 }
 
-/** Module string → bar runs, with the standard quiet zone at each end. */
+/**
+ * Module string → bar runs.
+ *
+ * Bars alone, with no quiet zone: `totalModules` is what the pose is measured
+ * against, and the pose means the bars (see `encode.test.ts`). The quiet zone
+ * is added outside the pose by `quietZonePt`, uniformly for every 1D
+ * symbology.
+ */
 function barsFromModules(modules: string): { kind: '1d'; bars: Array<{ x: number; width: number }>; totalModules: number } {
-  const QUIET = 9;
   const bars: Array<{ x: number; width: number }> = [];
   let run = 0;
   for (let i = 0; i <= modules.length; i++) {
     if (modules[i] === '1') {
       run++;
     } else if (run > 0) {
-      bars.push({ x: QUIET + i - run, width: run });
+      bars.push({ x: i - run, width: run });
       run = 0;
     }
   }
-  return { kind: '1d', bars, totalModules: modules.length + QUIET * 2 };
+  return { kind: '1d', bars, totalModules: modules.length };
 }
