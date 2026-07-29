@@ -348,6 +348,16 @@ function BarcodeFields({ scene, nodeId, pose, data }: {
           Zero-fill short data
         </label>
       )}
+      {/* Outside the isQr branch below: every symbology needs a blank margin
+          to scan, so unlike the controls around it this one always applies. */}
+      <label className="prop-check">
+        <input
+          type="checkbox"
+          checked={data.opaqueBackground}
+          onChange={(e) => update({ opaqueBackground: e.target.checked })}
+        />
+        Opaque background
+      </label>
 
       {isQr ? (
         <>
