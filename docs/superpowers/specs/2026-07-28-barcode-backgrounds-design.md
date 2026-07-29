@@ -39,19 +39,19 @@ opaqueBackground: boolean;
 ### Round-trip: on is persisted, off is not
 
 `.lbx`'s `BarcodeObject` carries a `brush`, and `BrushStyle` is
-`"NULL" | "SOLID" | "HATCHED"`, which looks like exactly this distinction. It
-isn't, quite:
+`"NULL" | "SOLID" | "HATCHED"` — which is exactly this distinction, and it does
+survive: `SOLID` parses back as `{ style: 'SOLID', color }`, `NULL` as
+`undefined`. (Only NULL-vs-*absent* collapses, since bil-lbx serializes an
+absent brush as `style="NULL"` and `parseBrush` maps both to `undefined` — but
+every real file carries the element, so that pair never arises.)
 
-- bil-lbx's `parseBrush` returns `undefined` when `style === "NULL"`.
-- bil-lbx's `brushNode` serializes an absent brush *as* `style="NULL"`.
+What blocks a lossless round-trip is not the encoding, it's that **P-touch
+writes `NULL` on every barcode it authors**, so reading `NULL` as "off" would
+make every P-touch barcode import transparent — and they draw opaque. Until we
+can tell whose file we're reading, `NULL` has to mean "on", which is the same
+value our own "off" writes.
 
-So **"no brush" and "NULL brush" are the same state in a `.lbx`**, and that
-collapse is correct for the objects it was written for: on a rect, no brush and
-a null brush both mean no fill. There is no third value to spend on "opaque
-background off" without squatting on `HATCHED`, which would mean something else
-entirely to any other reader.
-
-Therefore:
+Therefore, as shipped:
 
 | direction | behavior |
 |---|---|
@@ -64,14 +64,11 @@ Therefore:
 round-trip.** A file exported with the background off reopens with it on.
 
 That is the safe direction to be lossy in: a reopened barcode is opaque, which
-is scannable. The alternative encoding — `brush?.style === 'SOLID'` → on —
-makes every P-touch-authored barcode import *transparent*, since P-touch's
-files have no `SOLID` brush to find, and the failure mode there is labels that
-print unscannable.
+is scannable, where the reverse prints unscannable labels.
 
 Export still writes `SOLID`/`NULL` faithfully rather than always writing
-`SOLID`, so the file states what we drew and P-touch gets the chance to honor
-it if it reads the field at all (unverified — see below).
+`SOLID`, so the file states what we drew — which is what makes the lossless
+version below a read-side change only.
 
 **Resolved (2026-07-28): P-touch ignores `brush` on a barcode.** It writes
 `style="NULL"` on every barcode it authors *and* draws those barcodes opaque.
