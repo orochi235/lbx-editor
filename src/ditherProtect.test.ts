@@ -16,6 +16,7 @@ const barcode = (over: Partial<LabelBarcodeData> = {}): LabelBarcodeData => ({
   humanReadableAlignment: 'CENTER',
   checkDigit: false,
   zeroFill: false,
+  opaqueBackground: true,
   ...over,
 });
 

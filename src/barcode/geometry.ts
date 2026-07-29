@@ -15,6 +15,19 @@ export const HUMAN_READABLE_HEIGHT_PT = 8;
  * Blank margin a scanner needs on each side to find where the symbol starts:
  * 10 modules is the GS1 minimum shared by the 1D symbologies here, and the QR
  * spec asks for 4 cells.
+ *
+ * This is the *only* quiet zone, and it lives outside the pose — no encoder
+ * bakes one into its `totalModules` (pinned across all of them in
+ * `encode.test.ts`). The pose is the bars, which is what P-touch's object box
+ * means under the `margin="false"` we always export; measured against a
+ * P-touch-authored file in
+ * docs/superpowers/specs/2026-07-28-barcode-backgrounds-design.md.
+ *
+ * Still simplified: a flat 10 both sides. The EAN family's real requirement is
+ * asymmetric (EAN-13 is 11 left / 7 right), which would mean each encoder
+ * owning its own `quiet: { left, right }` — only the encoder knows its
+ * symbology. Ours is wider than 7 and narrower than 11, so an EAN-13's right
+ * margin is generous and its left one is 1 module short of the standard.
  */
 export const QUIET_ZONE_MODULES_1D = 10;
 export const QUIET_ZONE_MODULES_2D = 4;
@@ -91,4 +104,24 @@ export function barcodeRects(
     width: bar.width * module,
     height: barsHeight,
   }));
+}
+
+/**
+ * The region a barcode masks: its pose plus the quiet zone.
+ *
+ * Shared by the drawn background and `ditherProtect.protectedRegions`, so the
+ * area we blank and the area we exempt from dithering are the same rectangle
+ * by construction rather than by two copies agreeing.
+ */
+export function barcodeBackgroundRect(
+  symbol: BarcodeSymbol,
+  pose: { x: number; y: number; width: number; height: number },
+): Rect {
+  const quiet = quietZonePt(symbol, pose);
+  return {
+    x: pose.x - quiet,
+    y: pose.y - quiet,
+    width: pose.width + quiet * 2,
+    height: pose.height + quiet * 2,
+  };
 }

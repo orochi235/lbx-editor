@@ -22,8 +22,9 @@ This is a class of failure the canvas cannot show as wrong, because the canvas
 draws it correctly: the barcode really is on top of the image, and that really
 is what would print. The same reason `diagnostics.ts` exists.
 
-P-touch Editor treats barcodes as opaque objects. Matching that is both the
-correct behavior and the familiar one.
+P-touch Editor treats barcodes as opaque objects — confirmed by observation in
+P-touch itself, not inferred. Matching that is both the correct behavior and
+the familiar one.
 
 ## The node field
 
@@ -38,47 +39,79 @@ opaqueBackground: boolean;
 ### Round-trip: on is persisted, off is not
 
 `.lbx`'s `BarcodeObject` carries a `brush`, and `BrushStyle` is
-`"NULL" | "SOLID" | "HATCHED"`, which looks like exactly this distinction. It
-isn't, quite:
+`"NULL" | "SOLID" | "HATCHED"` — which is exactly this distinction, and it does
+survive: `SOLID` parses back as `{ style: 'SOLID', color }`, `NULL` as
+`undefined`. (Only NULL-vs-*absent* collapses, since bil-lbx serializes an
+absent brush as `style="NULL"` and `parseBrush` maps both to `undefined` — but
+every real file carries the element, so that pair never arises.)
 
-- bil-lbx's `parseBrush` returns `undefined` when `style === "NULL"`.
-- bil-lbx's `brushNode` serializes an absent brush *as* `style="NULL"`.
+What blocks a lossless round-trip is not the encoding, it's that **P-touch
+writes `NULL` on every barcode it authors**, so reading `NULL` as "off" would
+make every P-touch barcode import transparent — and they draw opaque. Until we
+can tell whose file we're reading, `NULL` has to mean "on", which is the same
+value our own "off" writes.
 
-So **"no brush" and "NULL brush" are the same state in a `.lbx`**, and that
-collapse is correct for the objects it was written for: on a rect, no brush and
-a null brush both mean no fill. There is no third value to spend on "opaque
-background off" without squatting on `HATCHED`, which would mean something else
-entirely to any other reader.
-
-Therefore:
+Therefore, as shipped:
 
 | direction | behavior |
 |---|---|
 | export, on | `brush: { style: 'SOLID', color: '#FFFFFF' }` |
 | export, off | `brush: { style: 'NULL' }` |
-| import, any | `opaqueBackground: true` |
+| import, P-touch file | `opaqueBackground: true` — they draw opaque |
+| import, our file | today `true`; see "Making it lossless" below |
 
 **Off survives the session and the localStorage autosave, but not an `.lbx`
 round-trip.** A file exported with the background off reopens with it on.
 
 That is the safe direction to be lossy in: a reopened barcode is opaque, which
-is scannable. The alternative encoding — `brush?.style === 'SOLID'` → on —
-makes every P-touch-authored barcode import *transparent*, since P-touch's
-files have no `SOLID` brush to find, and the failure mode there is labels that
-print unscannable.
+is scannable, where the reverse prints unscannable labels.
 
 Export still writes `SOLID`/`NULL` faithfully rather than always writing
-`SOLID`, so the file states what we drew and P-touch gets the chance to honor
-it if it reads the field at all (unverified — see below).
+`SOLID`, so the file states what we drew — which is what makes the lossless
+version below a read-side change only.
 
-**Assumption, unverified:** whether P-touch itself honors `brush` on a barcode
-object. Nothing depends on the answer: if it ignores the field, the field is
-inert and our import behavior is unchanged.
+**Resolved (2026-07-28): P-touch ignores `brush` on a barcode.** It writes
+`style="NULL"` on every barcode it authors *and* draws those barcodes opaque.
+Both halves are observed, so the deduction is safe: the attribute does not
+control the background there. That makes it inert in P-touch — writing `SOLID`
+changes nothing on their side — and therefore free for us to use as our own
+channel in files we write.
 
-Making this lossless is a bil-lbx change — `parseBrush` preserving
-`{ style: 'NULL' }` instead of collapsing it to `undefined`, with `lbxImport`'s
-rect path made explicit about NULL meaning no fill. Cross-repo plus a version
-bump; noted as a follow-up, not done here.
+### Making it lossless (unblocked, not done here)
+
+The obstacle was never `parseBrush`. `SOLID` and `NULL` already survive
+distinctly (verified by round-trip); only NULL-vs-absent collapses, and every
+real file has the element, so that pair never arises. The real obstacle was
+telling *our* files from P-touch's, since P-touch's universal `NULL` would
+otherwise read as "off".
+
+`pt:document`'s `generator` attribute already distinguishes them —
+`com.brother.PtouchEditor` vs ours — and bil-lbx now surfaces it on
+`LabelConfig` (commits `4cc6471`, `c14b601`; unpublished). The import rule
+becomes:
+
+```ts
+// bil-lbx 0.2.1 and earlier wrote `brother-lbx`, the package's former name.
+const oursWroteIt = config.generator === 'bil-lbx'
+  || config.generator === 'brother-lbx';
+
+opaqueBackground: oursWroteIt
+  ? obj.brush?.style === 'SOLID'   // our file: the field means what it says
+  : true                           // P-touch's: boilerplate, and they draw opaque
+```
+
+Accepting the old string matters less than it looks — a file we wrote before
+this shipped has no deliberate `SOLID`/`NULL` to recover anyway, so either
+branch gives it `true`. It is there so the rule doesn't quietly change meaning
+for those files later.
+
+Principled rather than a hack: P-touch writes boilerplate for what it doesn't
+use — every `pt:brush` is `NULL`, every `objectStyle` carries
+`backColor="#FFFFFF"`, including on text and image objects where a fill means
+nothing — so the field carries no information in their files and exactly what
+the caller set in ours.
+
+Needs a bil-lbx version bump and publish (or `npm link` for development).
 
 ## Geometry
 
@@ -215,8 +248,10 @@ stays black.
 
 ## Follow-up: the quiet zone is inconsistent between encoders
 
-**Deferred, not overlooked.** Named here so the next person reads it as a known
-wart rather than rediscovering it.
+**Fixed 2026-07-28**, after "Measured against P-touch" below settled the
+direction. `ean.ts`'s `QUIET = 9` is gone; `quietZonePt` is the only quiet zone
+for every 1D symbology. The section below is kept as the reasoning that got
+there.
 
 `quietZonePt` returns a flat 10 modules for every 1D symbology and applies it
 *outside* the pose. But the encoders disagree about where the quiet zone lives:
@@ -254,9 +289,90 @@ constant carries its own caveat.
 
 ## Out of scope
 
-- The quiet-zone fix above.
+- The quiet-zone fix above (out of scope for the backgrounds work; done
+  straight after it, on the same branch).
 - A barcode near the tail under auto-length has its background clipped at the
   label end. Non-issue: past the label end there are no objects to mask.
 - No diagnostic for "this background is hiding something." The mask is visible
   on canvas, so unlike the barcode size and clipping checks, the screen does
   show it.
+
+## Measured against P-touch (2026-07-28)
+
+The question the follow-up above couldn't answer — does P-touch's barcode
+object box include the quiet zone? — is now settled empirically, against a
+P-touch Editor-authored file: `~/src/bil-lbx/docs/samples/barcodes.lbx`,
+five barcodes chosen to separate the variables.
+
+`box` is `position.width`; `bars` is our encoder's `totalModules × barWidth`.
+
+| protocol | `margin` | `barWidth` | box | bars | extra |
+|---|---|---|---|---|---|
+| CODE128 | true | 0.8pt | 100pt | 63.2pt | **36.8pt** |
+| CODE128 | true | **1.6pt** | 163.2pt | 126.4pt | **36.8pt** |
+| EAN13 | true | 0.8pt | 112.8pt | 76pt (95 mod) | **36.8pt** |
+| CODE128 | **false** | 0.8pt | 64pt | 63.2pt | 0.8pt |
+| QRCODE | true | (cell 1.6pt) | 40pt | 33.6pt (21 cells) | 6.4pt = 4 cells |
+
+Three conclusions:
+
+1. **The 1D margin is a fixed 36.8pt, not a module count.** Doubling
+   `barWidth` left the extra unchanged at 36.8pt — 46 modules at 0.8pt, 23 at
+   1.6pt. So P-touch's box never encodes a quiet zone in module terms, and the
+   "~95 vs ~113" test proposed earlier was asking the wrong question.
+2. **With `margin="false"` the box is the bars** (64pt vs our 63.2pt — one
+   module of slop, most likely P-touch counting the stop pattern as 14 rather
+   than 13). Our exporter already hardcodes `margin="false"`.
+3. **EAN13's box is bars + the same fixed 36.8pt**, with no module-proportional
+   component — the row that rules out the alternative directly.
+
+**Therefore the pose means bars only, and `ean.ts`'s baked-in `QUIET = 9` is
+wrong.** Under `margin="false"` P-touch fits the 95 bars to whatever box we
+give it, and we size that box for 113 modules, so a round-tripped EAN draws
+~19% narrower here than P-touch will redraw it. Code 128, Code 39, ITF and
+Codabar were correct already.
+
+### The fix, as shipped (2026-07-28)
+
+- `QUIET = 9` is gone from `ean.ts` — `totalModules` is `modules.length` and
+  `bars[].x` lost the offset.
+- `quietZonePt` is the only quiet zone, applied outside the pose, uniform
+  across every 1D symbology. `barcodeBackgroundRect` and `protectedRegions`
+  stopped double-counting on the EAN family for free, since both derive from
+  it.
+- The oracle tests in `ean.test.ts` were insensitive to it, as predicted:
+  `bitstring()` trims leading and trailing zeros.
+- **Existing EAN labels redraw ~19% wider and export a ~19% larger
+  `barWidth`.** The correction, not a regression — but it changes documents
+  that already exist. Nothing to migrate: the pose is untouched, and the bars
+  now fill it instead of sitting inset with 9 empty modules at each end.
+
+What pins it, since the failure was silent and internally consistent:
+
+- `encode.test.ts` asserts across **all nine** 1D symbologies that the bars
+  span exactly `[0, totalModules]` — the invariant EAN broke, stated where a
+  tenth encoder will meet it. Four cases failed before the fix.
+- `barcodeExport.test.ts` pins the absolute correspondence the measurement
+  gives: a 76pt EAN-13 pose exports `barWidth` 0.8, matching the sample file.
+  The pre-existing export tests are all relative to `totalModules`, so they
+  held at either module count and could never have caught this — 0.673 before,
+  0.800 after.
+- Confirmed in the print raster: an EAN-13 imported at P-touch's own numbers
+  (x=20pt, w=76pt, `barWidth` 0.8) renders ink from dot 50 to dot 239 — the
+  pose exactly — with a narrowest bar run of 2 dots = 0.8pt.
+
+Left undone deliberately: the quiet zone is still a flat 10 modules per side,
+where EAN-13's standard is 11 left / 7 right. Doing that properly means each
+encoder owning a `quiet: { left, right }`, since only the encoder knows its
+symbology. The constant carries this caveat.
+
+Two things this also turned up, both separate work:
+
+- **QR's margin is proportional** — 4 cells total, 2 per side — where 1D's is
+  fixed pt. `QUIET_ZONE_MODULES_2D = 4` is per side, so ours is 8 total: wider
+  than P-touch's, and wider than the QR spec's 4-per-side is *not*, so ours
+  matches the spec and P-touch is the tight one. No action, but don't "fix"
+  ours to match P-touch.
+- **We hardcode `margin="false"` on export** and never read it on import. That
+  is currently load-bearing for conclusion 2. If it ever becomes settable, the
+  pose's meaning changes with it.

@@ -12,15 +12,12 @@ import {
   zoomAt,
   fitViewToBounds,
   meanScale,
-  type SceneNode,
   type DrawCommand,
   type View,
   type RenderLayer,
   type NodeId,
   useImageTool,
-  getImageBitmap,
   subscribeImageReady,
-  textCommand,
   type ToolsApi,
   type InsertNodeFactory,
   type CanvasHelpers,
@@ -38,21 +35,21 @@ import {
   DEFAULT_TAPE,
   DEFAULT_LABEL_LENGTH,
   tapeWidthMm,
-  lineEndpoints,
   type LabelNodeData,
   type LabelLayer,
   type LabelPose,
+  type LabelNode,
   type TapeSize,
 } from './label';
 import { fitLengthToContent } from './autoLength';
+import { migratePersistedScene } from './docMigrate';
 import { useLiveLength } from './useLiveLength';
+import { drawLabelNode } from './drawLabelNode';
 import {
   encodeBarcode,
-  barcodeRects,
   barcodeRequest,
   barcodeModuleDots,
   moduleFitness,
-  HUMAN_READABLE_HEIGHT_PT,
 } from './barcode';
 import { exportLbx } from './lbxExport';
 import { importLbx } from './lbxImport';
@@ -80,7 +77,7 @@ import { PREFS_SCHEMA, type EditorPrefValues } from './prefs';
 import { checkDocument, type CheckedNode, type Diagnostic } from './diagnostics';
 import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
-import { fileToBase64, guessMimeType, getImageDimensions, imageDataUri } from './imageUtils';
+import { fileToBase64, guessMimeType, getImageDimensions } from './imageUtils';
 import { buildImageInsert, type PendingImage } from './imageInsert';
 import { BarcodeIcon } from './BarcodeIcon';
 import {
@@ -88,9 +85,7 @@ import {
   unrenderableBarcodeMessage,
   undersizedBarcodeMessage,
 } from './printPreflight';
-import { registerFonts, substituteFontFamily, canvasFontsInUse, toWeaselAlign, toWeaselVerticalAlign } from './fonts';
-
-type LabelNode = SceneNode<LabelNodeData, LabelLayer, LabelPose>;
+import { registerFonts, canvasFontsInUse } from './fonts';
 
 let nextNodeId = 1;
 function genNodeId(): NodeId {
@@ -155,101 +150,6 @@ function centeredView(paperWidth: number, paperHeight: number, canvas: CanvasSiz
     y: (paperHeight + depth) / 2 - canvas.height / 2,
     scale: { x: 1, y: 1 },
   };
-}
-
-function drawLabelNode(node: LabelNode, pose: LabelPose, _view: View): DrawCommand[] {
-  const { data } = node;
-  const { x, y, width, height } = pose;
-
-  switch (data.kind) {
-    case 'text': {
-      return [textCommand(
-        x,
-        y,
-        data.text,
-        {
-          fontFamily: substituteFontFamily(data.fontFamily),
-          fontSize: data.fontSize,
-          fontWeight: data.fontWeight,
-          fontStyle: data.italic ? 'italic' : 'normal',
-          align: toWeaselAlign(data.horizontalAlignment),
-          fill: { fill: 'solid', color: data.color },
-        },
-        width,   // maxWidth: word-wrap at the box
-        height,  // box height for verticalAlign
-        toWeaselVerticalAlign(data.verticalAlignment),
-      )];
-    }
-    case 'rect':
-      return [{
-        kind: 'path',
-        path: rectPath(x, y, width, height),
-        stroke: { paint: { color: data.strokeStyle }, width: data.strokeWidth },
-        ...(data.fillColor ? { fill: { fill: 'solid', color: data.fillColor } } : {}),
-      }];
-    case 'line': {
-      const [p, q] = lineEndpoints({ x, y, width, height }, data.descending);
-      return [{
-        kind: 'path',
-        path: polygonFromPoints([p, q]),
-        stroke: { paint: { color: data.strokeStyle }, width: data.strokeWidth },
-      }];
-    }
-    case 'image': {
-      // The kit imageCache decodes async; SceneCanvas subscribes to its
-      // ready events and redraws, swapping the placeholder for the bitmap.
-      const bmp = getImageBitmap(imageDataUri(data));
-      if (bmp) {
-        return [{ kind: 'image', image: bmp, x, y, w: width, h: height }];
-      }
-      // Placeholder while loading
-      return [{
-        kind: 'path',
-        path: rectPath(x, y, width, height),
-        fill: { fill: 'solid', color: '#f0f0f0' },
-        stroke: { paint: { color: '#cccccc' }, width: 0.5 },
-      }];
-    }
-    case 'barcode': {
-      const symbol = encodeBarcode(barcodeRequest(data));
-      if (!symbol.ok) {
-        // Can't encode it — draw a box so the node stays visible and
-        // selectable. printPreflight blocks the job rather than printing this.
-        return [{
-          kind: 'path',
-          path: rectPath(x, y, width, height),
-          fill: { fill: 'solid', color: '#f6f6f6' },
-          stroke: { paint: { color: '#999999' }, width: 0.5 },
-        }];
-      }
-      const commands: DrawCommand[] = barcodeRects(symbol, pose, data.humanReadable).map((r) => ({
-        kind: 'path',
-        path: rectPath(r.x, r.y, r.width, r.height),
-        fill: { fill: 'solid', color: '#000000' },
-      }));
-      if (data.humanReadable && symbol.kind === '1d') {
-        commands.push(textCommand(
-          x,
-          y + height - HUMAN_READABLE_HEIGHT_PT,
-          symbol.text,
-          {
-            fontFamily: substituteFontFamily('Helvetica'),
-            fontSize: HUMAN_READABLE_HEIGHT_PT - 1,
-            fontWeight: 400,
-            fontStyle: 'normal',
-            align: toWeaselAlign(data.humanReadableAlignment),
-            fill: { fill: 'solid', color: '#000000' },
-          },
-          width,
-          HUMAN_READABLE_HEIGHT_PT,
-          toWeaselVerticalAlign('BOTTOM'),
-        ));
-      }
-      return commands;
-    }
-    default:
-      return [];
-  }
 }
 
 export function App() {
@@ -483,7 +383,9 @@ export function App() {
         setCutMarks(doc.cutMarks);
       }
       if (doc.scene) {
-        scene.loadState(doc.scene);
+        // `loadState` stores node data verbatim, so a field added since this
+        // snapshot was written arrives undefined and the compiler can't see it.
+        scene.loadState(migratePersistedScene(doc.scene));
         bumpNodeIdCounter(scene.nodes.keys());
       }
     } catch {
@@ -886,6 +788,7 @@ export function App() {
         humanReadableAlignment: 'CENTER',
         checkDigit: false,
         zeroFill: false,
+        opaqueBackground: true,
       } satisfies LabelNodeData,
     }),
   }), []);
@@ -1237,13 +1140,22 @@ export function App() {
     }
   }, [printing, tapeSize, scene, labelLength, paperHeight, autoCut, ditherAlgorithm, cutMarks, preflightChecks]);
 
-  // Screen draw: same drawLabelNode as print, but with ink-dark node colors
-  // recolored to the cassette's ink first. Print keeps the raw node data (a
-  // white-ink remap would erase the label under the <128 luminance threshold).
+  // Two recolor paths, and they are not interchangeable. `remapNodeInk`
+  // rewrites colors the *document* carries — a text's color, a rect's fill —
+  // which it can only do because they're on the node. A barcode has none: its
+  // bars and its background are picked by the renderer, so they come through
+  // the `colors` argument instead. Print takes neither path: it keeps the raw
+  // node data (a white-ink remap would erase the label under the <128
+  // luminance threshold) and takes the parameter defaults.
   const drawScreenNode = useCallback((node: LabelNode, pose: LabelPose, view: View) => {
     const data = remapNodeInk(node.data, inkCss);
-    return drawLabelNode(data === node.data ? node : { ...node, data }, pose, view);
-  }, [inkCss]);
+    return drawLabelNode(
+      data === node.data ? node : { ...node, data },
+      pose,
+      view,
+      { ink: inkCss, paper: tapeCss },
+    );
+  }, [inkCss, tapeCss]);
 
   // --- Printable-bounds overlay ---
   // Content outside the printable area won't print: print crops at the label

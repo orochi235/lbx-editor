@@ -880,12 +880,14 @@ mask actually lands on the printed raster.
 
 **Files:** none — verification only.
 
-- [ ] **Step 1: Run the full suite and type check one more time**
+- [x] **Step 1: Run the full suite and type check one more time**
 
 Run: `npx tsc --noEmit && npx vitest run`
 Expected: no type errors; all tests pass. Record the count.
 
-- [ ] **Step 2: Drive the real print flow**
+Done 2026-07-28: `tsc` clean, 233/233 across 27 files.
+
+- [x] **Step 2: Drive the real print flow**
 
 Use the `verify` skill (`.claude/skills/verify`), which drives the print
 pipeline in the automation Chrome without printer hardware. Dev server on 5180.
@@ -897,7 +899,26 @@ Confirm in the captured raster:
 - the blank margin extends past the bars on all sides
 - the image is intact everywhere outside that margin
 
-- [ ] **Step 3: Confirm the ink color is screen-only**
+Done 2026-07-28. A 24mm × 200pt label: a diagonal-stripe image at
+x=8pt w=184pt, and a Code 128 of `1337` at x=45pt w=100pt over it. The
+captured 500×128 raster, counted by column:
+
+| dot columns | content |
+|---|---|
+| 0–19 | blank (before the image) |
+| 20–68 | image stripes |
+| **69–111** | **blank — masked** |
+| 112–362 | bars |
+| **363–405** | **blank — masked** |
+| 406–479 | image stripes |
+| 480–499 | blank (after the image) |
+
+The bars land on 112–362 against a pose of x=45pt w=100pt → dots
+112.5–362.5, so the pose is the bars exactly, and the mask is 43 dots
+(10 modules) on each side. Every masked column is blank over all 128
+rows — the quiet zone erases the image outright rather than thinning it.
+
+- [x] **Step 3: Confirm the ink color is screen-only**
 
 In the Debug panel, override the cassette to a non-black ink (e.g. blue).
 
@@ -906,7 +927,16 @@ Confirm:
 - the captured print raster is still black — print takes the parameter
   defaults, not the cassette colors
 
-- [ ] **Step 4: Confirm print preview agrees**
+Done 2026-07-28, on a blue-ink/yellow-tape override: bars draw blue and
+the background draws in the tape yellow, so the mask is invisible against
+the tape and visible only as the hole it cuts in the image — which is
+what "the background is paper" means on screen.
+
+Stronger than "still black": the raster captured after the override is
+**byte-identical** to the one before it (same SHA-256), so the cassette
+colors reach the screen and nothing else.
+
+- [x] **Step 4: Confirm print preview agrees**
 
 Turn on **Print preview**. The preview runs the real dither over the same
 render, so the barcode should show as clean bars over blank tape — no dither
@@ -915,11 +945,16 @@ from Task 2 doing its job. Note the EAN caveat below: on an EAN barcode the
 blank region will look wider than the symbol needs, and that is the known
 double-count, not a bug in this work.
 
-- [ ] **Step 5: Open the captured raster so it can be seen**
+Done 2026-07-28, under Floyd–Steinberg: bars are clean-edged and the
+background carries no dither speckle, right up against a striped image
+that dithers heavily — the observable effect of `barcodeBackgroundRect`
+feeding the mask and `protect` from one definition.
+
+- [x] **Step 5: Open the captured raster so it can be seen**
 
 Run: `open <path-to-captured-raster>`
 
-- [ ] **Step 6: Commit any doc updates**
+- [x] **Step 6: Commit any doc updates**
 
 Update `CLAUDE.md`'s barcode bullet under **Current state** to mention the
 opaque background, and add a line to the barcode entry noting that bars follow
@@ -938,10 +973,11 @@ Recorded in the spec's **Follow-up** section, in
 `docs/handoff-barcode-support.md`, and now in a comment on
 `QUIET_ZONE_MODULES_1D` itself:
 
-- **The quiet zone is inconsistent between encoders.** `ean.ts` bakes 9 modules
-  into `totalModules`; the other 1D encoders bake none; `quietZonePt` assumes
-  none. The EAN family therefore gets a background about twice as wide as it
-  needs. Conservative, but it masks more artwork than it should.
+- ~~**The quiet zone is inconsistent between encoders.**~~ Deferred past this
+  plan, then fixed straight after it on the same branch: `ean.ts`'s `QUIET = 9`
+  is gone, so `quietZonePt` is the only quiet zone and the EAN family stopped
+  double-counting. `encode.test.ts` now pins the invariant across all nine 1D
+  symbologies. See the spec's **Follow-up**.
 - **The off state doesn't survive an `.lbx` round-trip.** bil-lbx collapses a
   NULL brush to `undefined` on parse, so "off" and "never set" are one state in
   the file. Making it lossless is a bil-lbx change plus a version bump.

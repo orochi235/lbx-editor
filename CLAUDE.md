@@ -100,6 +100,37 @@ Key weasel APIs used:
   edge's error into the bar beside it. obwat takes plain rectangles and
   knows nothing about barcodes — what to protect is this app's call, so
   hairlines or small type could join later.
+- Barcodes draw an opaque background over that same region
+  (`barcodeBackgroundRect`, which `ditherProtect` also calls, so the masked
+  and the dither-exempt rect are one definition). Without it a barcode over
+  an image composites with it and the artwork prints into the spaces and the
+  quiet zone, which no scanner reads — a failure the canvas can't show as
+  wrong, because it draws it correctly. Per-barcode ("Opaque background",
+  default on); `.lbx` carries it as the object's `brush`, but only in the on
+  direction: bil-lbx parses a NULL brush back as `undefined` and writes an
+  absent brush as NULL, so off and never-set are one state in the file and
+  import always yields on. That's the safe way to be lossy — a reopened
+  barcode is opaque, hence scannable.
+- A barcode's pose means its *bars*, and the quiet zone lives outside it
+  (`quietZonePt`, a flat 10 modules per side for every 1D symbology; 4 cells
+  for QR). No encoder bakes a quiet zone into its `totalModules` —
+  `encode.test.ts` pins that across all nine, because `barcodeModulePt` is
+  `pose.width / totalModules`, so whatever that counts is what the pose means.
+  Measured against a P-touch-authored file: under the `margin="false"` we
+  always export, P-touch's object box is the bars alone. (The EAN family used
+  to bake in 9, drawing ~19% narrow and double-counting its quiet zone in the
+  background and the dither-protected region.) Still simplified: EAN-13's
+  standard is asymmetric, 11 left / 7 right.
+- A barcode's two colors are picked by the renderer, not stored on the node,
+  so they come through `drawLabelNode`'s `colors` argument: bars in the
+  cassette ink, background in the tape color, both screen-only. The defaults
+  are the print values (`#000000` on `#ffffff`, which the luminance threshold
+  turns into no dots), so a call site that omits the argument prints
+  correctly. `remapNodeInk` is the other path and handles only colors the
+  *document* carries — text color, rect fill — which is why barcodes aren't
+  in it. `src/drawLabelNode.ts` lives outside App.tsx because a test can't
+  import the app: it pulls in obwat, whose dist uses extensionless imports
+  vitest won't resolve.
 - Auto-length (toolbar "Auto") fits the label to its content: length =
   rightmost object edge + 5.6pt (`src/autoLength.ts`), refitted on every
   committed scene change. Content is never reflowed, only the tail moves.

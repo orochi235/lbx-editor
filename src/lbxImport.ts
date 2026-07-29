@@ -113,6 +113,12 @@ function lbxObjectToNode(obj: LabelObject): ImportedNode | null {
           humanReadableAlignment: obj.humanReadableAlignment ?? 'CENTER',
           checkDigit: obj.checkDigit ?? false,
           zeroFill: obj.zeroFill ?? false,
+          // Not readable from the file: bil-lbx's parseBrush collapses a NULL
+          // brush to undefined, and its serializer writes an absent brush as
+          // NULL, so "off" and "never set" are the same state in a .lbx. Always
+          // importing it on is the safe direction to be lossy in — a reopened
+          // barcode is opaque, which is scannable. See the design doc.
+          opaqueBackground: true,
           ...(obj.qrCode ? { qrCode: obj.qrCode } : {}),
         },
       };

@@ -3,6 +3,7 @@
  * serialization format. Each scene node carries one of these as its `data`.
  */
 import type { BarcodeProtocol, QrEccLevel } from 'bil-lbx';
+import type { SceneNode } from '@weasel-js/core';
 
 export interface LabelTextData {
   kind: 'text';
@@ -62,6 +63,9 @@ export interface LabelBarcodeData {
   humanReadableAlignment: 'LEFT' | 'CENTER' | 'RIGHT';
   checkDigit: boolean;
   zeroFill: boolean;
+  /** Mask the label under the symbol and its quiet zone, so nothing prints
+   *  into a space a scanner would read as light. */
+  opaqueBackground: boolean;
   qrCode?: { model?: number; eccLevel?: QrEccLevel; cellSize?: number; version?: string };
 }
 
@@ -80,6 +84,10 @@ export interface LabelPose {
   width: number;
   height: number;
 }
+
+/** A scene node carrying this app's data. Lives here rather than in App.tsx
+ *  so the renderer and its tests can name it without importing the app. */
+export type LabelNode = SceneNode<LabelNodeData, LabelLayer, LabelPose>;
 
 /**
  * Standard tape sizes. `width` is the tape's full width in pt (the paper height

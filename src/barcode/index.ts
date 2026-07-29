@@ -7,6 +7,7 @@ export {
 } from './encode';
 export {
   barcodeRects,
+  barcodeBackgroundRect,
   barcodeModulePt,
   quietZonePt,
   HUMAN_READABLE_HEIGHT_PT,
