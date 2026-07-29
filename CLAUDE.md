@@ -7,7 +7,9 @@ Web-based visual editor for Brother P-touch label files (.lbx).
 Standalone Vite + React app consuming:
 - `@weasel-js/core`, `/ui`, `/theme` (from npm, `^0.6.0`) — 2D scene graph,
   canvas rendering, tools, and the UI kit
-- `bil-lbx` (from npm, `^0.2.0`) — .lbx serialization/parsing
+- `bil-lbx` (from npm, `^0.2.2`) — .lbx serialization/parsing. The floor is
+  0.2.2 because the barcode background round-trip reads `LabelConfig.generator`,
+  which older versions neither surface nor stamp with the current name.
 - `obwat` (from npm, `^0.3.0`) — Brother P-touch printing: raster encoding,
   WebUSB/Web Serial transports, and the `createBrotherPrinter` facade (device
   acquisition, keepalive, status events). Weasel renders pixels for print via
@@ -106,11 +108,15 @@ Key weasel APIs used:
   an image composites with it and the artwork prints into the spaces and the
   quiet zone, which no scanner reads — a failure the canvas can't show as
   wrong, because it draws it correctly. Per-barcode ("Opaque background",
-  default on); `.lbx` carries it as the object's `brush`, but only in the on
-  direction: bil-lbx parses a NULL brush back as `undefined` and writes an
-  absent brush as NULL, so off and never-set are one state in the file and
-  import always yields on. That's the safe way to be lossy — a reopened
-  barcode is opaque, hence scannable.
+  default on); `.lbx` carries it as the object's `brush` (`SOLID` on, `NULL`
+  off) and both directions round-trip — but only in files *we* wrote, which
+  `fileMeansItsBrush` (`src/lbxImport.ts`) decides from bil-lbx's `generator`.
+  P-touch stamps `NULL` on every barcode it authors and draws them opaque
+  anyway, so its brush carries no information. `bil-lbx` alone counts, and
+  deliberately not its former name `brother-lbx`: files we wrote before this
+  existed carry that stamp and no brush, so trusting it would reopen their
+  barcodes transparent. Needs bil-lbx ≥ 0.2.2, which is both when `generator`
+  became readable and when its value changed — hence the `^0.2.2` range.
 - A barcode's pose means its *bars*, and the quiet zone lives outside it
   (`quietZonePt`, a flat 10 modules per side for every 1D symbology; 4 cells
   for QR). No encoder bakes a quiet zone into its `totalModules` —

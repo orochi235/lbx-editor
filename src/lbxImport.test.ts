@@ -50,6 +50,22 @@ function label(opts: {
   };
 }
 
+/**
+ * The same file, restamped as if another program wrote it. `buildLbx` always
+ * writes `generator="bil-lbx"`, so this is how a fixture becomes a P-touch
+ * file — or one of our own from before the generator string changed.
+ * Pass `null` to drop the attribute entirely.
+ */
+async function withGenerator(lbx: Uint8Array, generator: string | null): Promise<ArrayBuffer> {
+  const zip = await JSZip.loadAsync(lbx);
+  const xml = await zip.file('label.xml')!.async('string');
+  zip.file('label.xml', xml.replace(
+    /\sgenerator="[^"]*"/,
+    generator === null ? '' : ` generator="${generator}"`,
+  ));
+  return toArrayBuffer(await zip.generateAsync({ type: 'uint8array' }));
+}
+
 /** The same file with its style:backGround element removed. */
 async function stripBackground(lbx: Uint8Array): Promise<ArrayBuffer> {
   const zip = await JSZip.loadAsync(lbx);
@@ -207,20 +223,78 @@ describe('barcode objects', () => {
     });
   });
 
-  it('always imports the opaque background on, whatever the brush says', async () => {
-    // bil-lbx parses a NULL brush back as undefined and serializes an absent
-    // brush as NULL, so "off" and "never set" are indistinguishable in a .lbx.
-    // Importing on is the safe direction: a reopened barcode is scannable.
-    for (const brush of [
-      { style: 'SOLID' as const, color: '#FFFFFF' },
-      { style: 'NULL' as const },
-      undefined,
-    ]) {
-      const config = label({ autoLength: false, paperHeight: 200, rightEdge: 100 });
-      config.objects = [{ ...barcode, ...(brush ? { brush } : {}) }];
-      const result = await importLbx(toArrayBuffer(await buildLbx(config)));
+  /** A one-barcode file carrying `brush`, stamped with `generator`. */
+  async function importedWith(
+    brush: BarcodeObject['brush'],
+    generator: string | null | undefined,
+  ) {
+    const config = label({ autoLength: false, paperHeight: 200, rightEdge: 100 });
+    config.objects = [{ ...barcode, ...(brush ? { brush } : {}) }];
+    const bytes = await buildLbx(config);
+    // undefined = leave buildLbx's own stamp ("bil-lbx") alone.
+    const file = generator === undefined
+      ? toArrayBuffer(bytes)
+      : await withGenerator(bytes, generator);
+    return (await importLbx(file)).nodes[0]!.data;
+  }
 
-      expect(result.nodes[0]!.data).toMatchObject({ opaqueBackground: true });
-    }
+  describe('the opaque background', () => {
+    // The brush encodes it, but only a file we wrote means anything by it:
+    // P-touch stamps `style="NULL"` on every barcode it authors and draws them
+    // opaque regardless, so reading NULL as "off" there would import every
+    // P-touch barcode transparent.
+    it('reads a solid brush as on, in a file we wrote', async () => {
+      expect(await importedWith({ style: 'SOLID', color: '#FFFFFF' }, undefined))
+        .toMatchObject({ opaqueBackground: true });
+    });
+
+    it('reads a null brush as off, in a file we wrote', async () => {
+      expect(await importedWith({ style: 'NULL' }, undefined))
+        .toMatchObject({ opaqueBackground: false });
+    });
+
+    it('treats an absent brush as off in our file, as the serializer makes it NULL', async () => {
+      expect(await importedWith(undefined, undefined))
+        .toMatchObject({ opaqueBackground: false });
+    });
+
+    it('keeps a P-touch barcode opaque despite its boilerplate null brush', async () => {
+      expect(await importedWith({ style: 'NULL' }, 'com.brother.PtouchEditor'))
+        .toMatchObject({ opaqueBackground: true });
+    });
+
+    it('keeps a barcode from an unknown program opaque', async () => {
+      expect(await importedWith(undefined, null))
+        .toMatchObject({ opaqueBackground: true });
+    });
+
+    // The one that isn't obvious. Files we wrote before this shipped are
+    // stamped `brother-lbx` — bil-lbx's former name — and carry no brush at
+    // all, because the exporter didn't write one yet. Counting that string as
+    // ours would read every one of them as "off" and reopen a barcode
+    // transparent over its artwork: the exact failure the background prevents.
+    // Files written by the editor *with* a deliberate brush but an old bil-lbx
+    // share that stamp and are indistinguishable, so they lose their "off" —
+    // which is the direction that's safe to lose.
+    it('keeps a barcode from our own older files opaque', async () => {
+      expect(await importedWith({ style: 'NULL' }, 'brother-lbx'))
+        .toMatchObject({ opaqueBackground: true });
+    });
+
+    it('survives an export and reimport in both directions', async () => {
+      for (const opaqueBackground of [true, false]) {
+        const imported = await importedWith({ style: 'SOLID', color: '#FFFFFF' }, undefined);
+        if (imported.kind !== 'barcode') throw new Error('fixture should import as a barcode');
+        const out = await exportLbx(
+          [{ id: 'n1', data: { ...imported, opaqueBackground }, pose: { x: 20, y: 4, width: 60, height: 24 } }],
+          '12mm',
+          false,
+          200,
+          [],
+        );
+        const reimported = await importLbx(toArrayBuffer(out));
+        expect(reimported.nodes[0]!.data).toMatchObject({ opaqueBackground });
+      }
+    });
   });
 });

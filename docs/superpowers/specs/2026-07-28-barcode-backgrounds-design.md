@@ -37,6 +37,7 @@ opaqueBackground: boolean;
 ```
 
 ### Round-trip: on is persisted, off is not
+### — superseded 2026-07-28; both directions now survive, see "Making it lossless"
 
 `.lbx`'s `BarcodeObject` carries a `brush`, and `BrushStyle` is
 `"NULL" | "SOLID" | "HATCHED"` — which is exactly this distinction, and it does
@@ -77,7 +78,40 @@ control the background there. That makes it inert in P-touch — writing `SOLID`
 changes nothing on their side — and therefore free for us to use as our own
 channel in files we write.
 
-### Making it lossless (unblocked, not done here)
+### Making it lossless — done 2026-07-28, with one correction
+
+Shipped on bil-lbx 0.2.2 (the version that both surfaces `generator` and
+writes `bil-lbx` as its value). `opaqueBackground` now survives an `.lbx`
+round-trip in both directions; the table above is superseded by the one at the
+end of this section.
+
+**The rule below is wrong about the legacy name, and shipped without it.**
+Accepting `brother-lbx` looked free — the reasoning was that a file we wrote
+before this shipped "has no deliberate `SOLID`/`NULL` to recover anyway, so
+either branch gives it `true`". That is backwards. Such a file carries *no
+brush element*, which bil-lbx parses as `undefined`, so counting its stamp as
+ours reads it as `style !== 'SOLID'` → **off** — every pre-feature export would
+reopen with its barcodes transparent over their artwork, which is precisely the
+failure the background exists to prevent. Verified against the round-trip, not
+argued: absent and `NULL` both parse back as `undefined`, only `SOLID` survives.
+
+So `fileMeansItsBrush` accepts `bil-lbx` alone. The cost is that a file written
+by the editor *with* a deliberate brush but an older bil-lbx carries the same
+`brother-lbx` stamp as a pre-feature one, and cannot be told apart from it —
+those lose their "off" and reopen opaque. That is the direction that is safe to
+lose, which is the same principle the original lossy behavior rested on.
+
+| file | brush | imports as |
+|---|---|---|
+| ours (`bil-lbx`) | `SOLID` | on |
+| ours (`bil-lbx`) | `NULL` or absent | **off** |
+| P-touch | `NULL` (boilerplate) | on |
+| ours, older stamp (`brother-lbx`) | anything | on |
+| unknown or no generator | anything | on |
+
+The original write-up follows.
+
+### Making it lossless (as designed, before the correction above)
 
 The obstacle was never `parseBrush`. `SOLID` and `NULL` already survive
 distinctly (verified by round-trip); only NULL-vs-absent collapses, and every
