@@ -248,8 +248,10 @@ stays black.
 
 ## Follow-up: the quiet zone is inconsistent between encoders
 
-**Deferred, but no longer undecided — see "Measured against P-touch" below,
-which settles the direction the fix has to go.**
+**Fixed 2026-07-28**, after "Measured against P-touch" below settled the
+direction. `ean.ts`'s `QUIET = 9` is gone; `quietZonePt` is the only quiet zone
+for every 1D symbology. The section below is kept as the reasoning that got
+there.
 
 `quietZonePt` returns a flat 10 modules for every 1D symbology and applies it
 *outside* the pose. But the encoders disagree about where the quiet zone lives:
@@ -287,7 +289,8 @@ constant carries its own caveat.
 
 ## Out of scope
 
-- The quiet-zone fix above.
+- The quiet-zone fix above (out of scope for the backgrounds work; done
+  straight after it, on the same branch).
 - A barcode near the tail under auto-length has its background clipped at the
   label end. Non-issue: past the label end there are no objects to mask.
 - No diagnostic for "this background is hiding something." The mask is visible
@@ -329,18 +332,39 @@ give it, and we size that box for 113 modules, so a round-tripped EAN draws
 ~19% narrower here than P-touch will redraw it. Code 128, Code 39, ITF and
 Codabar were correct already.
 
-The fix, now unblocked:
+### The fix, as shipped (2026-07-28)
 
-- Strip `QUIET = 9` from `ean.ts` — `totalModules` becomes `modules.length`,
-  and `bars[].x` loses the offset.
-- `quietZonePt` becomes the only quiet zone, applied outside the pose, uniform
+- `QUIET = 9` is gone from `ean.ts` — `totalModules` is `modules.length` and
+  `bars[].x` lost the offset.
+- `quietZonePt` is the only quiet zone, applied outside the pose, uniform
   across every 1D symbology. `barcodeBackgroundRect` and `protectedRegions`
-  then stop double-counting on the EAN family.
-- The oracle tests in `ean.test.ts` are insensitive to this: `bitstring()`
-  trims leading and trailing zeros.
-- **Existing EAN labels will redraw ~19% wider and export a ~19% larger
-  `barWidth`.** That is the correction, not a regression, but it changes
-  documents that already exist.
+  stopped double-counting on the EAN family for free, since both derive from
+  it.
+- The oracle tests in `ean.test.ts` were insensitive to it, as predicted:
+  `bitstring()` trims leading and trailing zeros.
+- **Existing EAN labels redraw ~19% wider and export a ~19% larger
+  `barWidth`.** The correction, not a regression — but it changes documents
+  that already exist. Nothing to migrate: the pose is untouched, and the bars
+  now fill it instead of sitting inset with 9 empty modules at each end.
+
+What pins it, since the failure was silent and internally consistent:
+
+- `encode.test.ts` asserts across **all nine** 1D symbologies that the bars
+  span exactly `[0, totalModules]` — the invariant EAN broke, stated where a
+  tenth encoder will meet it. Four cases failed before the fix.
+- `barcodeExport.test.ts` pins the absolute correspondence the measurement
+  gives: a 76pt EAN-13 pose exports `barWidth` 0.8, matching the sample file.
+  The pre-existing export tests are all relative to `totalModules`, so they
+  held at either module count and could never have caught this — 0.673 before,
+  0.800 after.
+- Confirmed in the print raster: an EAN-13 imported at P-touch's own numbers
+  (x=20pt, w=76pt, `barWidth` 0.8) renders ink from dot 50 to dot 239 — the
+  pose exactly — with a narrowest bar run of 2 dots = 0.8pt.
+
+Left undone deliberately: the quiet zone is still a flat 10 modules per side,
+where EAN-13's standard is 11 left / 7 right. Doing that properly means each
+encoder owning a `quiet: { left, right }`, since only the encoder knows its
+symbology. The constant carries this caveat.
 
 Two things this also turned up, both separate work:
 

@@ -181,29 +181,21 @@ In the order previously agreed (reverse of how they were listed):
    Add to `SUPPORTED_PROTOCOLS` and the dispatcher; `encode.test.ts` will then
    require them to actually encode.
 
-4. **The quiet zone is inconsistent between encoders — now measured, fix
-   unblocked.** A real P-touch file
-   (`~/src/bil-lbx/docs/samples/barcodes.lbx`) settles it: P-touch's 1D margin
-   is a *fixed 36.8pt*, unchanged when `barWidth` doubles, so its box never
-   encoded a quiet zone in modules; and with `margin="false"` — which we
-   always export — the box is exactly the bars. So the pose means bars only
-   and `ean.ts`'s baked-in `QUIET = 9` is wrong, costing ~19%. Full table and
-   fix steps in
-   `docs/superpowers/specs/2026-07-28-barcode-backgrounds-design.md`
-   ("Measured against P-touch"). Original statement of the problem:
-   `quietZonePt` returns a
-   flat 10 modules for every 1D symbology and applies it *outside* the pose,
-   but `ean.ts` bakes `QUIET = 9` *inside* `totalModules` while Code 128, Code
-   39, ITF, and Codabar bake none. So the EAN family counts its quiet zone
-   twice, and everything derived from it — `protectedRegions`, and the barcode
-   background — is about twice as wide as needed there. Not local: fixing it
-   changes `barcodeModulePt` (`pose.width / totalModules`), which redraws
-   existing EAN labels ~19% wider and shifts their exported `barWidth`. Which
-   direction is correct depends on whether P-touch's object box includes the
-   quiet zone — a P-touch-authored EAN file settles it
-   (`position.width / barWidth` is ~95 for bars-only, ~113 for bars+quiet).
-   Full write-up in
+4. ~~The quiet zone is inconsistent between encoders~~ — done. `ean.ts`'s
+   baked-in `QUIET = 9` is gone, so `quietZonePt` is the only quiet zone and
+   every 1D encoder reports bars-only in `totalModules`. Settled against a real
+   P-touch file (`~/src/bil-lbx/docs/samples/barcodes.lbx`): its 1D margin is a
+   *fixed 36.8pt*, unchanged when `barWidth` doubles, so the box never encoded
+   a quiet zone in modules — and with `margin="false"`, which we always export,
+   the box is exactly the bars. **Existing EAN labels redraw ~19% wider and
+   export a ~19% larger `barWidth`** — the correction, not a regression.
+   Measurements and what pins it:
    `docs/superpowers/specs/2026-07-28-barcode-backgrounds-design.md`.
+
+   Still simplified there: the quiet zone is a flat 10 modules per side, where
+   EAN-13's standard is 11 left / 7 right. Per-symbology values belong on the
+   encoder (`Symbol1D.quiet: { left, right }`) and should be checked against
+   bwip-js rather than transcribed.
 
 Also worth considering, not agreed:
 

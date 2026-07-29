@@ -111,6 +111,16 @@ Key weasel APIs used:
   absent brush as NULL, so off and never-set are one state in the file and
   import always yields on. That's the safe way to be lossy — a reopened
   barcode is opaque, hence scannable.
+- A barcode's pose means its *bars*, and the quiet zone lives outside it
+  (`quietZonePt`, a flat 10 modules per side for every 1D symbology; 4 cells
+  for QR). No encoder bakes a quiet zone into its `totalModules` —
+  `encode.test.ts` pins that across all nine, because `barcodeModulePt` is
+  `pose.width / totalModules`, so whatever that counts is what the pose means.
+  Measured against a P-touch-authored file: under the `margin="false"` we
+  always export, P-touch's object box is the bars alone. (The EAN family used
+  to bake in 9, drawing ~19% narrow and double-counting its quiet zone in the
+  background and the dither-protected region.) Still simplified: EAN-13's
+  standard is asymmetric, 11 left / 7 right.
 - A barcode's two colors are picked by the renderer, not stored on the node,
   so they come through `drawLabelNode`'s `colors` argument: bars in the
   cassette ink, background in the tape color, both screen-only. The defaults

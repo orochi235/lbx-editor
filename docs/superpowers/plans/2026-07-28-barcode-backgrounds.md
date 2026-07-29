@@ -973,10 +973,11 @@ Recorded in the spec's **Follow-up** section, in
 `docs/handoff-barcode-support.md`, and now in a comment on
 `QUIET_ZONE_MODULES_1D` itself:
 
-- **The quiet zone is inconsistent between encoders.** `ean.ts` bakes 9 modules
-  into `totalModules`; the other 1D encoders bake none; `quietZonePt` assumes
-  none. The EAN family therefore gets a background about twice as wide as it
-  needs. Conservative, but it masks more artwork than it should.
+- ~~**The quiet zone is inconsistent between encoders.**~~ Deferred past this
+  plan, then fixed straight after it on the same branch: `ean.ts`'s `QUIET = 9`
+  is gone, so `quietZonePt` is the only quiet zone and the EAN family stopped
+  double-counting. `encode.test.ts` now pins the invariant across all nine 1D
+  symbologies. See the spec's **Follow-up**.
 - **The off state doesn't survive an `.lbx` round-trip.** bil-lbx collapses a
   NULL brush to `undefined` on parse, so "off" and "never set" are one state in
   the file. Making it lossless is a bil-lbx change plus a version bump.
