@@ -29,51 +29,15 @@ export function fitLengthToContent(poses: Iterable<LabelPose>): number {
   return Math.min(MAX_LABEL_LENGTH_PT, Math.max(MIN_LABEL_LENGTH_PT, fitted));
 }
 
-/** A label span in label points: where it starts, and how long it is. */
-export interface LabelExtent {
-  /** Left edge. `0` normally; negative while content hangs off the head. */
-  originX: number;
-  /** Distance from `originX` to the tail. */
-  length: number;
-}
-
 /**
- * The label span that fits `poses`, allowing the head to extend for content at
- * negative x — what the label looks like mid-drag, before the rebase.
+ * The label origin is pinned at x=0 on both the committed and the live path,
+ * so `fitLengthToContent` serves both: the live fit during a drag is the same
+ * function over the gesture's proposed poses (see `useLiveLength`).
  *
- * The head extends only when content actually crosses zero, and never retracts
- * past it: a label whose leftmost object sits at x=50 keeps that 50pt leading
- * gap, exactly as the tail rule keeps content unreflowed.
- *
- * Distinct from `fitLengthToContent`, which answers the committed question —
- * origin pinned at 0, negative-x content ignored. The two agree whenever all
- * content is non-negative, which is every document that has been through a
- * `rebaseShift`.
+ * A head that grows for content dragged past x=0 was built and then removed —
+ * it cannot coexist with the canvas's continuous refit. Growing the head moves
+ * the very edge `fitViewToBounds` anchors to, so the refit pans, the pan maps
+ * the same screen pointer to a larger world x, and the object is pushed back:
+ * a feedback loop that parks the object at x≈0 and never grows the label. See
+ * docs/superpowers/specs/2026-07-28-live-auto-length-design.md.
  */
-export function fitExtentToContent(poses: Iterable<LabelPose>): LabelExtent {
-  let leftmost = 0;
-  let rightmost = 0;
-  for (const pose of poses) {
-    if (pose.x < leftmost) leftmost = pose.x;
-    const edge = pose.x + pose.width;
-    if (edge > rightmost) rightmost = edge;
-  }
-  const originX = leftmost < 0 ? leftmost - LENGTH_MARGIN_PT : 0;
-  const span = rightmost + LENGTH_MARGIN_PT - originX;
-  return {
-    originX,
-    length: Math.min(MAX_LABEL_LENGTH_PT, Math.max(MIN_LABEL_LENGTH_PT, span)),
-  };
-}
-
-/**
- * How far right to shift every object (and cut mark) so an extent whose head
- * hangs off the origin sits back at x=0 — .lbx has no way to say "negative x".
- *
- * It's just the overhang: shifting by −originX lands the leftmost object on
- * the leading margin and leaves the fitted length exactly where the drag left
- * it, so nothing moves relative to the label.
- */
-export function rebaseShift(originX: number): number {
-  return originX < 0 ? -originX : 0;
-}

@@ -44,8 +44,8 @@ import {
   type LabelPose,
   type TapeSize,
 } from './label';
-import { fitLengthToContent, fitExtentToContent, rebaseShift } from './autoLength';
-import { useLiveExtent } from './useLiveExtent';
+import { fitLengthToContent } from './autoLength';
+import { useLiveLength } from './useLiveLength';
 import {
   encodeBarcode,
   barcodeRects,
@@ -140,11 +140,10 @@ function paperShadowDepth(paperHeight: number): number {
   return paperHeight * 0.08;
 }
 
-// The full drawn footprint of the tape: paper rect + brick shadow. `originX`
-// is 0 for a committed label and negative while a drag has grown the head.
-function paperBounds(originX: number, paperWidth: number, paperHeight: number) {
+// The full drawn footprint of the tape: paper rect + brick shadow.
+function paperBounds(paperWidth: number, paperHeight: number) {
   const depth = paperShadowDepth(paperHeight);
-  return { x: originX, y: 0, width: paperWidth + depth, height: paperHeight + depth };
+  return { x: 0, y: 0, width: paperWidth + depth, height: paperHeight + depth };
 }
 
 // View that centers the drawn tape (shadow included) at 100% (scale 1) in a
@@ -337,21 +336,18 @@ export function App() {
   const helpersRef = useRef<CanvasHelpers<LabelPose> | null>(null);
 
   // While a drag is in flight the label follows the gesture instead of the
-  // committed scene. This pair is for DRAWING ONLY — `labelLength` and
+  // committed scene. `displayLength` is for DRAWING ONLY — `labelLength` and
   // `paperWidth` above stay committed, so export, print, autosave, cut-mark
   // pruning and diagnostics never see a transient value. That separation is
   // load-bearing: a mid-drag shrink reaching the cut-mark pruning above would
   // destroy marks on a drag the user then abandoned.
   const getNodeIds = useCallback(() => [...scene.nodes.keys()].map(String), [scene]);
-  const handleGestureEnd = useCallback(() => {}, []);
-  const { extent: liveExtent, handlePointerDown: handleCanvasPointerDown } = useLiveExtent({
+  const { length: liveLength, handlePointerDown: handleCanvasPointerDown } = useLiveLength({
     enabled: autoLength,
     getNodeIds,
     helpersRef,
-    onGestureEnd: handleGestureEnd,
   });
-  const displayOrigin = liveExtent ? liveExtent.originX : 0;
-  const displayLength = liveExtent ? liveExtent.length : paperWidth;
+  const displayLength = liveLength ?? paperWidth;
 
   const [canvasSize, setCanvasSize] = useState<CanvasSize>({ width: 0, height: 0 });
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: { x: 1, y: 1 } });
@@ -359,7 +355,7 @@ export function App() {
   const viewRef = useRef(view);
   viewRef.current = view;
 
-  const prevPaperSize = useRef({ w: paperWidth, h: paperHeight, x: 0 });
+  const prevPaperSize = useRef({ w: paperWidth, h: paperHeight });
   const viewInitialized = useRef(false);
   // The last view our own centering produced. While the live view still
   // equals it (the user hasn't panned/zoomed), container resizes re-center
@@ -415,16 +411,14 @@ export function App() {
   // then re-runs each frame the extent actually changes.
   useEffect(() => {
     if (canvasSize.width === 0 || canvasSize.height === 0) return;
-    if (prevPaperSize.current.w === displayLength
-      && prevPaperSize.current.h === paperHeight
-      && prevPaperSize.current.x === displayOrigin) return;
-    prevPaperSize.current = { w: displayLength, h: paperHeight, x: displayOrigin };
+    if (prevPaperSize.current.w === displayLength && prevPaperSize.current.h === paperHeight) return;
+    prevPaperSize.current = { w: displayLength, h: paperHeight };
     setView((v) =>
-      fitViewToBounds(paperBounds(displayOrigin, displayLength, paperHeight), canvasSize, v, {
+      fitViewToBounds(paperBounds(displayLength, paperHeight), canvasSize, v, {
         padding: FIT_PADDING,
       }),
     );
-  }, [displayOrigin, displayLength, paperHeight, canvasSize]);
+  }, [displayLength, paperHeight, canvasSize]);
 
   const zoomPercent = Math.round(meanScale(view.scale) * 100);
   const handleZoomIn = useCallback(
@@ -443,14 +437,14 @@ export function App() {
     },
     [canvasSize],
   );
-  // Reads the display pair so a Fit pressed mid-drag frames what's on screen.
+  // Reads `displayLength` so a Fit pressed mid-drag frames what's on screen.
   const handleZoomFit = useCallback(() => {
     setView((v) =>
-      fitViewToBounds(paperBounds(displayOrigin, displayLength, paperHeight), canvasSize, v, {
+      fitViewToBounds(paperBounds(displayLength, paperHeight), canvasSize, v, {
         padding: FIT_PADDING,
       }),
     );
-  }, [displayOrigin, displayLength, paperHeight, canvasSize]);
+  }, [displayLength, paperHeight, canvasSize]);
   // One centering path for toolbar Reset, Cmd-0 (via viewport.recenter),
   // and initial load.
   const handleZoomReset = useCallback(
@@ -734,9 +728,9 @@ export function App() {
     // bottom and right edges.
     const strokeW = 0.5;
     const s = strokeW / 2;
-    const x0 = displayOrigin - s;
+    const x0 = -s;
     const y0 = -s;
-    const x1 = displayOrigin + displayLength + s;
+    const x1 = displayLength + s;
     const y1 = paperHeight + s;
     const shadow = polygonFromPoints([
       { x: x1, y: y0 },
@@ -757,7 +751,7 @@ export function App() {
         },
         {
           kind: 'path',
-          path: rectPath(displayOrigin, 0, displayLength, paperHeight),
+          path: rectPath(0, 0, displayLength, paperHeight),
           fill: { fill: 'solid', color: tapeCss, opacity: tapeClear ? 0.45 : 1 },
           // A dark tape face would vanish against its black brick — lighten
           // the border so the tape edge stays readable.
@@ -787,7 +781,7 @@ export function App() {
         })),
       ],
     };
-  }, [displayOrigin, displayLength, paperWidth, paperHeight, tapeCss, tapeClear, previewBitmap, printableBand, cutMarks]);
+  }, [displayLength, paperWidth, paperHeight, tapeCss, tapeClear, previewBitmap, printableBand, cutMarks]);
 
   // --- Object creation via weasel tools ---
   // The palette activates weasel's built-in rect/line/text tools; their drag
@@ -1262,8 +1256,8 @@ export function App() {
   // semitransparent — "outside the label" — while sitting inside the label
   // that just grew to hold it.
   const printablePath = useMemo(
-    () => rectPath(displayOrigin, printableBand.y, displayLength, printableBand.height),
-    [printableBand, displayOrigin, displayLength],
+    () => rectPath(0, printableBand.y, displayLength, printableBand.height),
+    [printableBand, displayLength],
   );
   const dimOffLabel = useCallback(
     (cmds: DrawCommand[]): DrawCommand[] =>

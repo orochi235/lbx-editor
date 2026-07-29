@@ -1,5 +1,5 @@
 /**
- * Live label extent for the duration of a pointer gesture.
+ * Live label length for the duration of a pointer gesture.
  *
  * Weasel doesn't commit a drag until the pointer comes up — it renders a
  * preview ghost and leaves the scene alone — so auto-length has nothing to
@@ -12,8 +12,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import { fitExtentToContent } from './autoLength';
-import type { LabelExtent } from './autoLength';
+import { fitLengthToContent } from './autoLength';
 import type { LabelPose } from './label';
 
 /** The slice of weasel's `CanvasHelpers` this hook needs. */
@@ -22,48 +21,40 @@ export interface LiveBoundsLookup {
   getEffectiveBounds(id: string): { x: number; y: number; width: number; height: number } | null;
 }
 
-export interface UseLiveExtentArgs {
+export interface UseLiveLengthArgs {
   /** Off entirely when auto-length is off — the length is the user's then. */
   enabled: boolean;
   getNodeIds: () => string[];
   helpersRef: RefObject<LiveBoundsLookup | null>;
-  /** Fires once when the pointer comes up, after the extent is cleared. */
-  onGestureEnd: () => void;
 }
 
-export interface UseLiveExtentResult {
-  /** The span to draw, or `null` when no gesture is in flight. */
-  extent: LabelExtent | null;
+export interface UseLiveLengthResult {
+  /** The length to draw, or `null` when no gesture is in flight. */
+  length: number | null;
   /** Wire to the canvas container's `onPointerDown`. */
   handlePointerDown: () => void;
 }
 
-export function useLiveExtent({
+export function useLiveLength({
   enabled,
   getNodeIds,
   helpersRef,
-  onGestureEnd,
-}: UseLiveExtentArgs): UseLiveExtentResult {
-  const [extent, setExtent] = useState<LabelExtent | null>(null);
+}: UseLiveLengthArgs): UseLiveLengthResult {
+  const [length, setLength] = useState<number | null>(null);
   const rafRef = useRef(0);
   const activeRef = useRef(false);
 
-  // Latest-value refs: the rAF loop and the window listeners are installed
-  // once per gesture and must not capture a stale render's closures.
+  // Latest-value ref: the rAF loop is installed once per gesture and must not
+  // capture a stale render's closure.
   const getNodeIdsRef = useRef(getNodeIds);
   getNodeIdsRef.current = getNodeIds;
-  const onGestureEndRef = useRef(onGestureEnd);
-  onGestureEndRef.current = onGestureEnd;
 
   const stop = useCallback(() => {
-    // Guarded on `activeRef`: a click that never became a gesture must not
-    // fire `onGestureEnd`, which is what triggers the rebase pass.
     if (!activeRef.current) return;
     activeRef.current = false;
     cancelAnimationFrame(rafRef.current);
     rafRef.current = 0;
-    setExtent(null);
-    onGestureEndRef.current();
+    setLength(null);
   }, []);
 
   const handlePointerDown = useCallback(() => {
@@ -78,12 +69,8 @@ export function useLiveExtent({
           const b = helpers.getEffectiveBounds(id);
           if (b) poses.push({ x: b.x, y: b.y, width: b.width, height: b.height });
         }
-        const next = fitExtentToContent(poses);
-        // Hold the old object when nothing moved, so a stationary pointer
-        // doesn't re-render (and refit the view) on every frame.
-        setExtent((prev) =>
-          prev && prev.originX === next.originX && prev.length === next.length ? prev : next,
-        );
+        // Same fit as the committed path, over the gesture's proposed poses.
+        setLength(fitLengthToContent(poses));
       }
       rafRef.current = requestAnimationFrame(tick);
     };
@@ -102,5 +89,5 @@ export function useLiveExtent({
     };
   }, [stop]);
 
-  return { extent, handlePointerDown };
+  return { length, handlePointerDown };
 }
