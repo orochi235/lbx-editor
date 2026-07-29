@@ -86,14 +86,24 @@ telling *our* files from P-touch's, since P-touch's universal `NULL` would
 otherwise read as "off".
 
 `pt:document`'s `generator` attribute already distinguishes them —
-`com.brother.PtouchEditor` vs `brother-lbx` — and bil-lbx now surfaces it on
-`LabelConfig` (commit `4cc6471`, unpublished). The import rule becomes:
+`com.brother.PtouchEditor` vs ours — and bil-lbx now surfaces it on
+`LabelConfig` (commits `4cc6471`, `c14b601`; unpublished). The import rule
+becomes:
 
 ```ts
-opaqueBackground: config.generator === 'brother-lbx'
+// bil-lbx 0.2.1 and earlier wrote `brother-lbx`, the package's former name.
+const oursWroteIt = config.generator === 'bil-lbx'
+  || config.generator === 'brother-lbx';
+
+opaqueBackground: oursWroteIt
   ? obj.brush?.style === 'SOLID'   // our file: the field means what it says
   : true                           // P-touch's: boilerplate, and they draw opaque
 ```
+
+Accepting the old string matters less than it looks — a file we wrote before
+this shipped has no deliberate `SOLID`/`NULL` to recover anyway, so either
+branch gives it `true`. It is there so the rule doesn't quietly change meaning
+for those files later.
 
 Principled rather than a hack: P-touch writes boilerplate for what it doesn't
 use — every `pt:brush` is `NULL`, every `objectStyle` carries
