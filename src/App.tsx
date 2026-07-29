@@ -1294,7 +1294,11 @@ export function App() {
               onTapeSizeChange={setTapeSize}
               autoLength={autoLength}
               onAutoLengthChange={handleAutoLengthChange}
-              labelLength={labelLength}
+              // The display value, so the readout tracks a drag in progress.
+              // Safe in both modes: the field is disabled under Auto (pure
+              // readout), and with Auto off the live hook is disabled, so this
+              // is exactly `labelLength`.
+              labelLength={displayLength}
               onLabelLengthChange={setManualLength}
               labelsCount={cutMarks.length + 1}
               onLabelsCountChange={handleLabelsCountChange}
