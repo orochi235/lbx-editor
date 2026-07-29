@@ -36,7 +36,9 @@ interface RenderGeometry {
  * the same origin and scale `labelRenderPlan` renders with.
  *
  * Each barcode's region is `barcodeBackgroundRect` — its pose plus its quiet
- * zone, the same rectangle the barcode paints its opaque background over. The
+ * zone, the rectangle the barcode paints its opaque background over when that
+ * is on. Protection doesn't depend on the flag: the bars need threshold
+ * quantization whether or not anything was masked underneath them. The
  * pose includes the human-readable text below the bars, which is small type
  * that gains nothing from a dither either, and the quiet zone keeps the
  * diffuser from dropping a speck into the blank margin a scanner reads as the
@@ -54,8 +56,9 @@ export function protectedRegions(
     const symbol = encodeBarcode(barcodeRequest(node.data));
     if (!symbol.ok) continue;
 
-    // The same rectangle the barcode draws its opaque background over: what we
-    // blank and what we exempt from dithering are one region, not two.
+    // The same rectangle the barcode *would* draw its background over — the
+    // region is protected either way, since the bars need plain threshold
+    // whether or not anything was masked under them.
     const rect = barcodeBackgroundRect(symbol, node.pose);
     regions.push({
       x: rect.x * scale,

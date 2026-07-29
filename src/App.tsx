@@ -42,6 +42,7 @@ import {
   type TapeSize,
 } from './label';
 import { fitLengthToContent } from './autoLength';
+import { migratePersistedScene } from './docMigrate';
 import { useLiveLength } from './useLiveLength';
 import { drawLabelNode } from './drawLabelNode';
 import {
@@ -382,7 +383,9 @@ export function App() {
         setCutMarks(doc.cutMarks);
       }
       if (doc.scene) {
-        scene.loadState(doc.scene);
+        // `loadState` stores node data verbatim, so a field added since this
+        // snapshot was written arrives undefined and the compiler can't see it.
+        scene.loadState(migratePersistedScene(doc.scene));
         bumpNodeIdCounter(scene.nodes.keys());
       }
     } catch {

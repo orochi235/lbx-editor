@@ -90,4 +90,40 @@ describe('drawLabelNode, barcode colors', () => {
     expect(x + width).toBeGreaterThan(pose.x + pose.width);
     expect(y + height).toBeGreaterThan(pose.y + pose.height);
   });
+
+  it('inks the human-readable band too, not just the bars', () => {
+    // A text command keeps its color on each run, not in a path fill, so
+    // `fills` above can't see this one — and without its own assertion the
+    // band could go back to hardcoded black with every other test still green.
+    const commands = drawLabelNode(
+      node({ humanReadable: true }), pose, view, { ink: '#2149c0', paper: '#f7d117' },
+    );
+    const text = commands.find((c) => c.kind === 'text');
+    if (text?.kind !== 'text') throw new Error('expected a text command');
+
+    expect(text.runs.map((r) => r.fill)).toEqual(
+      text.runs.map(() => ({ fill: 'solid', color: '#2149c0' })),
+    );
+  });
+
+  it('gives an unencodable barcode a placeholder, never a background', () => {
+    // No symbol means no quiet zone to compute, and printPreflight blocks the
+    // job anyway. A paper-colored rect here would mask artwork for a barcode
+    // that is never going to print.
+    const painted = fills(
+      drawLabelNode(
+        node({ protocol: 'EAN13', data: 'nope' }), pose, view, { ink: '#2149c0', paper: '#f7d117' },
+      ),
+    );
+
+    expect(painted).toEqual(['#f6f6f6']);
+  });
+
+  it('backs a 2d symbol as well as a 1d one', () => {
+    const qr = node({ protocol: 'QRCODE', data: 'https://example.com', humanReadable: false });
+    const painted = fills(drawLabelNode(qr, pose, view, { ink: '#2149c0', paper: '#f7d117' }));
+
+    expect(painted[0]).toBe('#f7d117');
+    expect(new Set(painted.slice(1))).toEqual(new Set(['#2149c0']));
+  });
 });
