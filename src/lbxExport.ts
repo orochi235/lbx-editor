@@ -98,6 +98,13 @@ export function sceneToLbxConfig(
           humanReadableAlignment: data.humanReadableAlignment,
           checkDigit: data.checkDigit,
           zeroFill: data.zeroFill,
+          // P-touch may or may not honor a brush on a barcode — unverified.
+          // Written faithfully either way so the file states what we drew.
+          // Note the reverse doesn't survive: bil-lbx parses a NULL brush back
+          // as undefined, so import always yields opaqueBackground: true.
+          brush: data.opaqueBackground
+            ? { style: 'SOLID' as const, color: '#FFFFFF' }
+            : { style: 'NULL' as const },
           ...(qrCode ? { qrCode } : {}),
         });
         break;

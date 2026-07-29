@@ -86,6 +86,18 @@ describe('QR export', () => {
   });
 });
 
+describe('opaque background export', () => {
+  it('writes a solid white brush when the background is on', () => {
+    const out = exportOne({ ...BASE, opaqueBackground: true }, { width: 120, height: 46 });
+    expect(out.brush).toEqual({ style: 'SOLID', color: '#FFFFFF' });
+  });
+
+  it('writes a null brush when the background is off', () => {
+    const out = exportOne({ ...BASE, opaqueBackground: false }, { width: 120, height: 46 });
+    expect(out.brush).toEqual({ style: 'NULL' });
+  });
+});
+
 describe('unencodable barcode export', () => {
   it('keeps the imported sizes when the payload does not encode', () => {
     const broken: LabelBarcodeData = { ...BASE, protocol: 'EAN13', data: 'nope' };

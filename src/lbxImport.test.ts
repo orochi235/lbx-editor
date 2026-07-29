@@ -206,4 +206,21 @@ describe('barcode objects', () => {
       data: 'ABC-123',
     });
   });
+
+  it('always imports the opaque background on, whatever the brush says', async () => {
+    // bil-lbx parses a NULL brush back as undefined and serializes an absent
+    // brush as NULL, so "off" and "never set" are indistinguishable in a .lbx.
+    // Importing on is the safe direction: a reopened barcode is scannable.
+    for (const brush of [
+      { style: 'SOLID' as const, color: '#FFFFFF' },
+      { style: 'NULL' as const },
+      undefined,
+    ]) {
+      const config = label({ autoLength: false, paperHeight: 200, rightEdge: 100 });
+      config.objects = [{ ...barcode, ...(brush ? { brush } : {}) }];
+      const result = await importLbx(toArrayBuffer(await buildLbx(config)));
+
+      expect(result.nodes[0]!.data).toMatchObject({ opaqueBackground: true });
+    }
+  });
 });
