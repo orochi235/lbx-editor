@@ -1137,13 +1137,22 @@ export function App() {
     }
   }, [printing, tapeSize, scene, labelLength, paperHeight, autoCut, ditherAlgorithm, cutMarks, preflightChecks]);
 
-  // Screen draw: same drawLabelNode as print, but with ink-dark node colors
-  // recolored to the cassette's ink first. Print keeps the raw node data (a
-  // white-ink remap would erase the label under the <128 luminance threshold).
+  // Two recolor paths, and they are not interchangeable. `remapNodeInk`
+  // rewrites colors the *document* carries — a text's color, a rect's fill —
+  // which it can only do because they're on the node. A barcode has none: its
+  // bars and its background are picked by the renderer, so they come through
+  // the `colors` argument instead. Print takes neither path: it keeps the raw
+  // node data (a white-ink remap would erase the label under the <128
+  // luminance threshold) and takes the parameter defaults.
   const drawScreenNode = useCallback((node: LabelNode, pose: LabelPose, view: View) => {
     const data = remapNodeInk(node.data, inkCss);
-    return drawLabelNode(data === node.data ? node : { ...node, data }, pose, view);
-  }, [inkCss]);
+    return drawLabelNode(
+      data === node.data ? node : { ...node, data },
+      pose,
+      view,
+      { ink: inkCss, paper: tapeCss },
+    );
+  }, [inkCss, tapeCss]);
 
   // --- Printable-bounds overlay ---
   // Content outside the printable area won't print: print crops at the label

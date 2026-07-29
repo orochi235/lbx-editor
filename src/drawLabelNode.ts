@@ -19,6 +19,7 @@ import {
 import {
   encodeBarcode,
   barcodeRects,
+  barcodeBackgroundRect,
   barcodeRequest,
   HUMAN_READABLE_HEIGHT_PT,
 } from './barcode';
@@ -26,7 +27,22 @@ import { substituteFontFamily, toWeaselAlign, toWeaselVerticalAlign } from './fo
 import { imageDataUri } from './imageUtils';
 import { lineEndpoints, type LabelNode, type LabelPose } from './label';
 
-export function drawLabelNode(node: LabelNode, pose: LabelPose, _view: View): DrawCommand[] {
+/**
+ * `colors` carries the two colors the *renderer* picks rather than the
+ * document: a barcode's bars and its opaque background aren't fields the user
+ * sets. Colors the document does carry go the other way, through
+ * `remapNodeInk` before this is called. The defaults are the print values, so
+ * a call site that forgets the argument prints correctly instead of laying a
+ * black box over the label.
+ */
+export function drawLabelNode(
+  node: LabelNode,
+  pose: LabelPose,
+  _view: View,
+  colors: { ink?: string; paper?: string } = {},
+): DrawCommand[] {
+  const ink = colors.ink ?? '#000000';
+  const paper = colors.paper ?? '#ffffff';
   const { data } = node;
   const { x, y, width, height } = pose;
 
@@ -91,11 +107,26 @@ export function drawLabelNode(node: LabelNode, pose: LabelPose, _view: View): Dr
           stroke: { paint: { color: '#999999' }, width: 0.5 },
         }];
       }
-      const commands: DrawCommand[] = barcodeRects(symbol, pose, data.humanReadable).map((r) => ({
-        kind: 'path',
-        path: rectPath(r.x, r.y, r.width, r.height),
-        fill: { fill: 'solid', color: '#000000' },
-      }));
+      const commands: DrawCommand[] = [];
+      if (data.opaqueBackground) {
+        // Under the bars, so it masks whatever is below this node in the scene
+        // and nothing above it. Covers the quiet zone as well as the symbol:
+        // artwork in the blank margin is read as a bar. In the print raster
+        // this is white, which the luminance threshold turns into no dots.
+        const bg = barcodeBackgroundRect(symbol, pose);
+        commands.push({
+          kind: 'path',
+          path: rectPath(bg.x, bg.y, bg.width, bg.height),
+          fill: { fill: 'solid', color: paper },
+        });
+      }
+      for (const r of barcodeRects(symbol, pose, data.humanReadable)) {
+        commands.push({
+          kind: 'path',
+          path: rectPath(r.x, r.y, r.width, r.height),
+          fill: { fill: 'solid', color: ink },
+        });
+      }
       if (data.humanReadable && symbol.kind === '1d') {
         commands.push(textCommand(
           x,
@@ -107,7 +138,7 @@ export function drawLabelNode(node: LabelNode, pose: LabelPose, _view: View): Dr
             fontWeight: 400,
             fontStyle: 'normal',
             align: toWeaselAlign(data.humanReadableAlignment),
-            fill: { fill: 'solid', color: '#000000' },
+            fill: { fill: 'solid', color: ink },
           },
           width,
           HUMAN_READABLE_HEIGHT_PT,
