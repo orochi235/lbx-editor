@@ -1,5 +1,14 @@
 # Live Auto-Length Implementation Plan
 
+> **DONE — executed 2026-07-28, with one deviation.** Tasks 1–6 landed on the
+> `live-auto-length` branch. Head growth (the `originX` half of Task 1, and all
+> of Task 5's rebase) was implemented, tested in the browser, and then removed:
+> it cannot coexist with the canvas's continuous refit. `fitExtentToContent` /
+> `rebaseShift` never shipped, and `useLiveExtent` shipped as `useLiveLength`
+> over the existing `fitLengthToContent`. Read the spec's "Why the head doesn't
+> grow" for the measurements. The tasks below are the plan as written, kept for
+> the record.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** While auto-length is on, the label's extent tracks an in-flight drag continuously — growing past either edge and shrinking back — and commits whatever it was showing when the pointer came up.

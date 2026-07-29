@@ -16,11 +16,15 @@ object past the end.
 
 ## Goal
 
-While auto-length is on, the label's extent tracks the in-flight gesture
-continuously: it grows as the object crosses an edge, shrinks back as the
-object comes home, and commits at whatever it was showing when the pointer
-came up. Both edges — the tail as today, and the head, which auto-length has
-never fitted.
+While auto-length is on, the label's length tracks the in-flight gesture
+continuously: it grows as the object passes the end, shrinks back as the object
+comes home, and commits at whatever it was showing when the pointer came up.
+
+> **Status: implemented, with one part cut.** This spec originally covered both
+> edges. Head growth — the label extending leftward for content dragged past
+> x=0, then rebasing on drop — was built, tested, and then **removed**: it
+> cannot coexist with the canvas's continuous refit. See "Why the head doesn't
+> grow" below. The tail behavior described here shipped as written.
 
 ## Behavior
 
@@ -43,6 +47,9 @@ resize, rotate, and anything else that displaces existing nodes. Create-drag
 
 **Only when auto-length is on.** With Auto off the length is the user's, and a
 drag must not move it.
+
+**The head stays pinned at x=0.** An object dragged past the start of the label
+just hangs off it, exactly as on the committed path.
 
 ## Design
 
@@ -111,99 +118,93 @@ The print-preview bitmap is a render of committed state, so it stays pinned at
 origin 0 with the committed width and goes briefly stale during a gesture. It
 refreshes on commit like it does now.
 
-### Live extent, and why the head never retracts
+### The live length
 
-Over the effective poses:
+Over the effective poses, the live length is the same fit the committed path
+uses, applied to the gesture's proposed poses instead of the scene's:
 
-    minX = min(pose.x)
-    maxX = max(pose.x + pose.width)
-
-    displayOrigin = min(0, minX − 5.6pt)
-    displayEnd    = maxX + 5.6pt
-    displayLength = clamp(displayEnd − displayOrigin,
+    displayLength = clamp(max(pose.x + pose.width) + 5.6pt,
                           MIN_LABEL_LENGTH_PT, MAX_LABEL_LENGTH_PT)
 
-The clamp trims the tail, never the head: `displayOrigin` is whatever the
-formula above gives and `displayLength` is clamped against it, so a label that
-hits the ceiling stops growing rightward while the head stays put.
-
-The head extends only when content crosses into negative x, and never retracts
-past 0. A label whose leftmost object sits at x = 50 has a 50 pt leading gap
-that is part of the design; starting a drag anywhere on that label must not
-snap the head shut. This mirrors the rule auto-length already follows at the
-tail — content is never reflowed, only the boundary moves.
+`fitLengthToContent` already computes exactly this, so there is no second
+implementation to keep in step — the live path and the committed path are the
+same function over different poses.
 
 The `MAX_LABEL_LENGTH_PT` clamp means a drag past the 1000 mm ceiling stops
 growing the label while the object keeps moving, which is the correct signal
 that the object is leaving printable space.
 
-### Left-edge rebase on drop
+### Why the head doesn't grow
 
-.lbx has no representation for content at negative x, so a leftward overshoot
-has to be normalized at commit. On gesture end with `minX < 0`, shift every
-node — and every cut mark — right by
+The original design grew the label leftward for content dragged past x=0 and
+rebased everything right on drop. It was built, and it does not work, for a
+reason that only shows up against a live canvas:
 
-    s = 5.6pt − minX
+1. The object crosses x=0, so the live extent's origin goes negative and the
+   label grows leftward.
+2. `fitViewToBounds` re-frames the canvas — and the label's **left edge is the
+   anchor it frames to**, so the view pans.
+3. That pan maps the same screen pointer to a larger world x, pushing the
+   dragged object back to the right.
+4. The loop settles with the object parked at x ≈ 0 and the label never grown.
 
-The result is seamless by construction. Post-shift the leftmost object sits at
-5.6 pt, which is exactly the head gap that was displayed mid-drag, and
+Measured: after a hard leftward drag the object committed at **x = 0.015** with
+the length unchanged at 139 pt. With the mid-gesture refit suppressed, the same
+drag produced **139 → 155.6 pt** and the rebase fired correctly — confirming the
+refit, not the extent math, was the cause.
 
-    fitLengthToContent(shifted) = maxX + s + 5.6pt
-                                = (maxX + 5.6pt) − (minX − 5.6pt)
-                                = displayLength
+The tail escapes this because growing the tail changes only the *zoom*, not the
+anchor. (It perturbs the tail drag too, just far less.)
 
-So the committed length equals what was on screen, and every object's position
-*relative to the label* is unchanged: nothing visibly jumps at release. The
-whole world moved, and the label moved with it.
+That left three options: hold the view steady mid-gesture, pan-compensate at
+the cursor each frame, or keep continuous refit and drop head growth. **Head
+growth was dropped** — the tail case is the one that motivated the feature, and
+keeping the head meant either giving up the always-framed canvas or adding a
+per-frame pan correction for a secondary case.
 
-**Undo cost:** the rebase lands as its own history entry ("Extend label"). The
-gesture owns its commit batch and the app has no way to append to it, so
-undoing a leftward overshoot takes two presses — first the rebase, then the
-move. The intermediate state is valid (content at negative x, label origin 0),
-just not one the user asked for. Accepted for now; folding the two would need a
-second weasel change and doesn't block the feature.
+Consequences: the label origin stays pinned at x=0 on both paths, so the extent
+collapses to a plain length. `fitExtentToContent`, `rebaseShift`, the
+`displayOrigin` plumbing, the `paperBounds` origin parameter and the
+rebase-on-drop commit are all gone, along with the two-press undo wart they
+carried. Dragging an object past the start of the label leaves it hanging off
+the tape, flagged by the existing "will be clipped" diagnostic — unchanged
+behavior.
 
 ### Component boundaries
 
-`src/autoLength.ts` gains two pure functions beside `fitLengthToContent`:
+`src/autoLength.ts` is unchanged: `fitLengthToContent` serves both paths, since
+the live fit is that same function over the gesture's proposed poses. Its
+existing "ignores negative-x content" test is now load-bearing for the live
+path too — it *is* the head-pinned-at-0 rule.
 
-    /** The label span that fits `poses`, allowing a negative head. */
-    fitExtentToContent(poses): { originX: number; length: number }
-
-    /** Rightward shift that normalizes a negative-origin extent to x=0.
-     *  Equals −originX: shift right by however far the label overhangs. */
-    rebaseShift(originX: number): number
-
-Both are pure geometry over poses — no React, no weasel, unit-testable in
-isolation, and they express the whole of the head/tail rule.
-
-`fitLengthToContent` stays as it is and does **not** become a wrapper over
-`fitExtentToContent`. The two answer different questions: the committed fit
-assumes an origin at 0 and deliberately ignores negative-x content (a pinned
-behavior — see the existing "ignores negative-x content" test), while the live
-extent is the one that grows a head. Drift is guarded by a test asserting they
-agree whenever all content is non-negative, which is every committed document
-once the rebase has run.
-
-`src/useLiveExtent.ts` holds the gesture bookkeeping — the rAF loop, its
-pointer-driven start/stop, and the per-frame union. It takes a node-id getter
+`src/useLiveLength.ts` holds the gesture bookkeeping — the rAF loop, its
+pointer-driven start/stop, and the per-frame poll. It takes a node-id getter
 and the `helpersRef`, not the `Scene`, so it stays free of weasel's scene
 generics and can be exercised with a stub helpers object. App.tsx keeps only
-the display pair, the rebase commit, and the `helpersRef` wiring — it is
-already 1400 lines and shouldn't absorb another gesture subsystem.
+`displayLength` and the `helpersRef` wiring — it is already 1400 lines and
+shouldn't absorb another gesture subsystem.
 
 ## Testing
 
-- `src/autoLength.test.ts` covers `fitExtentToContent` (empty scene, all-positive
-  content, content crossing zero, content entirely negative, ceiling clamp) and
-  `rebaseShift` (including the round-trip identity: rebasing an extent then
-  refitting yields the same length).
-- The rAF/gesture wiring has no unit harness — App-level gesture code isn't
-  tested today. Verified in the browser via the `verify` skill: drag right past
-  the end and watch the label follow, drag back and watch it shrink, release and
-  confirm the committed length matches what was shown; the same leftward,
-  confirming no jump at release and that cut marks moved with the content;
-  and with Auto off, confirming a drag moves nothing.
+- `src/useLiveLength.test.ts` drives the hook against a stub bounds lookup with
+  a hand-cranked `requestAnimationFrame`: tracking a rightward drag frame by
+  frame, shrinking back on the way home, ignoring content dragged past x=0,
+  clearing on pointerup and pointercancel, doing nothing when disabled, and
+  holding a stable value for a stationary pointer.
+- `src/autoLength.test.ts` covers the fit itself, unchanged.
+- The App-level wiring has no unit harness. Verified in the browser
+  (Playwright, screenshots taken mid-drag with the pointer still down):
+  - **Tail growth** — 86.6 → 130.7 pt, tail tracking 5.6 pt past the object.
+  - **Rubber-band** — dragging back left shrank the label in lockstep.
+  - **Committed value lags by design** — the toolbar Length field held its old
+    value for the whole drag and updated only on release.
+  - **Resize** — 163 → 198.7 pt, label growing as the handle moved.
+  - **Auto off** — length pinned through an entire drag, to the digit.
+  - **Cut marks survive a live shrink** — with 3 labels set, a drag that
+    collapsed the live label past both marks left the marks intact (one visibly
+    floating outside the shrunken tape); Escape restored 198.7 pt and 3 labels.
+    This is the two-lengths separation doing its job: had `displayLength` fed
+    the pruning effect, an abandoned drag would have deleted them for good.
 
 ## Out of scope
 
@@ -211,4 +212,13 @@ already 1400 lines and shouldn't absorb another gesture subsystem.
   mid-drag should be the length that commits.
 - Live growth on the vertical axis. Tape width is a physical property of the
   cassette, not something content can change.
-- Folding the rebase into the gesture's undo entry (see "Undo cost").
+- Head growth (see "Why the head doesn't grow"). Revisiting it means revisiting
+  the continuous refit first.
+- Create-drag, pending `CanvasHelpers.getGestureBounds()` in weasel.
+
+## Known cosmetic nit
+
+A cut mark whose position lies past the live label's end is drawn floating in
+the canvas background for the duration of the drag, rather than being hidden.
+It's transient and it's honest — the mark is still where the committed document
+puts it — so it's left alone.

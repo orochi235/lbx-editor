@@ -105,6 +105,19 @@ Key weasel APIs used:
   committed scene change. Content is never reflowed, only the tail moves.
   Turning Auto off pins the length where the fit left it. New documents
   default to Auto off at the explicit 200pt Length.
+  While a drag is in flight the label follows the gesture rather than the
+  committed scene — weasel doesn't commit a drag until pointer-up, so
+  `src/useLiveLength.ts` polls its overlay-aware `getEffectiveBounds` each
+  frame and refits from that. Covers move, resize and rotate; create-drag
+  still snaps at drop (a nascent insert has no node id to look up). The live
+  value reaches ONLY what's drawn — paper layer, printable clip, view fit —
+  never export, print, autosave, cut-mark pruning or diagnostics. That
+  separation is load-bearing: a mid-drag shrink reaching the cut-mark pruning
+  would delete marks on a drag the user then abandons.
+  The head stays pinned at x=0; only the tail moves. Leftward growth was built
+  and removed — it can't coexist with the canvas's continuous refit, which
+  anchors to the label's left edge and pushes the dragged object back. See
+  docs/superpowers/specs/2026-07-28-live-auto-length-design.md.
   On import the *recorded* length wins over our own fit: `paper.height` only
   holds the length for fixed-length files — under autoLength P-touch parks its
   1000mm ceiling (2834.4pt) there and records the real extent in
