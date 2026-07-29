@@ -23,6 +23,7 @@ import {
   textCommand,
   type ToolsApi,
   type InsertNodeFactory,
+  type CanvasHelpers,
   defineTool,
 } from '@weasel-js/core';
 // Subpath imports (not the `@weasel-js/ui` barrel) so tsc/vite only pull in
@@ -327,6 +328,11 @@ export function App() {
   // SceneCanvas (weasel handles device-pixel-ratio internally). All zoom/fit
   // math uses the live size.
   const canvasContainerRef = useRef<HTMLDivElement>(null);
+  // Weasel writes its overlay-aware pose/bounds lookups here each render.
+  // `getEffectiveBounds` reports the in-flight gesture's proposed box for a
+  // node under drag/resize/rotate, and the committed box otherwise — the one
+  // reading that lets the label follow a drag weasel hasn't committed yet.
+  const helpersRef = useRef<CanvasHelpers<LabelPose> | null>(null);
   const [canvasSize, setCanvasSize] = useState<CanvasSize>({ width: 0, height: 0 });
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: { x: 1, y: 1 } });
   // Live mirror for callbacks that fire outside the render cycle (ResizeObserver).
@@ -1335,6 +1341,7 @@ export function App() {
                     viewport={{ recenter: handleZoomReset }}
                     view={view}
                     onViewChange={setView}
+                    helpersRef={helpersRef}
                     layers={layers}
                   />
                 )}
