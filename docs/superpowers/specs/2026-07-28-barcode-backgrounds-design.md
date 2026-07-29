@@ -22,8 +22,9 @@ This is a class of failure the canvas cannot show as wrong, because the canvas
 draws it correctly: the barcode really is on top of the image, and that really
 is what would print. The same reason `diagnostics.ts` exists.
 
-P-touch Editor treats barcodes as opaque objects. Matching that is both the
-correct behavior and the familiar one.
+P-touch Editor treats barcodes as opaque objects — confirmed by observation in
+P-touch itself, not inferred. Matching that is both the correct behavior and
+the familiar one.
 
 ## The node field
 
@@ -56,7 +57,8 @@ Therefore:
 |---|---|
 | export, on | `brush: { style: 'SOLID', color: '#FFFFFF' }` |
 | export, off | `brush: { style: 'NULL' }` |
-| import, any | `opaqueBackground: true` |
+| import, P-touch file | `opaqueBackground: true` — they draw opaque |
+| import, our file | today `true`; see "Making it lossless" below |
 
 **Off survives the session and the localStorage autosave, but not an `.lbx`
 round-trip.** A file exported with the background off reopens with it on.
@@ -71,14 +73,38 @@ Export still writes `SOLID`/`NULL` faithfully rather than always writing
 `SOLID`, so the file states what we drew and P-touch gets the chance to honor
 it if it reads the field at all (unverified — see below).
 
-**Assumption, unverified:** whether P-touch itself honors `brush` on a barcode
-object. Nothing depends on the answer: if it ignores the field, the field is
-inert and our import behavior is unchanged.
+**Resolved (2026-07-28): P-touch ignores `brush` on a barcode.** It writes
+`style="NULL"` on every barcode it authors *and* draws those barcodes opaque.
+Both halves are observed, so the deduction is safe: the attribute does not
+control the background there. That makes it inert in P-touch — writing `SOLID`
+changes nothing on their side — and therefore free for us to use as our own
+channel in files we write.
 
-Making this lossless is a bil-lbx change — `parseBrush` preserving
-`{ style: 'NULL' }` instead of collapsing it to `undefined`, with `lbxImport`'s
-rect path made explicit about NULL meaning no fill. Cross-repo plus a version
-bump; noted as a follow-up, not done here.
+### Making it lossless (unblocked, not done here)
+
+The obstacle was never `parseBrush`. `SOLID` and `NULL` already survive
+distinctly (verified by round-trip); only NULL-vs-absent collapses, and every
+real file has the element, so that pair never arises. The real obstacle was
+telling *our* files from P-touch's, since P-touch's universal `NULL` would
+otherwise read as "off".
+
+`pt:document`'s `generator` attribute already distinguishes them —
+`com.brother.PtouchEditor` vs `brother-lbx` — and bil-lbx now surfaces it on
+`LabelConfig` (commit `4cc6471`, unpublished). The import rule becomes:
+
+```ts
+opaqueBackground: config.generator === 'brother-lbx'
+  ? obj.brush?.style === 'SOLID'   // our file: the field means what it says
+  : true                           // P-touch's: boilerplate, and they draw opaque
+```
+
+Principled rather than a hack: P-touch writes boilerplate for what it doesn't
+use — every `pt:brush` is `NULL`, every `objectStyle` carries
+`backColor="#FFFFFF"`, including on text and image objects where a fill means
+nothing — so the field carries no information in their files and exactly what
+the caller set in ours.
+
+Needs a bil-lbx version bump and publish (or `npm link` for development).
 
 ## Geometry
 
