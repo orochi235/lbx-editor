@@ -17,6 +17,10 @@ import {
   type RenderLayer,
   type NodeId,
   useImageTool,
+  useHandTool,
+  useLineTool,
+  useRectTool,
+  useTextTool,
   subscribeImageReady,
   type ToolsApi,
   type InsertNodeFactory,
@@ -45,6 +49,7 @@ import {
 import { fitLengthToContent } from './autoLength';
 import { migratePersistedScene } from './docMigrate';
 import { useLiveLength } from './useLiveLength';
+import { PALETTE_GROUP_ORDER, TOOL_GROUPS, inGroup } from './toolGroups';
 import { drawLabelNode } from './drawLabelNode';
 import {
   encodeBarcode,
@@ -708,6 +713,26 @@ export function App() {
   const pendingImageRef = useRef<PendingImage | null>(null);
   const imageTool = useImageTool({ src: '', label: 'Image' });
 
+  // The palette clusters by each tool's `presentation.group` and separates the
+  // clusters; `groupOrder` on ToolPalette permutes them but can't move a tool
+  // between them. The kit's own taxonomy splits what this app wants together
+  // (hand is 'view' apart from select; text is 'type' apart from the shapes)
+  // and joins what it wants apart (image sits with rect and line in 'shape'),
+  // and no permutation of those sets yields the three clusters below. So the
+  // app builds these tools from the kit's public factories and restates the
+  // grouping — `group` is a documented free-form string, and the `tools` patch
+  // documents `AnyTool` entries as replacing a built-in by id.
+  //
+  // Rect and line are rebuilt too, though their group is already right. Within
+  // a cluster the palette renders in registration order, and a built-in's slot
+  // is the kit's own canonical one — `defaultTools` order does not move it. So
+  // ids registered *by the patch* are the only ones whose order this app can
+  // choose, which is why `defaultTools` below is down to select alone.
+  const handTool = useHandTool();
+  const lineTool = useLineTool();
+  const rectTool = useRectTool();
+  const textTool = useTextTool();
+
   // Drag-to-insert barcode, mirroring the kit's image tool: a declarative drag
   // binding routes through the dispatcher's insert action, and the
   // `insertNodeFactories.barcode` entry below mints the node. The kit
@@ -717,7 +742,7 @@ export function App() {
       id: 'barcode',
       capabilities: ['creates-shapes'],
       cursor: 'crosshair',
-      presentation: { label: 'Barcode', group: 'shape', icon: <BarcodeIcon /> },
+      presentation: { label: 'Barcode', group: TOOL_GROUPS.barcode, icon: <BarcodeIcon /> },
       bindings: [
         { spec: { kind: 'drag' }, actionId: 'insert', opts: { params: { kind: 'barcode' } } },
       ],
@@ -725,9 +750,22 @@ export function App() {
     [],
   );
 
+  // Key order is registration order for ids the kit isn't already registering,
+  // and registration order is render order within a cluster — so this literal
+  // is the palette's top-to-bottom layout. Every entry here is an addition
+  // rather than a replacement, which is the quiet part: replacing a bundled
+  // tool warns on every render, so `hand` is deliberately absent from
+  // `defaultTools` and arrives here instead.
   const toolsPatch = useMemo(
-    () => ({ image: imageTool, barcode: barcodeTool }),
-    [imageTool, barcodeTool],
+    () => ({
+      hand: inGroup(handTool, TOOL_GROUPS.hand),
+      line: inGroup(lineTool, TOOL_GROUPS.line),
+      rect: inGroup(rectTool, TOOL_GROUPS.rect),
+      text: inGroup(textTool, TOOL_GROUPS.text),
+      image: inGroup(imageTool, TOOL_GROUPS.image),
+      barcode: barcodeTool,
+    }),
+    [handTool, lineTool, rectTool, textTool, imageTool, barcodeTool],
   );
 
   const insertNodeFactories = useMemo<Record<string, InsertNodeFactory>>(() => ({
@@ -1267,7 +1305,7 @@ export function App() {
                 <ToolPalette
                   tools={tools}
                   orientation="vertical"
-                  groupOrder={['select', 'view', 'shape', 'draw', 'type']}
+                  groupOrder={PALETTE_GROUP_ORDER}
                 />
               )}
               <div
@@ -1283,7 +1321,14 @@ export function App() {
                     scene={scene}
                     selection={selection}
                     selectionMode="multi"
-                    defaultTools={['select', 'hand', 'rect', 'line', 'text']}
+                    // Only the tool the kit must own — select is its internal
+                    // default. Every other palette tool is registered by
+                    // `tools` below, where this app controls both their order
+                    // and their grouping. Notably hand: `viewport` registers it
+                    // only when the patch hasn't, so listing it here as well
+                    // would turn the patch entry into a warning-per-render
+                    // replacement.
+                    defaultTools={['select']}
                     tools={toolsPatch}
                     insertNodeFactories={insertNodeFactories}
                     onToolsCreated={setTools}

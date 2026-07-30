@@ -51,7 +51,10 @@ Key weasel APIs used:
 - `SceneCanvas` with `layers.scene.drawOne` for custom rendering
 - `useScene` for the document model
 - `useSelection` for selection state
-- `toolBundle: "standard"` for built-in select/hand/rect tools
+- `defaultTools={['select']}` for the kit's own select tool; every other
+  palette tool is built from a public factory (`useHandTool`, `useLineTool`,
+  `useRectTool`, `useTextTool`, `useImageTool`) and registered through the
+  `tools` patch — see "Tool palette" below for why
 
 ## Current state
 
@@ -67,6 +70,21 @@ Key weasel APIs used:
   manifest — see docs/local-fonts.md. Text word-wraps at the box width;
   `\n` forces breaks; JUSTIFY renders as LEFT.
 - Objects can be created, selected, moved, resized via weasel tools
+- Tool palette reads in three clusters — Select/Hand, then Line/Rectangle/Text,
+  then Image/Barcode (`src/toolGroups.ts`). `ToolPalette` clusters by each
+  tool's `presentation.group` and its `groupOrder` prop only permutes clusters,
+  so the layout is set by the groups themselves: the kit's taxonomy splits hand
+  ('view') from select and text ('type') from the shapes, and puts image in
+  with them, which no permutation fixes. `group` is a documented free-form
+  string, so the app restates it via `inGroup` on tools built from the kit's
+  public factories. Two ordering facts drive the rest: within a cluster the
+  palette renders in *registration* order, and a built-in's slot is the kit's
+  own canonical one that `defaultTools` order won't move. So every tool whose
+  position matters is registered by the `tools` patch, whose key order is the
+  palette's layout, and `defaultTools` is down to `['select']`. Dropping
+  `'hand'` from it matters: `viewport` registers hand only when the patch
+  hasn't, and leaving both in made the patch entry a *replacement*, which warns
+  on every render.
 - Import/export .lbx files works end-to-end
 - Property panel for editing text, rect, and pose properties
 - Canvas previews the loaded cassette's tape/ink colors from live printer
