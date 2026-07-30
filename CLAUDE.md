@@ -5,8 +5,14 @@ Web-based visual editor for Brother P-touch label files (.lbx).
 ## Architecture
 
 Standalone Vite + React app consuming:
-- `@weasel-js/core`, `/ui`, `/theme` (from npm, `^0.6.0`) — 2D scene graph,
-  canvas rendering, tools, and the UI kit
+- `@weasel-js/core`, `/ui`, `/theme` (from npm, `^0.7.0`) — 2D scene graph,
+  canvas rendering, tools, and the UI kit. The floor is 0.7.0 for the gesture
+  layer live auto-length rides (`getGestureBounds` and its subscribe/version
+  pair). 0.7 also moved `defineTool` off the barrel to
+  `@weasel-js/core/routing`, and derives text antialiasing from `fwidth()`
+  rather than a constant band — that last one moves glyph-edge pixels in the
+  print render, though measured against a 24mm label only 3 dots of ~6100
+  crossed the ink threshold.
 - `bil-lbx` (from npm, `^0.2.2`) — .lbx serialization/parsing. The floor is
   0.2.2 because the barcode background round-trip reads `LabelConfig.generator`,
   which older versions neither surface nor stamp with the current name.
@@ -155,10 +161,19 @@ Key weasel APIs used:
   default to Auto off at the explicit 200pt Length.
   While a drag is in flight the label follows the gesture rather than the
   committed scene — weasel doesn't commit a drag until pointer-up, so
-  `src/useLiveLength.ts` polls its overlay-aware `getEffectiveBounds` each
-  frame and refits from that. Covers move, resize and rotate; create-drag
-  still snaps at drop (a nascent insert has no node id to look up). The live
-  value reaches ONLY what's drawn — paper layer, printable clip, view fit —
+  `src/useLiveLength.ts` subscribes to its gesture layer
+  (`subscribeGestures`/`getGestureVersion`, weasel 0.7) and refits on each
+  dispatcher pump. Covers move, resize, rotate and create-drag. The fit is
+  still a per-node union over `getEffectiveBounds`, which reports the proposed
+  pose for nodes under the gesture and the committed pose for the rest —
+  `getGestureBounds` can't replace it, because unioning what the gesture
+  proposes with the committed scene would pin the label to the dragged node's
+  *old* pose and a leftward drag could never shrink it. What
+  `getGestureBounds` uniquely adds is the create-drag rect, which lives in the
+  dispatcher's overlay under no node id; it also reports null for a marquee,
+  so a selection sweep no longer refits at all. The live
+  value reaches ONLY what's drawn — paper layer, printable clip, view fit,
+  and the read-only Length readout —
   never export, print, autosave, cut-mark pruning or diagnostics. That
   separation is load-bearing: a mid-drag shrink reaching the cut-mark pruning
   would delete marks on a drag the user then abandons.

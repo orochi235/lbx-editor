@@ -93,6 +93,18 @@ the app drop the per-node union in favor of one call. Implementation order:
 build against `getEffectiveBounds` first, adopt `getGestureBounds` when weasel
 ships it.
 
+> **Shipped in weasel 0.7, and one line above is wrong.** The per-node union
+> stays. `getGestureBounds` reports only what the gesture proposes, so it
+> answers "where is the dragged thing" but not "where is everything" — and
+> unioning it with the committed scene reinstates the dragged node's *old*
+> pose, which means a leftward drag can never shrink the label.
+> `getEffectiveBounds` is the call that displaces rather than adds. What
+> landing it actually bought: the create-drag case above (its whole
+> motivation), a marquee that correctly refits nothing, and — via the
+> `subscribeGestures`/`getGestureVersion` pair shipped alongside it — the
+> retirement of the per-frame rAF poll and the window pointerup/pointercancel
+> listeners, since the gesture layer now says when a gesture starts and ends.
+
 ### Two lengths, strictly separated
 
 `labelLength` stays exactly what it is today — the committed length, derived
