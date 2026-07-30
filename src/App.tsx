@@ -21,8 +21,9 @@ import {
   type ToolsApi,
   type InsertNodeFactory,
   type CanvasHelpers,
-  defineTool,
 } from '@weasel-js/core';
+// Tool routing moved off the barrel in weasel 0.7.
+import { defineTool } from '@weasel-js/core/routing';
 // Subpath imports (not the `@weasel-js/ui` barrel) so tsc/vite only pull in
 // the modules we use, not sibling components like DataGrid that trip a
 // duplicate-@types/react mismatch under this app's slightly newer React types.
@@ -229,11 +230,15 @@ export function App() {
   // SceneCanvas (weasel handles device-pixel-ratio internally). All zoom/fit
   // math uses the live size.
   const canvasContainerRef = useRef<HTMLDivElement>(null);
-  // Weasel writes its overlay-aware pose/bounds lookups here each render.
-  // `getEffectiveBounds` reports the in-flight gesture's proposed box for a
-  // node under drag/resize/rotate, and the committed box otherwise — the one
-  // reading that lets the label follow a drag weasel hasn't committed yet.
+  // Weasel writes its overlay-aware pose/bounds lookups and its gesture
+  // subscription here each render. `getEffectiveBounds` reports the in-flight
+  // gesture's proposed box for a node under drag/resize/rotate, and the
+  // committed box otherwise — the one reading that lets the label follow a
+  // drag weasel hasn't committed yet.
   const helpersRef = useRef<CanvasHelpers<LabelPose> | null>(null);
+
+  const [canvasSize, setCanvasSize] = useState<CanvasSize>({ width: 0, height: 0 });
+  const canvasMounted = canvasSize.width > 0 && canvasSize.height > 0;
 
   // While a drag is in flight the label follows the gesture instead of the
   // committed scene. `displayLength` is for DRAWING ONLY — `labelLength` and
@@ -242,14 +247,16 @@ export function App() {
   // load-bearing: a mid-drag shrink reaching the cut-mark pruning above would
   // destroy marks on a drag the user then abandoned.
   const getNodeIds = useCallback(() => [...scene.nodes.keys()].map(String), [scene]);
-  const { length: liveLength, handlePointerDown: handleCanvasPointerDown } = useLiveLength({
+  const liveLength = useLiveLength({
     enabled: autoLength,
+    // The hook subscribes to weasel's gesture layer, which only exists once
+    // the canvas below has rendered — the same condition that gates it.
+    ready: canvasMounted,
     getNodeIds,
     helpersRef,
   });
   const displayLength = liveLength ?? paperWidth;
 
-  const [canvasSize, setCanvasSize] = useState<CanvasSize>({ width: 0, height: 0 });
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: { x: 1, y: 1 } });
   // Live mirror for callbacks that fire outside the render cycle (ResizeObserver).
   const viewRef = useRef(view);
@@ -1266,11 +1273,10 @@ export function App() {
               <div
                 ref={canvasContainerRef}
                 style={{ flex: 1, position: 'relative', overflow: 'hidden', background: '#e0e0e0', lineHeight: 0 }}
-                onPointerDown={handleCanvasPointerDown}
                 onDrop={handleDrop}
                 onDragOver={handleDragOver}
               >
-                {canvasSize.width > 0 && canvasSize.height > 0 && (
+                {canvasMounted && (
                   <SceneCanvas<LabelNodeData, LabelLayer, LabelPose>
                     width={canvasSize.width}
                     height={canvasSize.height}
