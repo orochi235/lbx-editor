@@ -5,8 +5,14 @@ block printing: `DATAMATRIX`, `PDF417`, `MAXICODE`, `GS1DATABAR`. This settles
 three of them, and settles the fourth as one we will not build.
 
 The design also pays a debt the backgrounds spec deferred — the quiet zone is
-a flat constant per *kind* today, and the new symbologies are the ones that
-make that untenable.
+a flat constant per *kind* today — and fixes a shipping bug that the
+measurements below turned up.
+
+> **Revised 2026-08-01** against a second P-touch-authored file,
+> `~/src/bil-lbx/docs/samples/barcode2.lbx`. That file overturned four claims
+> in the first draft: the 2D quiet zone, the DataMatrix rectangular-variant
+> claim, PDF417's row aspect as a constant, and the entire GS1 DataBar section.
+> See **Measured against P-touch**.
 
 ## MaxiCode is not deferred, it's declined
 
@@ -46,9 +52,9 @@ with esbuild, `--bundle --minify`, bytes:
 | bwip-js, everything | 964,234 | 259,725 |
 | **our entire barcode subsystem today** | **28,759** | **10,606** |
 
-Measured standalone, QR alone is 7,820 gzip of that total — essentially all of
-it the `qrcode-generator` dependency, since `qr.ts` is about forty lines. The
-five hand-written 1D encoder modules are 509–1,027 bytes gzip apiece.
+Measured standalone, QR alone is 7,820 gzip — essentially all of it the
+`qrcode-generator` dependency, since `qr.ts` is about forty lines. The five
+hand-written 1D encoder modules are 509–1,027 bytes gzip apiece.
 
 The argument for hand-writing is **bundle size and consistency with the
 existing six** — not output fidelity. bwip-js would if anything be more
@@ -62,13 +68,110 @@ makes `encodeBarcode` async, and that function is called synchronously from
 `drawLabelNode`. The redraw-on-resolve machinery that would require is real
 architecture to buy back a cost we can simply not incur.
 
+## Measured against P-touch (2026-08-01)
+
+`barcode2.lbx` holds three DataMatrix objects (two cell sizes), two PDF417
+objects (two module widths), and three GS1 DataBar objects, all authored in
+P-touch Editor with the PT-P710BT selected.
+
+### Each symbology has its own style element
+
+Beside `barcodeStyle`, exactly as QR has `qrcodeStyle`:
+
+```xml
+<barcode:datamatrixStyle model="square" cellSize="1.6pt" macro="none" fnc01="false" joint="1"/>
+<barcode:pdf417Style model="standard" width="0.8pt" aspect="3" row="auto" column="auto" eccLevel="auto" joint="1"/>
+<barcode:rssStyle model="RSSExpandedStacked" margin="true" autoLengths="true" lengths="14"
+                  barWidth="0.1pt" column="4" humanReadable="true"
+                  humanReadableAlignment="LEFT" autoAdd01="false"/>
+```
+
+bil-lbx models none of these. Each carries the 2D module size under a different
+attribute name — `cellSize`, `width`, `barWidth` — which is why export cannot
+simply reuse the QR path.
+
+### The 2D object box includes a 2-module quiet zone per side
+
+| object | box | module size | box ÷ module | true symbol | difference |
+|---|---:|---:|---:|---:|---:|
+| DataMatrix #1 | 25.6pt | 1.6pt | 16 | 12 | +4 |
+| DataMatrix #2 | 38.4pt | 2.4pt | 16 | 12 | +4 |
+| PDF417 #1 | 85.6pt | 0.8pt | 107 | 103 | +4 |
+| PDF417 #2 | 128.4pt | 1.2pt | 107 | 103 | +4 |
+| QR (`barcodes.lbx`) | 40pt | 1.6pt | 25 | 21 | +4 |
+
+Invariant across two symbologies, two cell sizes each, plus QR from the earlier
+file. PDF417's heights confirm it on the other axis independently:
+`(20 − 2×2×0.8) / (3 × 0.8) = 7` rows, and `(30 − 2×2×1.2) / (3 × 1.2) = 7`.
+
+**This is a different mechanism from 1D.** Under `margin="true"` a 1D box gains
+a *fixed* 36.8pt regardless of bar width; a 2D box gains 2 modules per side,
+which scales with the module. And under the `margin="false"` we always export,
+a 1D box is the bars alone.
+
+Note what this is and is not. P-touch's box convention is a **file-format
+fact**, not a symbology fact — it belongs in `lbxImport`/`lbxExport`. The
+scanning requirement each symbology declares is a separate number that happens
+to share a unit. They must not be collapsed into one constant.
+
+### PDF417's row aspect is a file field
+
+`aspect="3"` is P-touch's own name for what this design calls
+`rowHeightModules`, defaulting to exactly the ISO 15438 minimum of 3. It is
+therefore a value to read and round-trip, not a constant to hardcode.
+
+### P-touch's PDF417 auto-selection is not ours
+
+For the same payload at the same 2 data columns, P-touch chose **7 rows** where
+bwip-js chooses 21 — a different automatic ECC and compaction decision. The
+file records `row="auto" column="auto" eccLevel="auto"`, so P-touch recomputes
+on open. If our auto-selection differs from its, P-touch redraws a symbol a
+different size than the one we drew — the WYSIWYG break this work exists to
+prevent.
+
+The fix is available in the format: **write explicit `row`, `column` and
+`eccLevel` rather than `auto`**, so the file states the symbol we drew instead
+of inviting P-touch to pick its own.
+
+### DataMatrix rectangular variants are expressible
+
+`model="square"` implies a counterpart value for the rectangular sizes. The
+first draft claimed no `.lbx` field requested them; that was wrong. They stay
+out of scope, but as a choice rather than a limitation.
+
+## The QR import bug this exposes
+
+`barcodeModulePt`'s 2D branch is `Math.min(pose.width, pose.height) / size`,
+and import takes P-touch's object box as the pose. Since that box carries 2
+modules of quiet zone per side, **every QR code imported from a P-touch file
+renders 19% too large**: 40/21 = 1.905pt per module against the file's stated
+1.6pt.
+
+The error is `(size + 4) / size`, so it grows as symbols get smaller — 19% for
+a 21-module QR, 33% for a 12-module DataMatrix, 4% for a 103-module PDF417.
+
+This is the same shape as the EAN defect the backgrounds work fixed, where a
+baked-in quiet zone made the symbol draw ~19% narrow. It is fixed here because
+this branch is already rewriting the 2D pose convention, and leaving a known
+19% error in code being rewritten is not defensible.
+
+The fix belongs at the file boundary: **import shrinks a 2D pose by 2 modules
+per side; export grows it back.** Internally the pose stays the symbol alone,
+matching 1D, so exactly one convention exists inside the app.
+
+Blast radius is narrower than it looks. Documents we authored store poses that
+already mean the symbol, so they are unaffected. Export already survives
+because P-touch recomputes its own box from `cellSize` and the data. Only
+P-touch-imported 2D barcodes change — and they change to correct.
+
 ## The symbol model
 
 `types.ts` gains a quiet zone and loses the square assumption.
 
 ```ts
-/** Blank margin a scanner needs, in modules, per side. Symbology-specific —
- *  only the encoder knows its symbology, so the encoder states it. */
+/** Blank margin a scanner needs, in modules, per side — the symbology's own
+ *  scanning requirement, NOT P-touch's object-box convention. Only the encoder
+ *  knows its symbology, so the encoder states it. */
 export interface QuietZone {
   left: number; right: number; top: number; bottom: number;
 }
@@ -86,7 +189,8 @@ export interface Symbol2D {
   cols: number;          // was: size
   rows: number;
   /** Row height as a multiple of module width. 1 for QR and DataMatrix;
-   *  PDF417 rows are 3x their module width (ISO 15438 minimum). */
+   *  3 for PDF417, matching pdf417Style's `aspect` field, which is the
+   *  ISO 15438 minimum and P-touch's default. */
   rowHeightModules: number;
   modules: boolean[][];  // modules[row][col], unchanged
   quiet: QuietZone;
@@ -101,11 +205,10 @@ export interface Symbol2D {
 branching on `kind` and returning a single number.
 
 The flat constants cannot survive the new three. DataMatrix asks for 1 module,
-PDF417 for 2, and DataBar Omnidirectional for none at all — it is designed to
-be read without one. Applying the 2D constant of 4 to a DataMatrix would blank
-four times more artwork than the symbology needs and inflate its
-dither-protected region to match; applying the 1D constant of 10 to a DataBar
-would reserve a margin the standard does not ask for.
+PDF417 for 2, and the unstacked DataBar variants for none at all — they are
+designed to be read without one. Applying the 2D constant of 4 to a DataMatrix
+would blank four times more artwork than the symbology needs and inflate its
+dither-protected region to match.
 
 This is the change the backgrounds spec already said was owed, for the same
 reason it gave: *only the encoder knows its symbology*. Doing it now means
@@ -122,12 +225,17 @@ them — once rather than twice.
 | QR | 4 | 4 | 4 | 4 |
 | DataMatrix | 1 | 1 | 1 | 1 |
 | PDF417 | 2 | 2 | 2 | 2 |
-| GS1 DataBar Omnidirectional | 0 | 0 | 0 | 0 |
+| GS1 DataBar, unstacked | 0 | 0 | 0 | 0 |
 
-**These values are to be verified against bwip-js during implementation, not
-transcribed from this table.** The table is the intent; the encoder's own
-declared quiet zone is the artifact, and a hand-typed constant that looks right
-is precisely the failure mode the follow-up warned about.
+**These are the standards' scanning requirements, and they are to be verified
+against bwip-js during implementation, not transcribed from this table.** The
+table is the intent; the encoder's declared quiet zone is the artifact, and a
+hand-typed constant that looks right is precisely the failure mode the
+follow-up warned about.
+
+They are deliberately *not* P-touch's uniform 2-modules-per-side, which is a
+box convention handled at the file boundary. QR's 4 exceeds it; DataMatrix's 1
+is under it. Both are correct for their own purpose.
 
 Two visible changes fall out, both corrections rather than regressions:
 
@@ -137,30 +245,11 @@ Two visible changes fall out, both corrections rather than regressions:
 - **1D symbols get a zero vertical quiet zone.** The standards ask for none —
   the requirement above and below the bars is bar *height*, not blank margin.
   Today `barcodeBackgroundRect` applies the quiet zone uniformly on all four
-  sides, so existing 1D barcodes' backgrounds shrink vertically to exactly the
-  pose.
+  sides, so existing 1D barcodes' backgrounds shrink vertically to the pose.
 
   Dithering stays safe under that change. The protected region still covers the
   bars themselves, and `ditherProtect` stops error diffusion at the region
   boundary, so artwork immediately above a barcode cannot diffuse into it.
-
-### PDF417's rows are not square
-
-I initially generalized `Symbol2D` on the assumption that modules stay square
-and the grid letterboxes in the pose. That is right for QR and DataMatrix and
-wrong for PDF417, whose row height Y is a dimension distinct from its module
-width X, with **Y ≥ 3X** as the ISO 15438 minimum.
-
-Square cells would render every PDF417 with rows exactly one module tall — out
-of spec at every pose size, in every document, with nothing the user could do
-about it. Hence `rowHeightModules`, which PDF417 sets to 3 and everything else
-sets to 1.
-
-Making this a field rather than a diagnostic is deliberate, and follows the
-entry criterion the diagnostics module already states: a check earns its place
-when the canvas draws the thing correctly and therefore cannot show it as
-wrong. A constraint we can satisfy by construction should be satisfied, not
-reported.
 
 ## Geometry
 
@@ -177,14 +266,14 @@ today. Square behavior is preserved by construction, not by agreement, and
 
 `barcodeRects` centers the `cols × rows` grid in the pose the way it centers a
 square today, emitting cells `module` wide by `module * rowHeightModules` tall.
-Nothing stretches to fill: a 103 × 18 PDF417 in a square pose renders as a wide
+Nothing stretches to fill: a 103 × 21 PDF417 in a square pose renders as a wide
 strip with space above and below, rather than a distorted symbol no scanner
 reads.
 
 `barcodeBackgroundRect` takes the four per-side quiet values instead of one,
 and `ditherProtect` follows automatically — it already calls
 `barcodeBackgroundRect` rather than computing its own rect, which is what keeps
-the masked region and the dither-exempt region a single definition.
+the masked region and the dither-exempt region one definition.
 
 ### Blast radius
 
@@ -199,7 +288,8 @@ touches `Symbol2D.size` or the deleted constants:
 | `barcode/geometry.test.ts` | imports the constant; rewrites against per-symbol quiet |
 | `ditherProtect.test.ts` | computes its expectation from `QUIET_ZONE_MODULES_1D` |
 | `barcodeExport.test.ts` | `46 / symbol.size` → `46 / symbol.cols` |
-| `lbxExport.ts` | the `kind === '2d'` → `qrcodeStyle` bug below |
+| `lbxImport.ts` | shrinks a 2D pose by 2 modules per side (the QR bug above) |
+| `lbxExport.ts` | grows it back; the `kind === '2d'` → `qrcodeStyle` bug below |
 
 `PropertyPanel.tsx` and `diagnostics.ts` both branch on `kind === '2d'` to
 decide whether to say "W" or "W and H", and both stay correct for a non-square
@@ -211,29 +301,14 @@ keeps the masked region and the dither-exempt region one definition.
 
 ## The encoders
 
-### `databar.ts` — GS1 DataBar Omnidirectional
-
-A `Symbol1D`, which makes it the smallest of the three. bwip-js's
-`raw('databaromni', …)` returns `sbs` run-lengths, so `testOracle.ts`'s
-existing `oracle()` and `bitstring()` work against it unchanged.
-
-Encodes a 14-digit GTIN. A payload that is not a valid GTIN is an `invalid`
-encode result, which already draws a placeholder and blocks printing.
-
-The DataBar *family* has roughly seven variants (Omnidirectional, Truncated,
-Stacked, Stacked Omnidirectional, Limited, Expanded, Expanded Stacked) with
-different encodings. `protocol="GS1DATABAR"` alone cannot distinguish them —
-see **Open, pending a P-touch sample** below. Omnidirectional is the base
-variant and the one this implements.
-
 ### `datamatrix.ts`
 
 ECC200 only. The older ECC000–140 versions are obsolete and modern scanners
 read ECC200; there is no reason to carry the others.
 
 Square symbols only, 10×10 through 144×144, auto-sized to the smallest that
-fits the payload. `.lbx` carries no field requesting a rectangular variant, so
-there is nothing to honor and nothing to round-trip.
+fits the payload — `model="square"`, which is what P-touch wrote for all three
+sample objects.
 
 Reed–Solomon over GF(256) with the DataMatrix generator polynomial, and the
 ISO 16022 default bit placement algorithm.
@@ -249,7 +324,12 @@ entirely correct, which is the class of failure hardest to catch.
 The largest of the three. Column count is auto-chosen to best match the pose's
 aspect ratio, which minimizes letterboxing and respects the pose being
 authoritative. Error correction level is auto-selected from the codeword count
-per the standard's recommendation table.
+per the standard's recommendation table. Row height comes from
+`pdf417Style`'s `aspect`, defaulting to 3.
+
+Whatever those auto-selections produce is then **written explicitly** into
+`row`, `column` and `eccLevel` on export, so P-touch redraws our symbol rather
+than recomputing its own — see the measurement above.
 
 **Byte compaction only**, initially. PDF417 has three compaction modes — Text,
 Numeric and Byte. Byte alone encodes any payload and produces a fully valid,
@@ -259,6 +339,34 @@ Mode-switching is where PDF417 implementations characteristically go wrong, and
 the density only matters if a real payload proves too wide for the tape. If one
 does, Text and Numeric are an additive follow-up with the oracle already in
 place to check them.
+
+### `databar.ts` — and what remains unknown about it
+
+The first draft called this the easy one. The sample says otherwise.
+
+**The protocol is `RSS`, not `GS1DATABAR`.** P-touch writes DataBar's former
+name, Reduced Space Symbology. bil-lbx's `BarcodeProtocol` union contains
+`GS1DATABAR` and no `RSS`, so these objects currently parse into a protocol its
+own type says cannot exist.
+
+**The variant lives in `rssStyle`'s `model` attribute.** The sample carries
+`RSSExpanded` and `RSSExpandedStacked`; the family also includes `RSS14`,
+truncated, stacked, stacked-omnidirectional and limited forms.
+
+**`RSSExpandedStacked` is two-dimensional** — bwip-js reports 102 × 71 modules
+for the sample payload. So DataBar is not uniformly a `Symbol1D`, and the
+"drops into the existing oracle unchanged" claim holds only for the unstacked
+variants.
+
+**The box arithmetic does not resolve.** `rssStyle barWidth="0.1pt"` cannot be
+the module width — it would make the 157.6pt Expanded box 1,576 modules against
+a real count near 134. The payload form differs too: P-touch accepts bare
+digits with `autoAdd01="false"`, while bwip-js requires AI parentheses and
+rejects `00012345678905` outright. Until that is settled, no DataBar encoder
+can be checked against the oracle.
+
+DataBar is therefore **the last piece to build**, after DataMatrix and PDF417,
+and it is gated on the open questions below.
 
 ## Export and round-trip
 
@@ -274,45 +382,45 @@ const qrCode = encoded.ok && encoded.kind === '2d'
 Today `kind === '2d'` implies QR, so restating the pose as `qrCode.cellSize` is
 correct by accident. Once DataMatrix and PDF417 exist, this stamps a
 `<barcode:qrcodeStyle>` element onto symbols that are not QR codes. The
-condition must key on the protocol rather than the kind.
+condition must key on the protocol, and each symbology's module size must go to
+its own attribute — `cellSize`, `width` or `barWidth` respectively.
 
-That leaves the 2D module size for the new protocols with nowhere to go, which
-is the honest state of the file-format side. P-touch keeps per-symbology
-options in a **sibling element** next to `barcodeStyle` — visible in the sample
-we have as `<barcode:qrcodeStyle model= eccLevel= cellSize= version=>` — and
-bil-lbx models only `qrcodeStyle`. Whatever P-touch writes for DataMatrix,
-PDF417 and DataBar is unknown to us and would be dropped on export.
+## bil-lbx changes
 
-So the work is staged deliberately: **encoders, canvas and print land now**;
-export writes what bil-lbx models (`protocol`, `data`, and the pose), and the
-style-element question waits on a real file. This is the same method that
-settled the quiet zone — measured against a P-touch-authored file rather than
-reasoned about.
+Adding the style elements to bil-lbx was chosen over an editor-side workaround,
+because without them export drops the module size, the row aspect, and PDF417's
+row/column/ECC selection — which is the WYSIWYG break the measurements above
+identified. Required there, as a sibling-repo change and a version bump this
+branch then depends on:
+
+- `RSS` added to the `BarcodeProtocol` union.
+- `datamatrixStyle`, `pdf417Style` and `rssStyle` parsed and emitted, modeled
+  as optional fields on `BarcodeObject` beside the existing `qrCode`.
+- Unknown attributes on those elements preserved verbatim where practical, so a
+  round-trip does not silently drop `macro`, `fnc01`, `joint` or `autoAdd01`.
 
 ## Diagnostics and the property panel
 
 **No new diagnostics.** The PDF417 row-height constraint became geometry rather
 than a warning. Everything else that can go wrong is an `invalid` encode
 result, which already draws a placeholder and blocks the job through
-`printPreflight`: a payload too long for a 144×144 DataMatrix, a non-GTIN
+`printPreflight`: a payload too long for a 144×144 DataMatrix, a malformed GTIN
 handed to DataBar. The module-under-a-dot and printable-band-overhang checks
 apply to the new symbologies unchanged.
 
-**No new controls.** This follows the reasoning that closed the QR `model`
-question: `.lbx` carries no field for DataMatrix symbol size, PDF417 column
-count or ECC level, or the DataBar variant, so a control would either do
-nothing or change the exported file while the canvas kept drawing the
-auto-selected value — the WYSIWYG break the barcode work exists to prevent. The
-panel's own rule against controls that do nothing already forbids it.
-
-If the sample reveals real attributes in those style elements, controls become
-possible as a follow-up, with a file format to justify them.
+**No new controls**, on this branch. This follows the reasoning that closed the
+QR `model` question: a control must change something the file can carry and the
+canvas can show. Once bil-lbx models the style elements several *become*
+expressible — DataMatrix square/rectangular, PDF417 aspect and ECC level, the
+DataBar variant — so they are a deliberate follow-up rather than a permanent
+exclusion. Adding them here would mean designing three property-panel sections
+on top of three new encoders and a file-format change.
 
 ## Testing
 
 `testOracle.ts` gains `oracle2d()` beside `oracle()`, turning bwip-js's
-`pixs`/`pixx`/`pixy` into a module matrix for diffing. DataBar reuses the `sbs`
-path unchanged.
+`pixs`/`pixx`/`pixy` into a module matrix for diffing. Unstacked DataBar reuses
+the `sbs` path unchanged.
 
 - Per-encoder diffs against bwip-js for all three, across a spread of payload
   contents and lengths.
@@ -322,10 +430,14 @@ path unchanged.
 - `geometry.test.ts` regression pins showing square symbols produce identical
   rects after the `cols`/`rows` generalization, plus cases for a non-square
   grid and for `rowHeightModules`.
-- `encode.test.ts`'s `SUPPORTED_PROTOCOLS` pin extended to the three, and the
-  bars-only `totalModules` invariant extended to DataBar.
+- `encode.test.ts`'s `SUPPORTED_PROTOCOLS` pin extended to the three.
+- **A `barcode2.lbx` import fixture** pinning the measured module sizes —
+  1.6pt and 2.4pt for the DataMatrix objects, 0.8pt and 1.2pt for the PDF417
+  objects. That is the regression test for the 19% QR bug, and the only test
+  that checks our reading of a real P-touch file rather than our own output.
 - `barcodeExport.test.ts` gaining a case that a DataMatrix or PDF417 export
-  does **not** emit a `qrcodeStyle`.
+  does **not** emit a `qrcodeStyle`, and that PDF417 exports explicit
+  `row`/`column`/`eccLevel` rather than `auto`.
 
 And a hardware step that carries more weight here than usual: print one of each
 through `.claude/skills/verify`, then **scan the printed tape with a phone**.
@@ -337,31 +449,29 @@ perfect can be unreadable.
 ## Out of scope
 
 - **MaxiCode** — declined, not deferred. See above.
-- **DataMatrix rectangular variants** (8×18 through 16×48). No `.lbx` field
-  requests them.
+- **DataMatrix rectangular variants.** Expressible via `datamatrixStyle`'s
+  `model`, so this is a choice, not a limitation.
 - **DataMatrix C40 / Text / Base256 encodation.** Density optimizations.
 - **PDF417 Text and Numeric compaction.** Density optimizations; additive
-  later if a payload needs them.
-- **Property-panel controls** for any of the three. No file fields to back them.
-- **bil-lbx changes** to model the per-symbology style elements. Blocked on the
-  sample below; likely a real follow-up once it exists.
+  later, with the oracle already in place to check them.
+- **Property-panel controls** for the new symbologies. A follow-up once
+  bil-lbx models the style elements that would back them.
 
-## Open, pending a P-touch sample
+## Open, pending a second sample
 
-A `.lbx` authored in P-touch Editor containing a DataMatrix, a PDF417, and one
-or more GS1 DataBar variants answers all of the following at once — the same
-way `barcodes.lbx` settled the quiet-zone question:
+Two questions remain, and both are cheap to answer in P-touch Editor:
 
-1. **Which DataBar variant** does `protocol="GS1DATABAR"` mean, and is the
-   variant carried in a style element, in the `lengths` attribute, or not at
-   all?
-2. **What style elements** does P-touch write for these three, and what
-   attributes do they carry? That determines whether bil-lbx needs to model
-   them and whether any of them can be exposed as a control.
-3. **Does a file with `protocol="DATAMATRIX"` and no style element open in
-   P-touch at all?** Test by round-tripping our own export back through the
-   editor. If it does not, export for these protocols is blocked on a bil-lbx
-   change rather than merely lossy.
-4. **Is the object box the symbol alone**, as it proved to be for 1D under
-   `margin="false"`? Same measurement: divide the recorded box by the recorded
-   module size and compare against the symbol's module count.
+1. **What does `margin="false"` do to a 2D box?** Every object in
+   `barcode2.lbx` has `margin="true"` — the intended margins-off DataMatrix
+   came out byte-identical to the margins-on one. If margins-off drops the box
+   to the symbol alone, the import/export conversion above disappears entirely
+   and we simply always write `margin="false"`, as we already do for 1D. This
+   is worth answering before implementing the conversion.
+
+2. **Why is OK greyed out for the unstacked DataBar variants?** The dialog
+   lists them but only accepts the bottom two. The payload `00012345678905` is
+   a valid GTIN-14 — its check digit computes to 5 — so a malformed payload is
+   not the cause. The likeliest explanation is that the `RSS14` family expects
+   **13 digits** and appends the check digit itself. A retry with
+   `0001234567890` would confirm it, and would produce the unstacked,
+   cleanly-1D variant this design most wants.
