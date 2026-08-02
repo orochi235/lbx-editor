@@ -1,8 +1,10 @@
-# The remaining symbologies: GS1 DataBar, DataMatrix, PDF417
+# The remaining symbologies: DataMatrix and PDF417
 
 Four symbologies still fail closed. They import, draw as a placeholder box, and
-block printing: `DATAMATRIX`, `PDF417`, `MAXICODE`, `GS1DATABAR`. This settles
-three of them, and settles the fourth as one we will not build.
+block printing: `DATAMATRIX`, `PDF417`, `MAXICODE`, `GS1DATABAR`. This builds
+two of them and declines the other two, for opposite reasons: MaxiCode cannot
+be printed on this hardware at any size, and GS1 DataBar cannot be measured
+against anything.
 
 The design also pays a debt the backgrounds spec deferred — the quiet zone is
 a flat constant per *kind* today — and fixes a shipping bug that the
@@ -204,7 +206,7 @@ export interface Symbol2D {
 `quietZonePt` reads `symbol.quiet` and returns pt per side, instead of
 branching on `kind` and returning a single number.
 
-The flat constants cannot survive the new three. DataMatrix asks for 1 module,
+The flat constants cannot survive the new two. DataMatrix asks for 1 module,
 PDF417 for 2, and the unstacked DataBar variants for none at all — they are
 designed to be read without one. Applying the 2D constant of 4 to a DataMatrix
 would blank four times more artwork than the symbology needs and inflate its
@@ -321,7 +323,7 @@ entirely correct, which is the class of failure hardest to catch.
 
 ### `pdf417.ts`
 
-The largest of the three. Column count is auto-chosen to best match the pose's
+The larger of the two. Column count is auto-chosen to best match the pose's
 aspect ratio, which minimizes letterboxing and respects the pose being
 authoritative. Error correction level is auto-selected from the codeword count
 per the standard's recommendation table. Row height comes from
@@ -365,8 +367,21 @@ digits with `autoAdd01="false"`, while bwip-js requires AI parentheses and
 rejects `00012345678905` outright. Until that is settled, no DataBar encoder
 can be checked against the oracle.
 
-DataBar is therefore **the last piece to build**, after DataMatrix and PDF417,
-and it is gated on the open questions below.
+**DataBar is cut from this branch**, and the reason is evidentiary rather than
+one of effort. Every symbology here is built against two references: bwip-js
+for what the symbol should be, and a P-touch file for what the format means.
+DataBar has neither. bwip-js rejects the payload form P-touch accepts, its box
+arithmetic does not resolve, the only two variants obtainable are Expanded ones
+— and the unstacked family the design targeted cannot be authored at all, so no
+sample of it can ever be measured.
+
+Building it anyway would mean an encoder checked against nothing, writing a
+file format inferred from three objects. That is precisely the position the
+quiet-zone and barcode-brush work climbed out of.
+
+So DataBar keeps failing closed, with a specific message like MaxiCode's, and
+gets its own pass when there is something to measure — a P-touch file with an
+unstacked variant, or a scanner to check printed output against.
 
 ## Export and round-trip
 
@@ -393,11 +408,14 @@ row/column/ECC selection — which is the WYSIWYG break the measurements above
 identified. Required there, as a sibling-repo change and a version bump this
 branch then depends on:
 
-- `RSS` added to the `BarcodeProtocol` union.
-- `datamatrixStyle`, `pdf417Style` and `rssStyle` parsed and emitted, modeled
-  as optional fields on `BarcodeObject` beside the existing `qrCode`.
+- `datamatrixStyle` and `pdf417Style` parsed and emitted, modeled as optional
+  fields on `BarcodeObject` beside the existing `qrCode`.
 - Unknown attributes on those elements preserved verbatim where practical, so a
-  round-trip does not silently drop `macro`, `fnc01`, `joint` or `autoAdd01`.
+  round-trip does not silently drop `macro`, `fnc01` or `joint`.
+- `RSS` added to the `BarcodeProtocol` union. This is worth doing even with
+  DataBar cut: today a DataBar object parses into a protocol the union says
+  cannot exist, and the type quietly lies. Adding it makes the unsupported path
+  honest. `rssStyle` itself stays unmodeled until DataBar has a design.
 
 ## Diagnostics and the property panel
 
@@ -413,16 +431,16 @@ QR `model` question: a control must change something the file can carry and the
 canvas can show. Once bil-lbx models the style elements several *become*
 expressible — DataMatrix square/rectangular, PDF417 aspect and ECC level, the
 DataBar variant — so they are a deliberate follow-up rather than a permanent
-exclusion. Adding them here would mean designing three property-panel sections
-on top of three new encoders and a file-format change.
+exclusion. Adding them here would mean designing property-panel sections on top
+of two new encoders and a file-format change.
 
 ## Testing
 
 `testOracle.ts` gains `oracle2d()` beside `oracle()`, turning bwip-js's
-`pixs`/`pixx`/`pixy` into a module matrix for diffing. Unstacked DataBar reuses
-the `sbs` path unchanged.
+`pixs`/`pixx`/`pixy` into a module matrix for diffing. The existing `sbs` path
+is untouched.
 
-- Per-encoder diffs against bwip-js for all three, across a spread of payload
+- Per-encoder diffs against bwip-js for both, across a spread of payload
   contents and lengths.
 - A new invariant pinning every symbology's declared `quiet` values. These are
   hand-typed constants, which is the transcription-error surface the follow-up
@@ -430,7 +448,7 @@ the `sbs` path unchanged.
 - `geometry.test.ts` regression pins showing square symbols produce identical
   rects after the `cols`/`rows` generalization, plus cases for a non-square
   grid and for `rowHeightModules`.
-- `encode.test.ts`'s `SUPPORTED_PROTOCOLS` pin extended to the three.
+- `encode.test.ts`'s `SUPPORTED_PROTOCOLS` pin extended to both.
 - **A `barcode2.lbx` import fixture** pinning the measured module sizes —
   1.6pt and 2.4pt for the DataMatrix objects, 0.8pt and 1.2pt for the PDF417
   objects. That is the regression test for the 19% QR bug, and the only test
@@ -448,7 +466,9 @@ perfect can be unreadable.
 
 ## Out of scope
 
-- **MaxiCode** — declined, not deferred. See above.
+- **MaxiCode** — declined, not deferred. Cannot be printed at any size.
+- **GS1 DataBar** — cut for want of a reference, not for difficulty. Its own
+  pass once an unstacked variant can be sampled or printed output scanned.
 - **DataMatrix rectangular variants.** Expressible via `datamatrixStyle`'s
   `model`, so this is a choice, not a limitation.
 - **DataMatrix C40 / Text / Base256 encodation.** Density optimizations.
@@ -457,21 +477,23 @@ perfect can be unreadable.
 - **Property-panel controls** for the new symbologies. A follow-up once
   bil-lbx models the style elements that would back them.
 
-## Open, pending a second sample
+## Both open questions, closed (2026-08-01)
 
-Two questions remain, and both are cheap to answer in P-touch Editor:
+**There is no margin setting for a 2D barcode.** P-touch's dialog offers the
+control for 1D only, which is why the intended margins-off DataMatrix came out
+byte-identical to the margins-on one. So `margin="true"` is not a choice
+P-touch made on those objects, it is the only thing it can write — and the
+2-module box convention is unconditional rather than a setting we might opt out
+of. The import/export conversion is required, not contingent.
 
-1. **What does `margin="false"` do to a 2D box?** Every object in
-   `barcode2.lbx` has `margin="true"` — the intended margins-off DataMatrix
-   came out byte-identical to the margins-on one. If margins-off drops the box
-   to the symbol alone, the import/export conversion above disappears entirely
-   and we simply always write `margin="false"`, as we already do for 1D. This
-   is worth answering before implementing the conversion.
+Whether P-touch *honors* a `margin="false"` we write onto a 2D barcode is
+untested and deliberately not relied upon. Writing an attribute its own UI
+cannot produce, and assuming a behavior, is how the barcode brush went wrong.
 
-2. **Why is OK greyed out for the unstacked DataBar variants?** The dialog
-   lists them but only accepts the bottom two. The payload `00012345678905` is
-   a valid GTIN-14 — its check digit computes to 5 — so a malformed payload is
-   not the cause. The likeliest explanation is that the `RSS14` family expects
-   **13 digits** and appends the check digit itself. A retry with
-   `0001234567890` would confirm it, and would produce the unstacked,
-   cleanly-1D variant this design most wants.
+**The unstacked DataBar variants cannot be authored.** The dialog lists them
+and greys out OK regardless of payload; the 13-digit theory did not pan out.
+Which means every piece of evidence we have about DataBar comes from the two
+Expanded variants, one of which is two-dimensional — and no evidence at all
+exists for the `RSS14` family this design most wanted.
+
+That settles DataBar's place: **it leaves this branch entirely.** See below.
