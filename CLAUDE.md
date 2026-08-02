@@ -165,15 +165,52 @@ Key weasel APIs used:
   barcodes transparent. Needs bil-lbx ≥ 0.2.2, which is both when `generator`
   became readable and when its value changed — hence the `^0.2.2` range.
 - A barcode's pose means its *bars*, and the quiet zone lives outside it
-  (`quietZonePt`, a flat 10 modules per side for every 1D symbology; 4 cells
-  for QR). No encoder bakes a quiet zone into its `totalModules` —
-  `encode.test.ts` pins that across all nine, because `barcodeModulePt` is
-  `pose.width / totalModules`, so whatever that counts is what the pose means.
-  Measured against a P-touch-authored file: under the `margin="false"` we
-  always export, P-touch's object box is the bars alone. (The EAN family used
-  to bake in 9, drawing ~19% narrow and double-counting its quiet zone in the
-  background and the dither-protected region.) Still simplified: EAN-13's
-  standard is asymmetric, 11 left / 7 right.
+  (`quietZonePt`). **Each encoder states its own**, per side, as a `QuietZone`
+  in module units on the symbol it returns — the flat per-kind constants
+  couldn't survive a DataMatrix, which asks for 1 module where QR asks for 4.
+  The 1D values are the GS1 minima (10/10, and the EAN family's asymmetric
+  11/7, 7/7, 9/9, 9/7), cross-checked against BWIPP's per-symbology
+  `borderleft`/`borderright`; `encode.test.ts` pins all of them, because
+  TypeScript enforces that the field exists, not that it's sane. 1D symbols
+  have **no vertical** quiet zone: the standards' requirement above and below
+  the bars is bar *height*, not blank margin. No encoder bakes a quiet zone
+  into its `totalModules` — `encode.test.ts` pins that too, because
+  `barcodeModulePt` is `pose.width / totalModules`, so whatever that counts is
+  what the pose means. Measured against a P-touch-authored file: under the
+  `margin="false"` we always export, P-touch's object box is the bars alone.
+  (The EAN family used to bake in 9, drawing ~19% narrow and double-counting
+  its quiet zone in the background and the dither-protected region.)
+- DataMatrix (ECC200, square, ASCII encodation) and PDF417 (byte compaction)
+  encode in `src/barcode/`, each diffed module-for-module against bwip-js —
+  DataMatrix across every size it emits, PDF417 across free, pinned-width and
+  pinned-shape layouts. Both are decomposed so each piece is testable alone
+  (field arithmetic, size table, encodation, bit placement / codeword table,
+  compaction, layout, assembly). Two limits worth knowing: DataMatrix stops at
+  one data region — 44 codewords, ~88 digits — and fails closed above that
+  rather than emitting a symbol that looks right and scans as nothing; and
+  ASCII-only encodation means an uppercase-heavy payload draws a larger symbol
+  than a mode-switching encoder would (both valid, both decode the same).
+  MaxiCode and GS1 DataBar still fail closed, for opposite reasons: MaxiCode is
+  a fixed 26.9mm tall against an 18.1mm printable band, and DataBar has neither
+  a working oracle nor an obtainable sample of an unstacked variant. Both say
+  so rather than reporting a bare protocol name, and the property panel shows
+  that reason rather than its own.
+- A 2D barcode's pose means the symbol; P-touch's object box means the symbol
+  plus a flat 2 modules of quiet zone per side. `src/barcode/poseBox.ts`
+  converts at the file boundary, so one convention holds inside the app.
+  Before it, every imported P-touch 2D barcode drew `(n + 4) / n` too large —
+  19% for a 21-module QR, 33% for a 12-module DataMatrix. Not to be confused
+  with `Symbol2D.quiet` above: that's the symbology's scanning requirement
+  (QR 4, DataMatrix 1, PDF417 2), and neither is this 2. Measured from
+  `test/fixtures/barcode2.lbx`, which `lbxImport.test.ts` round-trips.
+- Export restates the pose as a module size under whichever attribute the
+  symbology uses — `barWidth`, `qrcodeStyle cellSize`, `datamatrixStyle
+  cellSize`, `pdf417Style width` — because P-touch redraws from that rather
+  than from the box. PDF417 additionally exports the `row` and `column` it was
+  drawn with instead of `auto`, since P-touch's automatic choice is not ours.
+  `eccLevel` stays `auto` deliberately: those four fields fix the drawn size,
+  and the level only moves the padding/ECC boundary inside a matrix they
+  already decided.
 - Document checks (`src/diagnostics.ts`, pure: document state in, findings
   out) report what the canvas *can't*: a barcode whose modules fall under 1
   printer dot (error) or 2 (warning), an object overhanging the printable band
