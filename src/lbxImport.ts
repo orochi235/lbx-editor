@@ -11,6 +11,7 @@ import {
   type TapeSize,
 } from './label';
 import { fitLengthToContent } from './autoLength';
+import { symbolPoseFromBox } from './barcode/poseBox';
 
 interface ImportedNode {
   id: string;
@@ -120,10 +121,20 @@ function lbxObjectToNode(obj: LabelObject, brushIsMeaningful: boolean): Imported
         },
       };
     }
-    case 'barcode':
+    case 'barcode': {
+      // P-touch's 2D box carries 2 modules of quiet zone per side; ours is the
+      // symbol. The file states the module size, so convert from that rather
+      // than from our own encode — our symbol may differ from the one the file
+      // was drawn with (P-touch picks its own PDF417 row count).
+      const filedModulePt =
+        obj.protocol === 'QRCODE' ? obj.qrCode?.cellSize
+        : obj.protocol === 'DATAMATRIX' ? obj.dataMatrix?.cellSize
+        : obj.protocol === 'PDF417' ? obj.pdf417?.width
+        : undefined;
+      const barcodePose = symbolPoseFromBox(pose, filedModulePt);
       return {
         id: genId(),
-        pose,
+        pose: barcodePose,
         data: {
           kind: 'barcode',
           protocol: obj.protocol,
@@ -139,8 +150,11 @@ function lbxObjectToNode(obj: LabelObject, brushIsMeaningful: boolean): Imported
           // in a file we wrote — see `fileMeansItsBrush`.
           opaqueBackground: brushIsMeaningful ? obj.brush?.style === 'SOLID' : true,
           ...(obj.qrCode ? { qrCode: obj.qrCode } : {}),
+          ...(obj.dataMatrix ? { dataMatrix: obj.dataMatrix } : {}),
+          ...(obj.pdf417 ? { pdf417: obj.pdf417 } : {}),
         },
       };
+    }
     case 'image': {
       // Convert Uint8Array to base64
       const bytes = obj.imageData;

@@ -67,6 +67,8 @@ export interface LabelBarcodeData {
    *  into a space a scanner would read as light. */
   opaqueBackground: boolean;
   qrCode?: { model?: number; eccLevel?: QrEccLevel; cellSize?: number; version?: string };
+  dataMatrix?: { model?: 'square' | 'rectangle'; cellSize?: number; macro?: string; fnc01?: boolean; joint?: number };
+  pdf417?: { model?: string; width?: number; aspect?: number; row?: string; column?: string; eccLevel?: string; joint?: number };
 }
 
 export type LabelNodeData =

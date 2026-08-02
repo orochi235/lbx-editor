@@ -5,6 +5,7 @@ import { importLbx } from './lbxImport';
 import { exportLbx } from './lbxExport';
 import { MIN_LABEL_LENGTH_PT } from './autoLength';
 import type { LabelNodeData, LabelPose } from './label';
+import { readFixture } from '../test/fixtures/readFixture';
 
 /**
  * A label shaped the way P-touch Editor writes them: one text object whose
@@ -221,6 +222,17 @@ describe('barcode objects', () => {
       protocol: 'CODE128',
       data: 'ABC-123',
     });
+  });
+
+  // Against a file P-touch wrote, not one we built: the whole question is what
+  // *its* box means, which a config we hand to buildLbx can't answer.
+  it('reads a P-touch QR at the cell size the file states, not 19% larger', async () => {
+    // barcodes.lbx's QR: 40pt box, cellSize 1.6pt, 21-module symbol.
+    // Taking the box as the symbol gave 40/21 = 1.905pt per module.
+    const result = await importLbx(await readFixture('barcodes.lbx'));
+    const qr = result.nodes.find((n) => n.data.kind === 'barcode' && n.data.protocol === 'QRCODE');
+    expect(qr).toBeDefined();
+    expect(qr!.pose.width).toBeCloseTo(33.6, 3); // 21 * 1.6
   });
 
   /** A one-barcode file carrying `brush`, stamped with `generator`. */
