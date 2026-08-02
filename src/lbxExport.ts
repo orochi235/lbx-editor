@@ -12,6 +12,7 @@ import {
 } from 'bil-lbx';
 import { ensureBmp32Bytes } from './imageUtils';
 import { encodeBarcode, barcodeRequest, barcodeModulePt } from './barcode';
+import { boxFromSymbolPose } from './barcode/poseBox';
 import { DEFAULT_LABEL_LENGTH, lineEndpoints, type LabelNodeData, type LabelPose, type TapeSize } from './label';
 
 interface SceneNode {
@@ -28,6 +29,17 @@ const TAPE_FORMAT_MAP: Record<TapeSize, { width: number; format: number }> = {
   '24mm': TAPE['24mm'],
   '36mm': TAPE['36mm'],
 };
+
+/**
+ * The data column count behind a PDF417's module width, or undefined if that
+ * width isn't one a PDF417 can have. Inverts
+ * `moduleWidth = 17 * (columns + 4) + 1` — 17 modules per column plus a start
+ * pattern, two row indicators and an 18-module stop.
+ */
+function pdf417ColumnsFor(cols: number): number | undefined {
+  const columns = (cols - 1) / 17 - 4;
+  return Number.isInteger(columns) && columns >= 1 ? columns : undefined;
+}
 
 export function sceneToLbxConfig(
   nodes: SceneNode[],
@@ -77,19 +89,85 @@ export function sceneToLbxConfig(
         });
         break;
       case 'barcode': {
-        // The pose is authoritative for us; P-touch sizes from barWidth (1D)
-        // and qrCode.cellSize (2D). Restate the pose in whichever term applies
-        // so the two agree on the drawn size. Falls back to the imported values
-        // when the payload doesn't encode — nothing better to say.
+        // The pose is authoritative for us; P-touch redraws a barcode from a
+        // module width recorded under a *different attribute per symbology* —
+        // barWidth for 1D, qrcodeStyle cellSize, datamatrixStyle cellSize,
+        // pdf417Style width. Restate the pose in whichever one applies so the
+        // two agree on the drawn size. Sending it to the wrong one is worse
+        // than sending nothing: bil-lbx writes a style element only for the
+        // matching protocol, so a cellSize on a PDF417 is dropped on the floor
+        // and the symbol reopens at whatever size the reader invents.
+        // Falls back to the imported values when the payload doesn't encode —
+        // nothing better to say.
         const encoded = encodeBarcode(barcodeRequest(data));
         const modulePt = encoded.ok ? barcodeModulePt(encoded, pose) : undefined;
-        const barWidth = encoded.ok && encoded.kind === '1d' ? modulePt! : data.barWidth;
-        const qrCode = encoded.ok && encoded.kind === '2d'
-          ? { ...data.qrCode, cellSize: modulePt! }
-          : data.qrCode;
+        const symbol2d = encoded.ok && encoded.kind === '2d' ? encoded : undefined;
+        const cellPt = symbol2d !== undefined ? modulePt : undefined;
+        const barWidth =
+          encoded.ok && encoded.kind === '1d' && modulePt !== undefined ? modulePt : data.barWidth;
+
+        // P-touch's 2D object box is the symbol plus a flat 2 modules per side;
+        // import strips them, so export has to put them back or a file
+        // round-trips 4 modules smaller than it arrived. 1D boxes are the bars
+        // alone under the `margin="false"` we write, so they go out as-is.
+        const position =
+          cellPt !== undefined
+            ? boxFromSymbolPose(pose, cellPt)
+            : { x: pose.x, y: pose.y, width: pose.width, height: pose.height };
+
+        const qrCode =
+          data.protocol === 'QRCODE' && cellPt !== undefined
+            ? { ...data.qrCode, cellSize: cellPt }
+            : data.protocol === 'QRCODE'
+              ? data.qrCode
+              : undefined;
+
+        // `model: 'square'` states what we drew rather than what was asked for:
+        // `encodeDataMatrix` builds square symbols only, and .lbx has no field
+        // for a rectangular one to have come from.
+        const dataMatrix =
+          data.protocol === 'DATAMATRIX' && cellPt !== undefined
+            ? { ...data.dataMatrix, model: 'square' as const, cellSize: cellPt }
+            : data.protocol === 'DATAMATRIX'
+              ? data.dataMatrix
+              : undefined;
+
+        // Write the layout we drew rather than "auto": P-touch's own choice
+        // isn't ours — 7 rows against bwip-js's 21 for the same payload — and
+        // an "auto" invites it to redraw the symbol a different size. The
+        // column count is the inverse of `moduleWidth = 17 * (columns + 4) + 1`;
+        // it can only come out fractional if that identity ever stops holding,
+        // and then there is no honest count to state, so the shape is left
+        // however it came in.
+        const pdf417Columns =
+          symbol2d !== undefined ? pdf417ColumnsFor(symbol2d.cols) : undefined;
+        const pdf417 =
+          data.protocol === 'PDF417' &&
+          symbol2d !== undefined &&
+          cellPt !== undefined &&
+          pdf417Columns !== undefined
+            ? {
+                ...data.pdf417,
+                model: 'standard',
+                width: cellPt,
+                aspect: symbol2d.rowHeightModules,
+                row: String(symbol2d.rows),
+                column: String(pdf417Columns),
+                // The level we landed on isn't reported back — `Symbol2D` is a
+                // module grid — so anything but the file's own answer would be
+                // a guess. Safe to leave: the drawn size is fixed by the row,
+                // column, width and aspect beside it, and the level moves only
+                // the boundary between padding and error correction inside a
+                // matrix those four already decided.
+                eccLevel: data.pdf417?.eccLevel ?? 'auto',
+              }
+            : data.protocol === 'PDF417'
+              ? data.pdf417
+              : undefined;
+
         objects.push({
           type: 'barcode',
-          position: { x: pose.x, y: pose.y, width: pose.width, height: pose.height },
+          position,
           protocol: data.protocol,
           data: data.data,
           barWidth,
@@ -106,6 +184,8 @@ export function sceneToLbxConfig(
             ? { style: 'SOLID' as const, color: '#FFFFFF' }
             : { style: 'NULL' as const },
           ...(qrCode ? { qrCode } : {}),
+          ...(dataMatrix ? { dataMatrix } : {}),
+          ...(pdf417 ? { pdf417 } : {}),
         });
         break;
       }
