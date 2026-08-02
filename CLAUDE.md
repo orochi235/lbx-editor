@@ -31,14 +31,26 @@ Standalone Vite + React app consuming:
   for an unrelated redraw. One contract came with it: a painter's returned
   command array belongs to the painter, so copy before appending.
   `drawLabelNode` allocates every array it returns, so it was already fine.
-- `bil-lbx` (from npm, `^0.3.0`) — .lbx serialization/parsing. 0.2.2 was the
+- `bil-lbx` (from npm, `^0.3.1`) — .lbx serialization/parsing. 0.2.2 was the
   floor for the barcode background round-trip, which reads
-  `LabelConfig.generator`. 0.3.0 is the floor now because DataMatrix and
-  PDF417 keep their options in their own style elements —
+  `LabelConfig.generator`. 0.3.0 added the 2D style elements: DataMatrix and
+  PDF417 keep their options in their own —
   `barcode:datamatrixStyle` and `barcode:pdf417Style` — and without those
   fields an export drops the module size, the row aspect, and PDF417's
   row/column/ECC choice. It also admits `RSS`, which is what P-touch actually
   stamps for GS1 DataBar.
+
+  **0.3.1 is the floor now**, and this one is a correctness floor rather than
+  a feature one: before it, `parseLbx` returned `objects` grouped by element
+  name — every text, then every rect, line, image and barcode — where
+  `pt:objects` lists them back to front. Node order *is* stacking order here
+  (the canvas draws the array in order and `sceneToLbxConfig` writes it back
+  the same way), so a label did not merely display restacked, it saved
+  restacked. Three of bil-lbx's four P-touch fixtures interleave types, so
+  this reached real files; `Filament Label 3` is the plainest, its background
+  rectangle coming back on top of the text it was drawn beneath. `^0.3.0`
+  would still resolve to 0.3.1 today, but the two parse the same file into
+  different documents, so the range says which one this app means.
 - `obwat` (from npm, `^0.3.0`) — Brother P-touch printing: raster encoding,
   WebUSB/Web Serial transports, and the `createBrotherPrinter` facade (device
   acquisition, keepalive, status events). Weasel renders pixels for print via
@@ -57,7 +69,40 @@ No sibling repos required — bil-lbx, weasel and obwat all install from npm. To
 develop any of them against the editor, `npm link ../bil-lbx` (or `../weasel`,
 `../obwat`) — and remember consumers use built `dist/`, so run the sibling's
 `npm run build` after edits (a stale Vite dep cache will also keep serving the
-old bundle; `npm run dev -- --force` re-optimizes).
+old bundle; `npm run dev -- --force` re-optimizes). A link is invisible in
+`package.json`, so check `ls -ld node_modules/bil-lbx` before concluding a test
+passes against what ships.
+
+## Asking P-touch (`pte-probes/`)
+
+Almost everything this app knows about `.lbx` geometry was measured in one
+direction — reading files P-touch wrote — and the write direction was derived
+by inverting that measurement. `scripts/makePteProbes.ts` generates the files
+that ask the other half: one question per file, so a file P-touch refuses to
+open costs only its own question. `pte-probes/README.md` (also generated) is
+the per-file checklist. The flow is open in P-touch → look → **Save As** with a
+`-pte` suffix, keeping both halves.
+
+Two conventions make the answers readable. Symbols are sized so one module is a
+round number of points, and a hairline rect sits a fixed 5pt *outside* the pose
+we believe the ink occupies — a rect carries no convention the two renderers
+could disagree about, which is what makes it a ruler and not a second reading
+of the same guess. It is held off rather than drawn on the symbol's edge
+because a correct symbol hides a coincident line, which looks exactly like a
+line that never drew.
+
+The generator reads each file back through our own importer before writing it:
+a probe that cannot survive our own round-trip would answer a question about us
+while looking like an answer about P-touch. Rerunning rewrites all eight files
+regardless — a `.lbx` is a ZIP and jszip stamps the current time — so diff
+`unzip -p f.lbx label.xml`, not the bytes.
+
+The open questions are the 2D object box in the write direction, the
+per-symbology module-size attributes, whether P-touch honors a pinned PDF417
+row/column, and whether it honors `pt:brush` on a barcode at all. Separately,
+GS1 DataBar needs a P-touch-*authored* sample — one per variant at **two**
+module sizes, since one size cannot separate a per-module quiet zone from a
+flat one in points.
 
 ## Weasel integration
 
