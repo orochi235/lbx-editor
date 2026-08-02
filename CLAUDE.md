@@ -5,14 +5,32 @@ Web-based visual editor for Brother P-touch label files (.lbx).
 ## Architecture
 
 Standalone Vite + React app consuming:
-- `@weasel-js/core`, `/ui`, `/theme` (from npm, `^0.7.0`) — 2D scene graph,
-  canvas rendering, tools, and the UI kit. The floor is 0.7.0 for the gesture
-  layer live auto-length rides (`getGestureBounds` and its subscribe/version
-  pair). 0.7 also moved `defineTool` off the barrel to
+- `@weasel-js/core`, `/ui`, `/theme` (from npm, `^0.7.2`) — 2D scene graph,
+  canvas rendering, tools, and the UI kit. 0.7.0 is what the gesture layer live
+  auto-length rides (`getGestureBounds` and its subscribe/version pair); the
+  floor is **0.7.2** because `^0.7.0` would otherwise resolve to the deprecated
+  0.7.1, which shipped from a stale `dist/` and whose `VERSION` constant
+  therefore reports `0.7.0`. 0.7 also moved `defineTool` off the barrel to
   `@weasel-js/core/routing`, and derives text antialiasing from `fwidth()`
   rather than a constant band — that last one moves glyph-edge pixels in the
   print render, though measured against a 24mm label only 3 dots of ~6100
   crossed the ink threshold.
+
+  0.7.1 flipped hit-picking to `picking: 'shape'` by default, so clicks land on
+  the ink a painter lays down rather than on its pose rect. **This app is
+  unaffected**, and the reason is worth knowing before anyone "fixes" it: every
+  node here draws through `layers.scene.drawOne` rather than a registered
+  painter with a `silhouette`, and the kit keeps the pose-rect answer for
+  painters that declare none. Verified in the browser — clicking the blank
+  middle of an unfilled rectangle still selects it. `geometry={{ picking:
+  'pose' }}` on `SceneCanvas` is the explicit opt-out if that ever changes.
+
+  0.7.1 also caches text layout per resolved run (200 wrapped paragraphs went
+  31.8 → 0.06 ms/frame) and notifies `subscribeGlyphReady` when `registerFont`
+  completes, so a custom font loaded from the sidebar repaints without waiting
+  for an unrelated redraw. One contract came with it: a painter's returned
+  command array belongs to the painter, so copy before appending.
+  `drawLabelNode` allocates every array it returns, so it was already fine.
 - `bil-lbx` (from npm, `^0.2.2`) — .lbx serialization/parsing. The floor is
   0.2.2 because the barcode background round-trip reads `LabelConfig.generator`,
   which older versions neither surface nor stamp with the current name.
