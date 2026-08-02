@@ -9,9 +9,20 @@
  *
  * Tables are cross-checked against bwip-js in ean.test.ts.
  */
+import { horizontalQuiet } from './types';
 import type { EncodeResult } from './types';
 
 export type EanProtocol = 'EAN13' | 'EAN8' | 'UPCA' | 'UPCE';
+
+/** Per-symbology quiet zones. The EAN family's requirement is asymmetric —
+ *  EAN-13 is 11 left and 7 right — where a flat 10 was both too wide on one
+ *  side and a module short on the other. */
+const EAN_QUIET: Record<string, { left: number; right: number }> = {
+  EAN13: { left: 11, right: 7 },
+  EAN8: { left: 7, right: 7 },
+  UPCA: { left: 9, right: 9 },
+  UPCE: { left: 9, right: 7 },
+};
 
 /** Left-hand odd-parity patterns, digits 0-9. */
 const L = [
@@ -108,7 +119,13 @@ export function encodeEan(data: string, protocol: EanProtocol, opts: EanOptions)
   }
 
   const modules = protocol === 'UPCE' ? upceModules(digits) : linearModules(digits, protocol);
-  return { ok: true, ...barsFromModules(modules), text: digits };
+  const q = EAN_QUIET[protocol] ?? { left: 10, right: 10 };
+  return {
+    ok: true,
+    ...barsFromModules(modules),
+    quiet: horizontalQuiet(q.left, q.right),
+    text: digits,
+  };
 }
 
 /** The check digit rule differs only in what stem it's computed over. */
@@ -162,8 +179,8 @@ function upceModules(digits: string): string {
  *
  * Bars alone, with no quiet zone: `totalModules` is what the pose is measured
  * against, and the pose means the bars (see `encode.test.ts`). The quiet zone
- * is added outside the pose by `quietZonePt`, uniformly for every 1D
- * symbology.
+ * is added outside the pose by `quietZonePt`, from the per-symbology margins
+ * in `EAN_QUIET`.
  */
 function barsFromModules(modules: string): { kind: '1d'; bars: Array<{ x: number; width: number }>; totalModules: number } {
   const bars: Array<{ x: number; width: number }> = [];

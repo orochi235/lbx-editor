@@ -8,6 +8,7 @@
  * The pattern table was derived from bwip-js rather than transcribed, and
  * codabar.test.ts re-verifies every character against it.
  */
+import { horizontalQuiet } from './types';
 import type { EncodeResult } from './types';
 
 const PATTERNS: Record<string, string> = {
@@ -55,5 +56,12 @@ export function encodeCodabar(data: string, ratio = 3): EncodeResult {
     if (c < payload.length - 1) x += 1; // inter-character gap
   }
 
-  return { ok: true, kind: '1d', bars, totalModules: x, text: payload };
+  return {
+    ok: true,
+    kind: '1d',
+    bars,
+    totalModules: x,
+    quiet: horizontalQuiet(10, 10),
+    text: payload,
+  };
 }

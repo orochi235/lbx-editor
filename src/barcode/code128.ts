@@ -11,6 +11,7 @@
  *
  * The pattern table is cross-checked against bwip-js in code128.test.ts.
  */
+import { horizontalQuiet } from './types';
 import type { EncodeResult } from './types';
 
 /** Element widths for symbol values 0..106; index 106 is the stop pattern. */
@@ -131,5 +132,12 @@ export function encodeCode128(data: string, opts: Code128Options): EncodeResult 
     }
   }
 
-  return { ok: true, kind: '1d', bars, totalModules: x, text: data };
+  return {
+    ok: true,
+    kind: '1d',
+    bars,
+    totalModules: x,
+    quiet: horizontalQuiet(10, 10),
+    text: data,
+  };
 }

@@ -80,7 +80,7 @@ describe('QR export', () => {
 
     // Same relationship geometry.ts draws with: the symbol takes the smaller
     // pose dimension and each module is that over the module count.
-    expect(exportOne(qr, pose).qrCode?.cellSize).toBeCloseTo(46 / symbol.size, 6);
+    expect(exportOne(qr, pose).qrCode?.cellSize).toBeCloseTo(46 / symbol.cols, 6);
   });
 
   it('uses the smaller pose dimension, as the drawn symbol does', () => {
@@ -88,7 +88,7 @@ describe('QR export', () => {
     if (!symbol.ok || symbol.kind !== '2d') throw new Error('fixture should encode as 2D');
 
     const wide = exportOne(qr, { width: 200, height: 46 });
-    expect(wide.qrCode?.cellSize).toBeCloseTo(46 / symbol.size, 6);
+    expect(wide.qrCode?.cellSize).toBeCloseTo(46 / symbol.cols, 6);
   });
 
   it('keeps the other QR fields', () => {

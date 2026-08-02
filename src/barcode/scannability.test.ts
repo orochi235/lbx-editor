@@ -5,6 +5,7 @@ import {
   MIN_RENDERABLE_MODULE_DOTS,
   MIN_RELIABLE_MODULE_DOTS,
 } from './scannability';
+import { horizontalQuiet, uniformQuiet } from './types';
 import type { Symbol1D, Symbol2D } from './types';
 
 const DPI = 180;
@@ -13,13 +14,17 @@ const oneD: Symbol1D = {
   kind: '1d',
   bars: [{ x: 0, width: 1 }],
   totalModules: 100,
+  quiet: horizontalQuiet(10, 10),
   text: '12345678',
 };
 
 const twoD: Symbol2D = {
   kind: '2d',
-  size: 25,
+  cols: 25,
+  rows: 25,
+  rowHeightModules: 1,
   modules: [],
+  quiet: uniformQuiet(4),
   text: 'x',
 };
 

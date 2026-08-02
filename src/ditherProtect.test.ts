@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { protectedRegions } from './ditherProtect';
-import { encodeBarcode, barcodeRequest, barcodeModulePt, QUIET_ZONE_MODULES_1D } from './barcode';
+import { encodeBarcode, barcodeRequest, barcodeModulePt } from './barcode';
 import type { LabelBarcodeData, LabelNodeData, LabelPose } from './label';
 
 const GEOMETRY = { band: { y: 10 }, dpi: 180 };
@@ -30,16 +30,17 @@ describe('protectedRegions', () => {
   it('maps a barcode pose into dot space, past the band and the quiet zone', () => {
     const symbol = encodeBarcode(barcodeRequest(barcode()));
     if (!symbol.ok) throw new Error('fixture should encode');
-    const quiet = QUIET_ZONE_MODULES_1D * barcodeModulePt(symbol, pose);
+    const quiet = symbol.quiet.left * barcodeModulePt(symbol, pose);
 
     const [rect] = protectedRegions([node(barcode())], GEOMETRY);
 
     // Dither space starts at the top of the printable band, not the tape.
+    // Code 128's quiet zone is horizontal only, so the region is the pose tall.
     expect(rect).toEqual({
       x: (pose.x - quiet) * SCALE,
-      y: (pose.y - GEOMETRY.band.y - quiet) * SCALE,
+      y: (pose.y - GEOMETRY.band.y) * SCALE,
       width: (pose.width + quiet * 2) * SCALE,
-      height: (pose.height + quiet * 2) * SCALE,
+      height: pose.height * SCALE,
     });
   });
 

@@ -6,6 +6,7 @@
  * The pattern table is verified character-by-character against bwip-js in
  * code39.test.ts; if a cross-check fails, the table entry is wrong.
  */
+import { horizontalQuiet } from './types';
 import type { EncodeResult } from './types';
 
 /** Element widths per character: 'n' = narrow (1 module), 'w' = wide (ratio). */
@@ -49,5 +50,12 @@ export function encodeCode39(data: string, opts: Code39Options): EncodeResult {
     if (c < chars.length - 1) x += 1; // inter-character gap
   }
 
-  return { ok: true, kind: '1d', bars, totalModules: x, text: payload };
+  return {
+    ok: true,
+    kind: '1d',
+    bars,
+    totalModules: x,
+    quiet: horizontalQuiet(10, 10),
+    text: payload,
+  };
 }

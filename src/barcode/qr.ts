@@ -4,6 +4,7 @@
  * as rectangles, so the symbol stays vector at printer resolution.
  */
 import qrcode from 'qrcode-generator';
+import { uniformQuiet } from './types';
 import type { EncodeResult } from './types';
 
 /** .lbx records error correction as a percentage string. */
@@ -33,7 +34,16 @@ export function encodeQr(data: string, opts: QrOptions): EncodeResult {
     const modules = Array.from({ length: size }, (_, r) =>
       Array.from({ length: size }, (_, c) => qr.isDark(r, c)),
     );
-    return { ok: true, kind: '2d', size, modules, text: data };
+    return {
+      ok: true,
+      kind: '2d',
+      cols: size,
+      rows: size,
+      rowHeightModules: 1,
+      modules,
+      quiet: uniformQuiet(4),
+      text: data,
+    };
   } catch (err) {
     // The library throws when the payload overflows the largest version.
     return { ok: false, reason: 'invalid', detail: String(err instanceof Error ? err.message : err) };

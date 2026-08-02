@@ -84,11 +84,14 @@ describe('drawLabelNode, barcode colors', () => {
     const { x, y, width, height } = background.path;
     expect({ x, y, width, height }).toEqual(expected);
 
-    // And that really is bigger than the pose, on every side.
+    // And that really is wider than the pose, on both sides. The fixture is a
+    // 1D symbol, whose quiet zone is horizontal only — the requirement above
+    // and below the bars is bar height, not blank margin — so the background
+    // is exactly the pose tall.
     expect(x).toBeLessThan(pose.x);
-    expect(y).toBeLessThan(pose.y);
     expect(x + width).toBeGreaterThan(pose.x + pose.width);
-    expect(y + height).toBeGreaterThan(pose.y + pose.height);
+    expect(y).toBe(pose.y);
+    expect(height).toBe(pose.height);
   });
 
   it('inks the human-readable band too, not just the bars', () => {

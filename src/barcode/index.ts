@@ -11,8 +11,6 @@ export {
   barcodeModulePt,
   quietZonePt,
   HUMAN_READABLE_HEIGHT_PT,
-  QUIET_ZONE_MODULES_1D,
-  QUIET_ZONE_MODULES_2D,
   type Rect,
 } from './geometry';
 export {
@@ -23,4 +21,12 @@ export {
   type ModuleFitness,
 } from './scannability';
 export { barcodeRequest } from './request';
-export type { BarcodeSymbol, Symbol1D, Symbol2D, EncodeResult, EncodeFailure } from './types';
+export { horizontalQuiet, uniformQuiet } from './types';
+export type {
+  BarcodeSymbol,
+  Symbol1D,
+  Symbol2D,
+  QuietZone,
+  EncodeResult,
+  EncodeFailure,
+} from './types';

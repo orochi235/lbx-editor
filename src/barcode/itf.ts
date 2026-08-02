@@ -8,6 +8,7 @@
  *
  * Cross-checked against bwip-js in itf.test.ts.
  */
+import { horizontalQuiet } from './types';
 import type { EncodeResult } from './types';
 import { eanCheckDigit } from './ean';
 
@@ -59,5 +60,12 @@ export function encodeItf(data: string, opts: ItfOptions): EncodeResult {
   push(1, false);
   push(1, true);
 
-  return { ok: true, kind: '1d', bars, totalModules: x, text: digits };
+  return {
+    ok: true,
+    kind: '1d',
+    bars,
+    totalModules: x,
+    quiet: horizontalQuiet(10, 10),
+    text: digits,
+  };
 }

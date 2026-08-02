@@ -3,6 +3,36 @@
  * turns them into pt rectangles. Nothing here knows about pt, poses, or canvas.
  */
 
+/**
+ * Blank margin a scanner needs, in modules, per side.
+ *
+ * This is the symbology's own **scanning requirement**, and it is not
+ * P-touch's object-box convention — that one is a flat 2 modules per side for
+ * every 2D symbology and lives in `lbxImport`/`lbxExport`. The two share a
+ * unit and nothing else; collapsing them into one number would be wrong in
+ * both directions, since QR asks for 4 and DataMatrix for 1.
+ *
+ * Only the encoder knows its symbology, so the encoder states this.
+ */
+export interface QuietZone {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/** A quiet zone that is horizontal only — every 1D symbology here. The
+ *  standards ask for no vertical margin: the requirement above and below the
+ *  bars is bar *height*, not blank space. */
+export function horizontalQuiet(left: number, right: number): QuietZone {
+  return { left, right, top: 0, bottom: 0 };
+}
+
+/** A quiet zone equal on all four sides — the 2D symbologies. */
+export function uniformQuiet(modules: number): QuietZone {
+  return { left: modules, right: modules, top: modules, bottom: modules };
+}
+
 /** A 1D symbol as bar runs measured in narrow modules from the symbol's left
  *  edge — the bars alone, with **no quiet zone**. */
 export interface Symbol1D {
@@ -15,21 +45,33 @@ export interface Symbol1D {
    * Do not bake a quiet zone in here. `barcodeModulePt` is
    * `pose.width / totalModules`, so this defines what a barcode's pose *means*,
    * and the pose means the bars (measured against a P-touch-authored file).
-   * The quiet zone is added outside the pose by `quietZonePt`, uniformly for
-   * every symbology. `encode.test.ts` pins `[0, totalModules]` across all of
-   * them — the EAN family baked in 9 and drew ~19% narrow for it.
+   * `encode.test.ts` pins `[0, totalModules]` across every symbology — the EAN
+   * family baked in 9 and drew ~19% narrow for it.
    */
   totalModules: number;
-  /** What a scanner reads back — the payload plus any computed check digit.
-   *  This is what the human-readable band shows, not the raw input. */
+  quiet: QuietZone;
+  /** What a scanner reads back — the payload plus any computed check digit. */
   text: string;
 }
 
-/** A 2D symbol as a square module matrix. `modules[row][col]` is true for dark. */
+/** A 2D symbol as a module grid. `modules[row][col]` is true for dark. */
 export interface Symbol2D {
   kind: '2d';
-  size: number;
+  cols: number;
+  rows: number;
+  /**
+   * Row height as a multiple of module width. 1 for QR and DataMatrix, whose
+   * cells are square; 3 for PDF417, whose rows are taller than they are wide —
+   * ISO 15438's minimum, and the value P-touch's `pdf417Style` defaults its
+   * `aspect` attribute to.
+   *
+   * A constraint we satisfy by construction rather than report: with square
+   * cells a PDF417 would render one module tall per row at every pose size, out
+   * of spec in every document, with nothing the user could do about it.
+   */
+  rowHeightModules: number;
   modules: boolean[][];
+  quiet: QuietZone;
   text: string;
 }
 
