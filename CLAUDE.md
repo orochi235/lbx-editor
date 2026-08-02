@@ -31,9 +31,14 @@ Standalone Vite + React app consuming:
   for an unrelated redraw. One contract came with it: a painter's returned
   command array belongs to the painter, so copy before appending.
   `drawLabelNode` allocates every array it returns, so it was already fine.
-- `bil-lbx` (from npm, `^0.2.2`) — .lbx serialization/parsing. The floor is
-  0.2.2 because the barcode background round-trip reads `LabelConfig.generator`,
-  which older versions neither surface nor stamp with the current name.
+- `bil-lbx` (from npm, `^0.3.0`) — .lbx serialization/parsing. 0.2.2 was the
+  floor for the barcode background round-trip, which reads
+  `LabelConfig.generator`. 0.3.0 is the floor now because DataMatrix and
+  PDF417 keep their options in their own style elements —
+  `barcode:datamatrixStyle` and `barcode:pdf417Style` — and without those
+  fields an export drops the module size, the row aspect, and PDF417's
+  row/column/ECC choice. It also admits `RSS`, which is what P-touch actually
+  stamps for GS1 DataBar.
 - `obwat` (from npm, `^0.3.0`) — Brother P-touch printing: raster encoding,
   WebUSB/Web Serial transports, and the `createBrotherPrinter` facade (device
   acquisition, keepalive, status events). Weasel renders pixels for print via
