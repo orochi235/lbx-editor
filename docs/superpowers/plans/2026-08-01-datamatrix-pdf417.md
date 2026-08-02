@@ -2241,7 +2241,16 @@ git commit -m "Reach the multi-region DataMatrix sizes, up to 144x144"
 
 PDF417 has 929 codewords, each with a distinct 17-module pattern in each of 3 clusters — 2,787 patterns, and the bulk of this encoder's size.
 
-**Sourcing:** take the table from a reference implementation under a compatible licence (zxing's `PDF417Common.CODEWORD_TABLE` or bwip-js's own, both permissively licensed). Do **not** hand-type it. The oracle sweep in Task D4 is what proves it landed correctly.
+**Sourcing: take the table from zxing, not from bwip-js.** Both are permissively licensed and either would work legally, but bwip-js is the oracle. A table ported from bwip-js and then verified against bwip-js is a circular check on exactly the data most likely to be wrong — a paste error would still be caught by the diff, but a bug in bwip-js's own table would be invisible. zxing's `PDF417Common.CODEWORD_TABLE` keeps the two independent, which is the property `testOracle.ts` exists to preserve.
+
+Do **not** hand-type it. The oracle sweep in Task D4 is what proves it landed correctly.
+
+**Attribution** (zxing is Apache 2.0, so this is required, not courtesy):
+
+- Add `licenses/zxing-APACHE-2.0.txt` with the full licence text. Both Apache 2.0 and MIT require the text travel with copied source; a README mention alone does not satisfy either.
+- Add a **Third-party code** section to `README.md` naming what was taken, from where, and pointing at that file.
+- Put the copyright line and licence in `pdf417Table.ts`'s header, plus a note that the data was reformatted from the original Java into TypeScript arrays — Apache 2.0 §4(b) requires stating that a file was modified.
+- **Check whether zxing ships a `NOTICE` file.** If it does, §4(d) requires carrying its contents too. Verify this against the actual repository rather than assuming, and copy the real copyright line rather than writing one from memory.
 
 - [ ] **Step 1: Write the failing test**
 
