@@ -99,7 +99,30 @@ export function encodeBarcode(req: EncodeRequest): EncodeResult {
         ...(req.pdf417?.aspect !== undefined ? { aspect: req.pdf417.aspect } : {}),
       });
     default:
-      return { ok: false, reason: 'unsupported', detail: req.protocol };
+      return { ok: false, reason: 'unsupported', detail: unsupportedReason(req.protocol) };
+  }
+}
+
+/**
+ * Why a symbology we don't encode isn't coming. Two of these are permanent
+ * enough to deserve a reason rather than a name: one of them no amount of work
+ * here would fix, and the other is a name a user won't recognize under the one
+ * P-touch writes.
+ */
+function unsupportedReason(protocol: BarcodeProtocol): string {
+  switch (protocol) {
+    case 'MAXICODE':
+      // ISO/IEC 16023 fixes the symbol at 28.14 x 26.91mm and offers no smaller
+      // version. The widest tape this printer takes is 24mm, whose printable
+      // band is 128 dots at 180dpi -- 18.1mm. It cannot be printed at any size.
+      return 'MaxiCode is a fixed size (26.9mm tall) and the widest printable band on this printer is 18.1mm, so it cannot be printed';
+    // `RSS` is the name P-touch stamps for the same symbology bil-lbx calls
+    // GS1DATABAR, so both have to answer to the name a user would look for.
+    case 'GS1DATABAR':
+    case 'RSS':
+      return 'GS1 DataBar is not supported yet';
+    default:
+      return protocol;
   }
 }
 

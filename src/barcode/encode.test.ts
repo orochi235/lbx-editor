@@ -93,7 +93,26 @@ describe('every symbology states the quiet zone its standard asks for', () => {
 describe('encodeBarcode', () => {
   it('reports unsupported protocols instead of throwing', () => {
     const result = encodeBarcode({ protocol: 'MAXICODE', data: '123' });
-    expect(result).toEqual({ ok: false, reason: 'unsupported', detail: 'MAXICODE' });
+    expect(result).toMatchObject({ ok: false, reason: 'unsupported' });
+  });
+
+  it('says why a MaxiCode will never work here, not just that it does not', () => {
+    const result = encodeBarcode({ protocol: 'MAXICODE', data: '123' });
+    expect(result).toMatchObject({ ok: false, reason: 'unsupported' });
+    if (result.ok) throw new Error('expected MAXICODE to be declined');
+    expect(result.detail).toMatch(/fixed size|26\.9|18\.1/i);
+  });
+
+  it('says a DataBar is unsupported by name', () => {
+    // Two protocol names, one symbology: P-touch stamps `RSS` where bil-lbx's
+    // own vocabulary says GS1DATABAR, so a user reading either has to get the
+    // name they'd recognize.
+    for (const protocol of ['GS1DATABAR', 'RSS'] as const) {
+      const result = encodeBarcode({ protocol, data: '00012345678905' });
+      expect(result).toMatchObject({ ok: false, reason: 'unsupported' });
+      if (result.ok) throw new Error(`expected ${protocol} to be declined`);
+      expect(result.detail).toMatch(/DataBar/i);
+    }
   });
 
   it('encodes a DataMatrix through the dispatcher', () => {
