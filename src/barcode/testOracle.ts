@@ -36,3 +36,24 @@ export function oracle(bcid: string, text: string, opts: Record<string, unknown>
   });
   return bits.replace(/^0+|0+$/g, '');
 }
+
+/**
+ * bwip-js's 2D encoding as a module matrix. `pixs` is the grid row-major,
+ * `pixx` and `pixy` its dimensions — and like `sbs` for 1D, it is the symbol
+ * alone with no quiet zone.
+ */
+export function oracle2d(
+  bcid: string,
+  text: string,
+  opts: Record<string, unknown> = {},
+): boolean[][] {
+  const [enc] = bwipjs.raw(bcid, text, opts as never) as Array<{
+    pixs: number[];
+    pixx: number;
+    pixy: number;
+  }>;
+  const { pixs, pixx, pixy } = enc!;
+  return Array.from({ length: pixy }, (_, r) =>
+    Array.from({ length: pixx }, (_, c) => pixs[r * pixx + c] === 1),
+  );
+}
