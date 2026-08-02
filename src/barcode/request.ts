@@ -21,5 +21,25 @@ export function barcodeRequest(data: LabelBarcodeData): EncodeRequest {
           },
         }
       : {}),
+    ...(data.dataMatrix
+      ? {
+          dataMatrix: {
+            ...(data.dataMatrix.model !== undefined ? { model: data.dataMatrix.model } : {}),
+            ...(data.dataMatrix.cellSize !== undefined
+              ? { cellSize: data.dataMatrix.cellSize }
+              : {}),
+          },
+        }
+      : {}),
+    ...(data.pdf417
+      ? {
+          pdf417: {
+            ...(data.pdf417.row !== undefined ? { row: data.pdf417.row } : {}),
+            ...(data.pdf417.column !== undefined ? { column: data.pdf417.column } : {}),
+            ...(data.pdf417.eccLevel !== undefined ? { eccLevel: data.pdf417.eccLevel } : {}),
+            ...(data.pdf417.aspect !== undefined ? { aspect: data.pdf417.aspect } : {}),
+          },
+        }
+      : {}),
   };
 }

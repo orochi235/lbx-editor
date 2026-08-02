@@ -5,7 +5,7 @@ import { encodeBarcode, parseRatio, SUPPORTED_PROTOCOLS, isSupportedProtocol } f
 /** Every protocol .lbx can carry. */
 const ALL_PROTOCOLS: BarcodeProtocol[] = [
   'CODE39', 'CODE128', 'EAN13', 'EAN8', 'UPCA', 'UPCE', 'ITF',
-  'CODABAR', 'QRCODE', 'DATAMATRIX', 'PDF417', 'MAXICODE', 'GS1-128', 'GS1DATABAR',
+  'CODABAR', 'QRCODE', 'DATAMATRIX', 'PDF417', 'MAXICODE', 'GS1-128', 'GS1DATABAR', 'RSS',
 ];
 
 describe('SUPPORTED_PROTOCOLS', () => {
@@ -94,6 +94,55 @@ describe('encodeBarcode', () => {
   it('reports unsupported protocols instead of throwing', () => {
     const result = encodeBarcode({ protocol: 'MAXICODE', data: '123' });
     expect(result).toEqual({ ok: false, reason: 'unsupported', detail: 'MAXICODE' });
+  });
+
+  it('encodes a DataMatrix through the dispatcher', () => {
+    const result = encodeBarcode({ protocol: 'DATAMATRIX', data: '12345678' });
+    if (!result.ok) throw new Error(`expected DATAMATRIX to encode: ${result.detail}`);
+    expect(result.kind).toBe('2d');
+  });
+
+  it('encodes a PDF417 through the dispatcher', () => {
+    const result = encodeBarcode({ protocol: 'PDF417', data: '12345678' });
+    if (!result.ok) throw new Error(`expected PDF417 to encode: ${result.detail}`);
+    expect(result.kind).toBe('2d');
+  });
+
+  it('passes an explicit PDF417 layout through from the file', () => {
+    const result = encodeBarcode({
+      protocol: 'PDF417',
+      data: '12345678',
+      pdf417: { column: '2', row: '7', aspect: 3 },
+    });
+    if (!result.ok || result.kind !== '2d') throw new Error('expected a 2D symbol');
+    // 17 * (2 + 4) + 1 -- the two stated data columns plus the two row
+    // indicators, the start and stop patterns, and the closing bar.
+    expect(result.cols).toBe(103);
+    // Not 7. Alongside `columns`, `rows` is a *floor*: this payload needs 9
+    // rows at 2 columns, so the symbol grows past the stated 7 rather than
+    // failing -- BWIPP's behavior, and what a file whose text has since been
+    // edited needs.
+    expect(result.rows).toBe(9);
+    expect(result.rowHeightModules).toBe(3);
+  });
+
+  it('honors a PDF417 error correction level of 0, which is a level and not an absence', () => {
+    const stated = encodeBarcode({
+      protocol: 'PDF417',
+      data: '12345678',
+      pdf417: { column: '4', eccLevel: '0' },
+    });
+    const auto = encodeBarcode({
+      protocol: 'PDF417',
+      data: '12345678',
+      pdf417: { column: '4', eccLevel: 'auto' },
+    });
+    if (!stated.ok || stated.kind !== '2d') throw new Error('expected a 2D symbol');
+    if (!auto.ok || auto.kind !== '2d') throw new Error('expected a 2D symbol');
+    // Level 0 asks for 2 ECC codewords where the recommendation for this
+    // payload is 8, and the symbol is a row shorter for it. If `eccLevel: 0`
+    // were dropped as falsy the two would come out identical.
+    expect(stated.rows).toBeLessThan(auto.rows);
   });
 
   it('reports invalid payloads', () => {
