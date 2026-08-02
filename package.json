@@ -14,7 +14,7 @@
     "@weasel-js/core": "^0.7.2",
     "@weasel-js/theme": "^0.7.2",
     "@weasel-js/ui": "^0.7.2",
-    "bil-lbx": "^0.3.0",
+    "bil-lbx": "^0.3.1",
     "fast-xml-parser": "^5.9.3",
     "jszip": "^3.10.1",
     "obwat": "^0.3.0",

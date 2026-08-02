@@ -20,6 +20,11 @@
  *
  * Run: npx vite-node scripts/makePteProbes.ts
  * Files land in `pte-probes/` alongside a README of expected values.
+ *
+ * Rerunning this rewrites all eight files whether or not anything changed:
+ * a `.lbx` is a ZIP and jszip stamps the current time into every entry, so
+ * identical labels differ in bytes. Compare `unzip -p f.lbx label.xml` before
+ * believing a diff, and `git checkout -- pte-probes` when it is only the clock.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { buildLbx } from 'bil-lbx';

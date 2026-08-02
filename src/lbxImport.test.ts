@@ -401,3 +401,41 @@ describe('barcode2.lbx, authored in P-touch Editor', () => {
     }
   });
 });
+
+/**
+ * Node order is stacking order — the canvas draws the array front to back and
+ * `sceneToLbxConfig` writes it back out the same way — so an import that
+ * reorders nodes restacks the label and then saves the restacking.
+ *
+ * This is the app's stake in bil-lbx returning `objects` in document order
+ * (fixed in the parser, which used to group them by element name). The failure
+ * it guards is the one the opaque background exists for: a barcode drawn over
+ * an image, reopened underneath it, printing the artwork through the bars.
+ */
+describe('object stacking order', () => {
+  const stacked: LabelConfig = {
+    paper: { width: TAPE['24mm'].width, format: TAPE['24mm'].format, height: 200, autoLength: false },
+    objects: [
+      { type: 'rect', position: { x: 0, y: 4, width: 60, height: 40 } },
+      {
+        type: 'text',
+        position: { x: 8, y: 8, width: 40, height: 12 },
+        font: { name: 'Arial', size: 8 },
+        data: 'over',
+      },
+      { type: 'barcode', position: { x: 70, y: 8, width: 60, height: 30 }, protocol: 'CODE128', data: 'TOP' },
+    ],
+  };
+
+  it('imports nodes in the order the file stacks them', async () => {
+    const result = await importLbx(toArrayBuffer(await buildLbx(stacked)));
+    expect(result.nodes.map((n) => n.data.kind)).toEqual(['rect', 'text', 'barcode']);
+  });
+
+  it('keeps that order through an export', async () => {
+    const imported = await importLbx(toArrayBuffer(await buildLbx(stacked)));
+    const bytes = await exportLbx(imported.nodes, imported.tapeSize, imported.autoLength, imported.labelLength);
+    const reimported = await importLbx(toArrayBuffer(bytes));
+    expect(reimported.nodes.map((n) => n.data.kind)).toEqual(['rect', 'text', 'barcode']);
+  });
+});
