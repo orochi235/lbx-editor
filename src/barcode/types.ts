@@ -50,7 +50,8 @@ export interface Symbol1D {
    */
   totalModules: number;
   quiet: QuietZone;
-  /** What a scanner reads back — the payload plus any computed check digit. */
+  /** What a scanner reads back — the payload plus any computed check digit.
+   *  This is what the human-readable band shows, not the raw input. */
   text: string;
 }
 

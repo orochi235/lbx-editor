@@ -28,7 +28,9 @@ export const MIN_RELIABLE_MODULE_DOTS = 2;
 
 export type ModuleFitness = 'ok' | 'marginal' | 'unrenderable';
 
-/** One module in printer dots — the narrow bar for 1D, the cell for 2D. */
+/** One module in printer dots — the narrow bar for 1D, the cell *width* for 2D.
+ *  The distinction is idle for QR and DataMatrix, whose cells are square, and
+ *  load-bearing for PDF417, whose rows are three module-widths tall. */
 export function barcodeModuleDots(
   symbol: BarcodeSymbol,
   pose: { width: number; height: number },

@@ -6,8 +6,7 @@
  * The pattern table is verified character-by-character against bwip-js in
  * code39.test.ts; if a cross-check fails, the table entry is wrong.
  */
-import { horizontalQuiet } from './types';
-import type { EncodeResult } from './types';
+import { horizontalQuiet, type EncodeResult } from './types';
 
 /** Element widths per character: 'n' = narrow (1 module), 'w' = wide (ratio). */
 const PATTERNS: Record<string, string> = {
@@ -55,6 +54,8 @@ export function encodeCode39(data: string, opts: Code39Options): EncodeResult {
     kind: '1d',
     bars,
     totalModules: x,
+    // 10 modules each side is the GS1 General Specifications minimum, shared by
+    // every 1D symbology here and corroborated by BWIPP's `renlinear` default.
     quiet: horizontalQuiet(10, 10),
     text: payload,
   };

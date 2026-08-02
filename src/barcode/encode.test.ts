@@ -58,6 +58,38 @@ describe('1D symbols measure their bars, not their margins', () => {
   });
 });
 
+describe('every symbology states the quiet zone its standard asks for', () => {
+  // These numbers are the whole point of `Symbol*.quiet`, and TypeScript only
+  // enforces that the field exists, not that it is sane -- an encoder could
+  // ship `horizontalQuiet(0, 0)` and every other test here would still pass.
+  // Cross-checked against BWIPP's per-symbology `borderleft`/`borderright`
+  // defaults in `node_modules/bwip-js/barcode.ps`, which agrees on all of
+  // these except UPC-E, where it rounds the right margin up to UPC-A's 9.
+  const QUIET: Array<[BarcodeProtocol, string, number, number]> = [
+    ['CODE128', '1337', 10, 10],
+    ['GS1-128', '0112345678901231', 10, 10],
+    ['CODE39', 'ABC123', 10, 10],
+    ['ITF', '123456', 10, 10],
+    ['CODABAR', 'A1234B', 10, 10],
+    ['EAN13', '5901234123457', 11, 7],
+    ['EAN8', '96385074', 7, 7],
+    ['UPCA', '036000291452', 9, 9],
+    ['UPCE', '04252614', 9, 7],
+  ];
+
+  it.each(QUIET)('%s asks for %i modules left and %i right', (protocol, data, left, right) => {
+    const result = encodeBarcode({ protocol, data });
+    if (!result.ok) throw new Error(`expected ${protocol} to encode`);
+    expect(result.quiet).toEqual({ left, right, top: 0, bottom: 0 });
+  });
+
+  it('gives QR the 4 cells its standard specifies, on all four sides', () => {
+    const result = encodeBarcode({ protocol: 'QRCODE', data: '12345678' });
+    if (!result.ok) throw new Error('expected QRCODE to encode');
+    expect(result.quiet).toEqual({ left: 4, right: 4, top: 4, bottom: 4 });
+  });
+});
+
 describe('encodeBarcode', () => {
   it('reports unsupported protocols instead of throwing', () => {
     const result = encodeBarcode({ protocol: 'MAXICODE', data: '123' });

@@ -11,8 +11,7 @@
  *
  * The pattern table is cross-checked against bwip-js in code128.test.ts.
  */
-import { horizontalQuiet } from './types';
-import type { EncodeResult } from './types';
+import { horizontalQuiet, type EncodeResult } from './types';
 
 /** Element widths for symbol values 0..106; index 106 is the stop pattern. */
 const WIDTHS = [
@@ -137,6 +136,8 @@ export function encodeCode128(data: string, opts: Code128Options): EncodeResult 
     kind: '1d',
     bars,
     totalModules: x,
+    // 10 modules each side is the GS1 General Specifications minimum, shared by
+    // every 1D symbology here and corroborated by BWIPP's `renlinear` default.
     quiet: horizontalQuiet(10, 10),
     text: data,
   };

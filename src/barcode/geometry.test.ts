@@ -144,7 +144,7 @@ describe('non-square 2D symbols', () => {
   });
 });
 
-describe('square symbols are unchanged by the generalization', () => {
+describe('a square 2D symbol takes the smaller pose dimension', () => {
   it('gives a square 2D symbol the same module size as before', () => {
     const square = {
       kind: '2d' as const,
@@ -155,7 +155,7 @@ describe('square symbols are unchanged by the generalization', () => {
       quiet: { left: 4, right: 4, top: 4, bottom: 4 },
       text: '',
     };
-    // The old formula was min(w, h) / size.
+    // Square cells, so the pose's short side sets the module: 42 / 21 = 2.
     expect(barcodeModulePt(square, { width: 42, height: 84 })).toBe(2);
   });
 });

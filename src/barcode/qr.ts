@@ -4,8 +4,7 @@
  * as rectangles, so the symbol stays vector at printer resolution.
  */
 import qrcode from 'qrcode-generator';
-import { uniformQuiet } from './types';
-import type { EncodeResult } from './types';
+import { uniformQuiet, type EncodeResult } from './types';
 
 /** .lbx records error correction as a percentage string. */
 const ECC: Record<string, 'L' | 'M' | 'Q' | 'H'> = {
@@ -41,6 +40,7 @@ export function encodeQr(data: string, opts: QrOptions): EncodeResult {
       rows: size,
       rowHeightModules: 1,
       modules,
+      // ISO/IEC 18004 asks for 4 cells on every side.
       quiet: uniformQuiet(4),
       text: data,
     };

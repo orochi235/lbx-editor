@@ -8,8 +8,7 @@
  * The pattern table was derived from bwip-js rather than transcribed, and
  * codabar.test.ts re-verifies every character against it.
  */
-import { horizontalQuiet } from './types';
-import type { EncodeResult } from './types';
+import { horizontalQuiet, type EncodeResult } from './types';
 
 const PATTERNS: Record<string, string> = {
   '0': 'nnnnnww', '1': 'nnnnwwn', '2': 'nnnwnnw', '3': 'wwnnnnn',
@@ -61,6 +60,8 @@ export function encodeCodabar(data: string, ratio = 3): EncodeResult {
     kind: '1d',
     bars,
     totalModules: x,
+    // 10 modules each side is the GS1 General Specifications minimum, shared by
+    // every 1D symbology here and corroborated by BWIPP's `renlinear` default.
     quiet: horizontalQuiet(10, 10),
     text: payload,
   };

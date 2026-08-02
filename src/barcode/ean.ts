@@ -9,14 +9,18 @@
  *
  * Tables are cross-checked against bwip-js in ean.test.ts.
  */
-import { horizontalQuiet } from './types';
-import type { EncodeResult } from './types';
+import { horizontalQuiet, type EncodeResult } from './types';
 
 export type EanProtocol = 'EAN13' | 'EAN8' | 'UPCA' | 'UPCE';
 
 /** Per-symbology quiet zones. The EAN family's requirement is asymmetric —
  *  EAN-13 is 11 left and 7 right — where a flat 10 was both too wide on one
- *  side and a module short on the other. */
+ *  side and a module short on the other.
+ *
+ *  These are the GS1 General Specifications minima. BWIPP agrees on every one
+ *  except UPC-E, where it uses 9 on the right rather than GS1's 7 — rounding
+ *  up to UPC-A's margin rather than contradicting the standard. We take the
+ *  published 7. */
 const EAN_QUIET: Record<string, { left: number; right: number }> = {
   EAN13: { left: 11, right: 7 },
   EAN8: { left: 7, right: 7 },

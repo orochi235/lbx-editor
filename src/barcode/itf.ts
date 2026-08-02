@@ -8,8 +8,7 @@
  *
  * Cross-checked against bwip-js in itf.test.ts.
  */
-import { horizontalQuiet } from './types';
-import type { EncodeResult } from './types';
+import { horizontalQuiet, type EncodeResult } from './types';
 import { eanCheckDigit } from './ean';
 
 /** Element widths per digit: 'n' narrow, 'w' wide — two wide of five. */
@@ -65,6 +64,8 @@ export function encodeItf(data: string, opts: ItfOptions): EncodeResult {
     kind: '1d',
     bars,
     totalModules: x,
+    // 10 modules each side is the GS1 General Specifications minimum, shared by
+    // every 1D symbology here and corroborated by BWIPP's `renlinear` default.
     quiet: horizontalQuiet(10, 10),
     text: digits,
   };
