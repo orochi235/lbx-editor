@@ -122,7 +122,9 @@ function unsupportedReason(protocol: BarcodeProtocol): string {
     case 'RSS':
       return 'GS1 DataBar is not supported yet';
     default:
-      return protocol;
+      // A whole sentence, because the property panel shows this verbatim and a
+      // bare protocol name reads as a label rather than an explanation.
+      return `${protocol} isn't rendered yet`;
   }
 }
 

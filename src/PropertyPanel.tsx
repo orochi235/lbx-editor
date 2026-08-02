@@ -310,7 +310,7 @@ function BarcodeFields({ scene, nodeId, pose, data }: {
       {!result.ok && (
         <p className="prop-error">
           {result.reason === 'unsupported'
-            ? `${data.protocol} isn't rendered yet — this prints as a blank box, so printing is blocked.`
+            ? `${result.detail} — this prints as a blank box, so printing is blocked.`
             : result.detail}
         </p>
       )}
