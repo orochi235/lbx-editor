@@ -4,7 +4,8 @@ import { buildLbx, TAPE, type BarcodeObject, type LabelConfig } from 'bil-lbx';
 import { importLbx } from './lbxImport';
 import { exportLbx } from './lbxExport';
 import { MIN_LABEL_LENGTH_PT } from './autoLength';
-import type { LabelNodeData, LabelPose } from './label';
+import type { LabelBarcodeData, LabelNodeData, LabelPose } from './label';
+import { encodeBarcode, barcodeRequest } from './barcode';
 import { readFixture } from '../test/fixtures/readFixture';
 
 /**
@@ -308,5 +309,95 @@ describe('barcode objects', () => {
         expect(reimported.nodes[0]!.data).toMatchObject({ opaqueBackground });
       }
     });
+  });
+});
+
+/**
+ * The one test in the 2D work that checks our reading of a file we did not
+ * write. `barcode2.lbx` was authored in P-touch Editor against a PT-P710BT, and
+ * every measurement behind `poseBox.ts` came from it — so it is also the only
+ * place those measurements can be wrong in a way our own construction wouldn't
+ * hide.
+ *
+ * What the file actually contains, in object order: three DataMatrix (cellSize
+ * 1.6, 2.4, 1.6 — boxes 25.6, 38.4, 25.6, i.e. 16 cells each for a 12-module
+ * symbol), two PDF417 (pdf417Style width 0.8 and 1.2 — boxes 85.6 and 128.4,
+ * i.e. 107 modules each for a 103-module symbol), and three GS1 DataBar stamped
+ * as protocol `RSS`.
+ */
+describe('barcode2.lbx, authored in P-touch Editor', () => {
+  /** The file's barcodes, narrowed, in the order the file lists them. */
+  async function barcodesOf(file: ArrayBuffer) {
+    const result = await importLbx(file);
+    return result.nodes.flatMap((n) =>
+      n.data.kind === 'barcode' ? [{ ...n, data: n.data as LabelBarcodeData }] : [],
+    );
+  }
+
+  it('reads each 2D barcode at the module size the file states', async () => {
+    const barcodes = await barcodesOf(await readFixture('barcode2.lbx'));
+
+    // Three DataMatrix at cellSize 1.6, 2.4, 1.6 — all 12-module symbols.
+    const dm = barcodes.filter((n) => n.data.protocol === 'DATAMATRIX');
+    expect(dm).toHaveLength(3);
+    expect(dm.map((n) => Number((n.pose.width / 12).toFixed(4)))).toEqual([1.6, 2.4, 1.6]);
+    // Square symbols: the height has to come out the same or the box's quiet
+    // zone was stripped off one axis only.
+    expect(dm.map((n) => Number((n.pose.height / 12).toFixed(4)))).toEqual([1.6, 2.4, 1.6]);
+
+    // Two PDF417 at width 0.8 and 1.2 — both 103 modules across.
+    const pdf = barcodes.filter((n) => n.data.protocol === 'PDF417');
+    expect(pdf).toHaveLength(2);
+    expect(pdf.map((n) => Number((n.pose.width / 103).toFixed(4)))).toEqual([0.8, 1.2]);
+  });
+
+  it('carries the row aspect P-touch recorded', async () => {
+    const barcodes = await barcodesOf(await readFixture('barcode2.lbx'));
+    const pdf = barcodes.find((n) => n.data.protocol === 'PDF417');
+
+    expect(pdf?.data.pdf417?.aspect).toBe(3);
+  });
+
+  it('leaves the DataBar objects unsupported rather than mis-drawn', async () => {
+    // P-touch stamps GS1 DataBar as `RSS`; we don't encode it, and the honest
+    // answer is a refusal. A box left uninset would be the alternative failure:
+    // drawing *something* at a size we invented.
+    const barcodes = await barcodesOf(await readFixture('barcode2.lbx'));
+    const rss = barcodes.filter((n) => n.data.protocol === 'RSS');
+
+    expect(rss).toHaveLength(3);
+    for (const node of rss) {
+      expect(encodeBarcode(barcodeRequest(node.data))).toMatchObject({
+        ok: false,
+        reason: 'unsupported',
+      });
+    }
+  });
+
+  it('round-trips every barcode’s pose back through a real P-touch file', async () => {
+    // Stronger than the synthetic round trip above: import → export → import on
+    // a file we didn't author. Import strips 2 modules of quiet zone per side
+    // and export puts them back, so a disagreement between the two shows up
+    // here as a pose that drifts by four modules per pass.
+    const before = await barcodesOf(await readFixture('barcode2.lbx'));
+    const out = await exportLbx(
+      before.map((n) => ({ id: n.id, data: n.data, pose: n.pose })),
+      '24mm',
+      true,
+      640,
+      [],
+    );
+    const after = await barcodesOf(toArrayBuffer(out));
+
+    expect(after.map((n) => n.data.protocol)).toEqual(before.map((n) => n.data.protocol));
+    for (const [i, node] of after.entries()) {
+      const original = before[i]!;
+      // Close rather than exact: the inset goes out and comes back through
+      // floating-point, so a height lands at 16.800000000000004. The drift this
+      // guards against is four modules — 3.2pt on the smallest symbol here.
+      for (const key of ['x', 'y', 'width', 'height'] as const) {
+        expect(node.pose[key], `${node.data.protocol} ${key}`).toBeCloseTo(original.pose[key], 9);
+      }
+    }
   });
 });
