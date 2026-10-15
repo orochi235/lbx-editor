@@ -25,23 +25,25 @@ import {
 } from './barcode';
 import { substituteFontFamily, toWeaselAlign, toWeaselVerticalAlign } from './fonts';
 import { imageDataUri } from './imageUtils';
+import { gridAligned, type DotGrid } from './dotSnap';
 import { lineEndpoints, type LabelLayer, type LabelNode, type LabelNodeData, type LabelPose } from './label';
 
 /**
- * `colors` carries the two colors the *renderer* picks rather than the
+ * `options` carries the two colors the *renderer* picks rather than the
  * document: a barcode's bars and its opaque background aren't fields the user
  * sets. Colors the document does carry go the other way, through
  * `remapNodeInk` before this is called. The defaults are the print values, so
  * a call site that forgets the argument prints correctly instead of laying a
- * black box over the label.
+ * black box over the label. `grid` is the printer's dot grid, which barcodes
+ * are drawn onto (see `gridAligned`).
  */
 export function drawLabelNode(
   node: LabelNode,
   pose: LabelPose,
-  colors: { ink?: string; paper?: string } = {},
+  options: { ink?: string; paper?: string; grid?: DotGrid } = {},
 ): DrawCommand[] {
-  const ink = colors.ink ?? '#000000';
-  const paper = colors.paper ?? '#ffffff';
+  const ink = options.ink ?? '#000000';
+  const paper = options.paper ?? '#ffffff';
   const { data } = node;
   const { x, y, width, height } = pose;
 
@@ -106,20 +108,22 @@ export function drawLabelNode(
           stroke: { paint: { color: '#999999' }, width: 0.5 },
         }];
       }
+      // Drawn on the dot grid, so every module edge lands between dots.
+      const at = options.grid ? gridAligned(pose, options.grid) : pose;
       const commands: DrawCommand[] = [];
       if (data.opaqueBackground) {
         // Under the bars, so it masks whatever is below this node in the scene
         // and nothing above it. Covers the quiet zone as well as the symbol:
         // artwork in the blank margin is read as a bar. In the print raster
         // this is white, which the luminance threshold turns into no dots.
-        const bg = barcodeBackgroundRect(symbol, pose);
+        const bg = barcodeBackgroundRect(symbol, at);
         commands.push({
           kind: 'path',
           path: rectPath(bg.x, bg.y, bg.width, bg.height),
           fill: { paint: { color: paper } },
         });
       }
-      for (const r of barcodeRects(symbol, pose, data.humanReadable)) {
+      for (const r of barcodeRects(symbol, at, data.humanReadable)) {
         commands.push({
           kind: 'path',
           path: rectPath(r.x, r.y, r.width, r.height),
@@ -128,8 +132,8 @@ export function drawLabelNode(
       }
       if (data.humanReadable && symbol.kind === '1d') {
         commands.push(textCommand(
-          x,
-          y + height - HUMAN_READABLE_HEIGHT_PT,
+          at.x,
+          at.y + height - HUMAN_READABLE_HEIGHT_PT,
           symbol.text,
           {
             fontFamily: substituteFontFamily('Helvetica'),
@@ -151,7 +155,8 @@ export function drawLabelNode(
   }
 }
 
-/** The print path's painter: the document's own colors and the print defaults
- *  for the renderer-picked ones. */
-export const drawPrintNode: SceneViewDrawOne<LabelNodeData, LabelLayer, LabelPose> =
-  (node, pose) => drawLabelNode(node, pose);
+/** The print path's painter: the document's own colors, the print defaults
+ *  for the renderer-picked ones, and the raster's dot grid. */
+export function printDrawOne(grid: DotGrid): SceneViewDrawOne<LabelNodeData, LabelLayer, LabelPose> {
+  return (node, pose) => drawLabelNode(node, pose, { grid });
+}

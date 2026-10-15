@@ -15,6 +15,9 @@ export interface LabelTextData {
   horizontalAlignment: 'LEFT' | 'CENTER' | 'RIGHT' | 'JUSTIFY';
   verticalAlignment: 'TOP' | 'CENTER' | 'BOTTOM';
   color: string;
+  /** Keep the dither off this object (plain threshold). App-only: not in .lbx.
+   *  Unset means the kind's default — see `isDitherProtected`. */
+  noDither?: boolean;
 }
 
 export interface LabelRectData {
@@ -24,6 +27,11 @@ export interface LabelRectData {
   strokeStyle: string;
   strokeWidth: number;
   fillColor: string | null;
+  /** Keep the dither off this object (plain threshold). App-only: not in .lbx.
+   *  Unset means the kind's default — see `isDitherProtected`. */
+  noDither?: boolean;
+  /** Draw the stroke a whole number of printer dots wide. App-only. */
+  snapStroke?: boolean;
 }
 
 export interface LabelLineData {
@@ -32,6 +40,11 @@ export interface LabelLineData {
   strokeWidth: number;
   /** True: the line runs top-left → bottom-right of its pose box; false: bottom-left → top-right. */
   descending: boolean;
+  /** Keep the dither off this object (plain threshold). App-only: not in .lbx.
+   *  Unset means the kind's default — see `isDitherProtected`. */
+  noDither?: boolean;
+  /** Draw the stroke a whole number of printer dots wide. App-only. */
+  snapStroke?: boolean;
 }
 
 export interface LabelImageData {
@@ -40,6 +53,9 @@ export interface LabelImageData {
   src: string;
   originalName: string;
   mimeType: string;
+  /** Keep the dither off this object (plain threshold). App-only: not in .lbx.
+   *  Unset means the kind's default — see `isDitherProtected`. */
+  noDither?: boolean;
 }
 
 /**

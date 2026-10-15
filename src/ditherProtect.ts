@@ -18,6 +18,7 @@
 import type { PixelRect } from 'obwat';
 import { encodeBarcode, barcodeRequest, barcodeBackgroundRect } from './barcode';
 import type { LabelNodeData, LabelPose } from './label';
+import { isDitherProtected } from './dotSnap';
 
 interface ProtectableNode {
   pose: LabelPose;
@@ -52,14 +53,8 @@ export function protectedRegions(
   const scale = geometry.dpi / 72;
   const regions: PixelRect[] = [];
   for (const node of nodes) {
-    if (node.data.kind !== 'barcode') continue;
-    const symbol = encodeBarcode(barcodeRequest(node.data));
-    if (!symbol.ok) continue;
-
-    // The same rectangle the barcode *would* draw its background over — the
-    // region is protected either way, since the bars need plain threshold
-    // whether or not anything was masked under them.
-    const rect = barcodeBackgroundRect(symbol, node.pose);
+    const rect = protectedRect(node);
+    if (!rect) continue;
     regions.push({
       x: rect.x * scale,
       y: (rect.y - geometry.band.y) * scale,
@@ -68,4 +63,24 @@ export function protectedRegions(
     });
   }
   return regions;
+}
+
+function protectedRect(node: ProtectableNode): LabelPose | null {
+  const { data, pose } = node;
+  if (data.kind === 'barcode') {
+    const symbol = encodeBarcode(barcodeRequest(data));
+    // The same rectangle the barcode *would* draw its background over — the
+    // region is protected either way, since the bars need plain threshold
+    // whether or not anything was masked under them.
+    return symbol.ok ? barcodeBackgroundRect(symbol, pose) : null;
+  }
+  if (!isDitherProtected(data)) return null;
+  // A stroke is centered on the pose edge, so half of it lies outside.
+  const half = data.kind === 'rect' || data.kind === 'line' ? data.strokeWidth / 2 : 0;
+  return {
+    x: pose.x - half,
+    y: pose.y - half,
+    width: pose.width + 2 * half,
+    height: pose.height + 2 * half,
+  };
 }

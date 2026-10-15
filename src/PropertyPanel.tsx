@@ -23,6 +23,9 @@ import { registeredFamilies, installedFamilies, substituteFontFamily } from './f
 import { KIND_NAMES } from './nodeSummary';
 import { FieldPair, NumberField } from './NumberField';
 import { PoseFields } from './PoseFields';
+import { PrintOptions, storedStrokeWidth } from './PrintOptions';
+import { snapNodePose } from './dotSnap';
+import { PRINT_DPI } from './printDpi';
 import './propertyPanel.css';
 
 interface PropertyPanelProps {
@@ -80,6 +83,7 @@ export function PropertyPanel({ scene, selection }: PropertyPanelProps) {
       {node.data.kind === 'barcode' && (
         <BarcodeFields scene={scene} nodeId={nodeId} pose={node.pose} data={node.data} />
       )}
+      <PrintOptions scene={scene} nodeId={nodeId} data={node.data} />
     </div>
   );
 }
@@ -168,7 +172,7 @@ function RectFields({ scene, nodeId, data }: {
         Rounded
       </label>
       <FieldPair>
-        <NumberField label="Stroke" unit="pt" decimals={2} value={data.strokeWidth} onChange={(v) => update({ strokeWidth: v })} />
+        <NumberField label="Stroke" unit="pt" decimals={2} value={data.strokeWidth} onChange={(v) => update({ strokeWidth: storedStrokeWidth(data, v) })} />
         {data.rounded && (
           <NumberField label="Radius" unit="pt" value={data.roundness} onChange={(v) => update({ roundness: v })} />
         )}
@@ -188,7 +192,7 @@ function LineFields({ scene, nodeId, data }: {
 
   return (
     <div>
-      <NumberField label="Stroke" unit="pt" decimals={2} value={data.strokeWidth} onChange={(v) => update({ strokeWidth: v })} />
+      <NumberField label="Stroke" unit="pt" decimals={2} value={data.strokeWidth} onChange={(v) => update({ strokeWidth: storedStrokeWidth(data, v) })} />
       <label className="prop-field">
         Direction
         <select
@@ -258,13 +262,21 @@ function BarcodeFields({ scene, nodeId, pose, data }: {
   pose: LabelPose;
   data: Extract<LabelNodeData, { kind: 'barcode' }>;
 }) {
+  // A payload or option change can change the module count, so the pose
+  // re-snaps to whole dots per module alongside it, as one undo step.
+  const commit = useCallback((next: typeof data) => {
+    scene.batch('Edit barcode', () => {
+      scene.update(nodeId, { data: next });
+      scene.setPose(nodeId, snapNodePose(next, pose, PRINT_DPI));
+    });
+  }, [scene, nodeId, pose]);
   const update = useCallback((partial: Partial<typeof data>) => {
-    scene.update(nodeId, { data: { ...data, ...partial } });
-  }, [scene, nodeId, data]);
+    commit({ ...data, ...partial });
+  }, [commit, data]);
 
   const updateQr = useCallback((partial: NonNullable<typeof data.qrCode>) => {
-    scene.update(nodeId, { data: { ...data, qrCode: { ...data.qrCode, ...partial } } });
-  }, [scene, nodeId, data]);
+    commit({ ...data, qrCode: { ...data.qrCode, ...partial } });
+  }, [commit, data]);
 
   // The same encode the canvas runs, so what the panel reports is exactly what
   // got drawn — including the check digit the encoder appended.

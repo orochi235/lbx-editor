@@ -11,6 +11,8 @@ import {
 } from './arrange';
 import { AlignIcon, MatchIcon } from './arrangeIcons';
 import { nodeSummary } from './nodeSummary';
+import { snapNodePose } from './dotSnap';
+import { PRINT_DPI } from './printDpi';
 import './arrangePanel.css';
 
 type Reference = 'key' | 'selection' | 'label';
@@ -63,7 +65,10 @@ export function ArrangePanel({ scene, selection, labelRect }: ArrangePanelProps)
 
   const apply = (label: string, next: Posed[]) => {
     scene.batch(label, () => {
-      for (const { id, pose } of next) scene.setPose(id as NodeId, pose);
+      for (const { id, pose } of next) {
+        const node = scene.get(id as NodeId);
+        if (node) scene.setPose(id as NodeId, snapNodePose(node.data, pose, PRINT_DPI));
+      }
     });
   };
 

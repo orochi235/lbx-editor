@@ -1,6 +1,8 @@
 import type { NodeId, Scene } from '@weasel-js/core';
 import type { LabelLayer, LabelNodeData, LabelPose } from './label';
 import { FieldPair, NumberField } from './NumberField';
+import { snapNodePose } from './dotSnap';
+import { PRINT_DPI } from './printDpi';
 
 type LabelScene = Scene<LabelNodeData, LabelLayer, LabelPose>;
 
@@ -12,7 +14,7 @@ type LabelScene = Scene<LabelNodeData, LabelLayer, LabelPose>;
 export function PoseFields({ scene, ids }: { scene: LabelScene; ids: readonly NodeId[] }) {
   const poses = ids.flatMap((id) => {
     const node = scene.get(id);
-    return node ? [{ id, pose: node.pose }] : [];
+    return node ? [{ id, pose: node.pose, data: node.data }] : [];
   });
   const shared = (key: keyof LabelPose): number | null => {
     const first = poses[0]?.pose[key];
@@ -20,7 +22,9 @@ export function PoseFields({ scene, ids }: { scene: LabelScene; ids: readonly No
   };
   const set = (key: keyof LabelPose) => (v: number) => {
     scene.batch(`Set ${key}`, () => {
-      for (const { id, pose } of poses) scene.setPose(id, { ...pose, [key]: v });
+      for (const { id, pose, data } of poses) {
+        scene.setPose(id, snapNodePose(data, { ...pose, [key]: v }, PRINT_DPI));
+      }
     });
   };
 

@@ -61,27 +61,44 @@ describe('protectedRegions', () => {
       .toEqual([]);
   });
 
-  it('ignores every other kind of object', () => {
-    // Only barcodes for now — the mechanism takes any rectangle, so adding
-    // hairlines or small type later is a matter of what gets collected here.
-    const others: LabelNodeData[] = [
-      { kind: 'rect', rounded: false, roundness: 0, strokeStyle: '#000', strokeWidth: 0.5, fillColor: null },
-      { kind: 'line', strokeStyle: '#000', strokeWidth: 0.5, descending: true },
-      { kind: 'image', src: '', originalName: 'photo.png', mimeType: 'image/png' },
-      {
-        kind: 'text',
-        text: 'Shelf A',
-        fontFamily: 'Inter',
-        fontSize: 10,
-        fontWeight: 400,
-        italic: false,
-        horizontalAlignment: 'LEFT',
-        verticalAlignment: 'TOP',
-        color: '#000',
-      },
-    ];
+  const text: LabelNodeData = {
+    kind: 'text',
+    text: 'Shelf A',
+    fontFamily: 'Inter',
+    fontSize: 10,
+    fontWeight: 400,
+    italic: false,
+    horizontalAlignment: 'LEFT',
+    verticalAlignment: 'TOP',
+    color: '#000',
+  };
+  const image: LabelNodeData = { kind: 'image', src: '', originalName: 'photo.png', mimeType: 'image/png' };
 
-    expect(protectedRegions(others.map((d) => node(d)), GEOMETRY)).toEqual([]);
+  it('leaves images to the dither by default, since tone is what it is for', () => {
+    expect(protectedRegions([node(image)], GEOMETRY)).toEqual([]);
+  });
+
+  it('protects text by default, as its pose box', () => {
+    expect(protectedRegions([node(text)], GEOMETRY)).toEqual([{
+      x: pose.x * SCALE,
+      y: (pose.y - GEOMETRY.band.y) * SCALE,
+      width: pose.width * SCALE,
+      height: pose.height * SCALE,
+    }]);
+  });
+
+  it('widens a stroked shape by half its stroke, which lies outside the pose', () => {
+    const rect: LabelNodeData = {
+      kind: 'rect', rounded: false, roundness: 0, strokeStyle: '#000', strokeWidth: 2, fillColor: null,
+    };
+    const [region] = protectedRegions([node(rect)], GEOMETRY);
+    expect(region!.x).toBeCloseTo((pose.x - 1) * SCALE);
+    expect(region!.width).toBeCloseTo((pose.width + 2) * SCALE);
+  });
+
+  it('follows the per-object flag either way', () => {
+    expect(protectedRegions([node({ ...text, noDither: false })], GEOMETRY)).toEqual([]);
+    expect(protectedRegions([node({ ...image, noDither: true })], GEOMETRY)).toHaveLength(1);
   });
 
   it('returns one region per barcode', () => {

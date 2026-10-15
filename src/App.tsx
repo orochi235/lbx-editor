@@ -25,6 +25,7 @@ import {
   type ToolsApi,
   type InsertNodeFactory,
   type CanvasHelpers,
+  type BoundsConstraint,
   defineTool,
 } from '@weasel-js/core';
 // Subpath imports (not the `@weasel-js/ui` barrel) so tsc/vite only pull in
@@ -49,7 +50,7 @@ import { fitLengthToContent } from './autoLength';
 import { migratePersistedScene } from './docMigrate';
 import { useLiveLength } from './useLiveLength';
 import { PALETTE_GROUP_ORDER, TOOL_GROUPS, inGroup } from './toolGroups';
-import { drawLabelNode, drawPrintNode } from './drawLabelNode';
+import { drawLabelNode, printDrawOne } from './drawLabelNode';
 import {
   encodeBarcode,
   barcodeRequest,
@@ -84,6 +85,8 @@ import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
 import { ArrangePanel } from './ArrangePanel';
 import { cutGuides, printableMarginGuides } from './guides';
+import { snapNodePose } from './dotSnap';
+import { PRINT_DPI } from './printDpi';
 import { fileToBase64, guessMimeType, getImageDimensions } from './imageUtils';
 import { buildImageInsert, type PendingImage } from './imageInsert';
 import { BarcodeIcon } from './BarcodeIcon';
@@ -603,7 +606,8 @@ export function App() {
       const plan = labelRenderPlan(geometry);
       canvas.width = Math.max(1, Math.round(plan.sourceRect.width * plan.scale.x));
       canvas.height = Math.max(1, Math.round(plan.sourceRect.height * plan.scale.y));
-      const rgba = renderLabelToRgba({ scene, drawOne: drawPrintNode, gl, ...geometry });
+      const drawOne = printDrawOne({ dpi: media.dpi, originY: printableBandPt(geometry).y });
+      const rgba = renderLabelToRgba({ scene, drawOne, gl, ...geometry });
       const mask = ditherToMask(rgba, {
         algorithm: ditherAlgorithm,
         protect: protectedRegions(scene.nodes.values(), {
@@ -821,14 +825,8 @@ export function App() {
       } satisfies LabelNodeData,
     }),
     image: (b) => buildImageInsert(pendingImageRef.current, b),
-    barcode: (b) => ({
-      pose: {
-        x: b.x,
-        y: b.y,
-        width: Math.max(b.width, 40),
-        height: Math.max(b.height, 16),
-      },
-      data: {
+    barcode: (b) => {
+      const data = {
         kind: 'barcode',
         protocol: 'CODE128',
         data: '12345678',
@@ -839,9 +837,21 @@ export function App() {
         checkDigit: false,
         zeroFill: false,
         opaqueBackground: true,
-      } satisfies LabelNodeData,
-    }),
+      } satisfies LabelNodeData;
+      const pose = { x: b.x, y: b.y, width: Math.max(b.width, 40), height: Math.max(b.height, 16) };
+      return { pose: snapNodePose(data, pose, PRINT_DPI), data };
+    },
   }), []);
+
+  // Barcodes resize in whole printer dots per module, live during the drag.
+  const resizeBehaviors = useMemo<BoundsConstraint<LabelPose>[]>(() => [{
+    onMove: (ctx, proposed) => {
+      if (ctx.draggedIds.length !== 1) return;
+      const node = scene.get(asNodeId(ctx.draggedIds[0]!));
+      if (node?.data.kind !== 'barcode') return;
+      return { pose: snapNodePose(node.data, proposed.pose, PRINT_DPI, proposed.anchor) };
+    },
+  }], [scene]);
 
   const toolsRef = useRef(tools);
   toolsRef.current = tools;
@@ -951,7 +961,7 @@ export function App() {
           kind: 'leaf',
           id: asNodeId(node.id),
           layer: 'objects' as LabelLayer,
-          pose: node.pose,
+          pose: snapNodePose(node.data, node.pose, PRINT_DPI),
           data: node.data,
         });
       }
@@ -1134,7 +1144,8 @@ export function App() {
         printableDots: media.printableDots,
         dpi: media.dpi,
       };
-      const rgba = renderLabelToRgba({ scene, drawOne: drawPrintNode, ...geometry });
+      const drawOne = printDrawOne({ dpi: media.dpi, originY: printableBandPt(geometry).y });
+      const rgba = renderLabelToRgba({ scene, drawOne, ...geometry });
       const raster = rgbaToRaster(rgba, media, {
         algorithm: ditherAlgorithm,
         protect: protectedRegions(scene.nodes.values(), {
@@ -1195,7 +1206,7 @@ export function App() {
   // rewrites colors the *document* carries — a text's color, a rect's fill —
   // which it can only do because they're on the node. A barcode has none: its
   // bars and its background are picked by the renderer, so they come through
-  // the `colors` argument instead. Print takes neither path: it keeps the raw
+  // the `options` argument instead. Print takes neither path: it keeps the raw
   // node data (a white-ink remap would erase the label under the <128
   // luminance threshold) and takes the parameter defaults.
   const drawScreenNode = useCallback((node: LabelNode, pose: LabelPose) => {
@@ -1203,9 +1214,9 @@ export function App() {
     return drawLabelNode(
       data === node.data ? node : { ...node, data },
       pose,
-      { ink: inkCss, paper: tapeCss },
+      { ink: inkCss, paper: tapeCss, grid: { dpi: PRINT_DPI, originY: printableBand.y } },
     );
-  }, [inkCss, tapeCss]);
+  }, [inkCss, tapeCss, printableBand]);
 
   // --- Printable-bounds overlay ---
   // Content outside the printable area won't print: print crops at the label
@@ -1333,7 +1344,7 @@ export function App() {
                     tools={toolsPatch}
                     insertNodeFactories={insertNodeFactories}
                     onToolsCreated={setTools}
-                    selectTool={{ rotate: false }}
+                    selectTool={{ rotate: false, resize: { behaviors: resizeBehaviors } }}
                     // Truthy `viewport` registers the hand (pan) tool so it
                     // appears in the palette. Wheel pan + zoom are on by default
                     // regardless. `recenter` routes Cmd-0 through the same

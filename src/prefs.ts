@@ -10,7 +10,7 @@ import type { DitherAlgorithm } from 'obwat';
 /** Display names for obwat's dither algorithms — shared by the Printer
  *  panel's selector and the preferences modal. */
 export const DITHER_LABELS: Record<DitherAlgorithm, string> = {
-  'threshold': 'Threshold',
+  'threshold': 'None (threshold)',
   'floyd-steinberg': 'Floyd–Steinberg',
   'atkinson': 'Atkinson',
   'bayer': 'Bayer',
