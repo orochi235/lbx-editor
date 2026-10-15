@@ -5,32 +5,46 @@ Web-based visual editor for Brother P-touch label files (.lbx).
 ## Architecture
 
 Standalone Vite + React app consuming:
-- `@weasel-js/core`, `/ui`, `/theme` (from npm, `^0.7.2`) — 2D scene graph,
-  canvas rendering, tools, and the UI kit. 0.7.0 is what the gesture layer live
-  auto-length rides (`getGestureBounds` and its subscribe/version pair); the
-  floor is **0.7.2** because `^0.7.0` would otherwise resolve to the deprecated
-  0.7.1, which shipped from a stale `dist/` and whose `VERSION` constant
-  therefore reports `0.7.0`. 0.7 also moved `defineTool` off the barrel to
-  `@weasel-js/core/routing`, and derives text antialiasing from `fwidth()`
-  rather than a constant band — that last one moves glyph-edge pixels in the
-  print render, though measured against a 24mm label only 3 dots of ~6100
-  crossed the ink threshold.
+- `@weasel-js/core`, `/ui`, `/theme`, `/prefs` (from npm, pinned at exactly
+  **1.10.1**, as are the exact-version peers `@weasel-js/font` and
+  `/animator` that core and ui require). Pinned rather than ranged because the
+  kit's peers are exact: a caret range lets one package drift ahead of the
+  others it must match.
 
-  0.7.1 flipped hit-picking to `picking: 'shape'` by default, so clicks land on
-  the ink a painter lays down rather than on its pose rect. **This app is
-  unaffected**, and the reason is worth knowing before anyone "fixes" it: every
+  Things 1.x changed that this app depends on:
+  - **A bare `<SceneCanvas>` only renders.** Picking, moving, resizing, undo
+    and the zoom keys come from `features` presets; this app names `view`,
+    `pick`, `move`, `resize` and `edit`. Leave out `rotate` (labels don't
+    rotate) and `ingest`, whose drop handling would compete with the app's own
+    `onDrop`. A canvas missing a preset type-checks fine and silently stops
+    responding, so check a preset change in the browser.
+  - **`tokens.css` defaults to dark mode and sets no font.** `index.html` pins
+    `data-wzl-mode="light"` because the panels' own CSS is light, and
+    `main.tsx` imports `@weasel-js/theme/fonts.css` for the kit faces.
+  - **Text color is `textCommand`'s 8th argument** (`{ fill: { paint } }`),
+    not a `TextStyle` field. A color left in the style is ignored and the text
+    renders black, with no type error if the object is built loosely.
+  - **`drawOne`'s 4th argument is the kit's `NodePaintCtx`**, so the
+    renderer-picked barcode colors can't ride there: `drawLabelNode(node,
+    pose, colors)` takes them directly, and the print path uses
+    `drawPrintNode`, which supplies the defaults.
+  - **Text sits about one printer dot off where 0.7 put it**, from the kit's
+    reworked glyph metrics. Measured on three P-touch fixtures: every glyph
+    edge moved by a dot while images, rectangles and borders stayed
+    pixel-identical. Screen and print moved together.
+  - `renderSceneToPixels` releases the WebGL context of a canvas it created,
+    so a print raster can't be read back from that canvas afterwards (the
+    verify skill's capture) — hook `readPixels` instead.
+
+  Hit-picking defaults to the painter's ink (`picking: 'shape'`), but every
   node here draws through `layers.scene.drawOne` rather than a registered
-  painter with a `silhouette`, and the kit keeps the pose-rect answer for
-  painters that declare none. Verified in the browser — clicking the blank
-  middle of an unfilled rectangle still selects it. `geometry={{ picking:
-  'pose' }}` on `SceneCanvas` is the explicit opt-out if that ever changes.
+  painter with a `silhouette`, so the kit keeps the pose-rect answer — clicking
+  the blank middle of an unfilled rectangle still selects it (verified on
+  0.7.1). `geometry={{ picking: 'pose' }}` on `SceneCanvas` is the explicit
+  opt-out if that ever changes.
 
-  0.7.1 also caches text layout per resolved run (200 wrapped paragraphs went
-  31.8 → 0.06 ms/frame) and notifies `subscribeGlyphReady` when `registerFont`
-  completes, so a custom font loaded from the sidebar repaints without waiting
-  for an unrelated redraw. One contract came with it: a painter's returned
-  command array belongs to the painter, so copy before appending.
-  `drawLabelNode` allocates every array it returns, so it was already fine.
+  A painter's returned command array belongs to the painter, so copy before
+  appending; `drawLabelNode` allocates every array it returns.
 - `bil-lbx` (from npm, `^0.3.1`) — .lbx serialization/parsing. 0.2.2 was the
   floor for the barcode background round-trip, which reads
   `LabelConfig.generator`. 0.3.0 added the 2D style elements: DataMatrix and
@@ -119,10 +133,11 @@ Key weasel APIs used:
 - `SceneCanvas` with `layers.scene.drawOne` for custom rendering
 - `useScene` for the document model
 - `useSelection` for selection state
-- `defaultTools={['select']}` for the kit's own select tool; every other
-  palette tool is built from a public factory (`useHandTool`, `useLineTool`,
-  `useRectTool`, `useTextTool`, `useImageTool`) and registered through the
-  `tools` patch — see "Tool palette" below for why
+- `features` presets for canvas behavior; `pick` mounts the kit's select
+  tool, and every other palette tool is built from a public factory
+  (`useHandTool`, `useLineTool`, `useRectTool`, `useTextTool`,
+  `useImageTool`) and registered through the `tools` patch — see "Tool
+  palette" below for why
 
 ## Current state
 
@@ -149,10 +164,10 @@ Key weasel APIs used:
   palette renders in *registration* order, and a built-in's slot is the kit's
   own canonical one that `defaultTools` order won't move. So every tool whose
   position matters is registered by the `tools` patch, whose key order is the
-  palette's layout, and `defaultTools` is down to `['select']`. Dropping
-  `'hand'` from it matters: `viewport` registers hand only when the patch
-  hasn't, and leaving both in made the patch entry a *replacement*, which warns
-  on every render.
+  palette's layout, and `defaultTools` is gone — `pick` supplies select.
+  Hand must stay out of any built-in list: `view` registers it only when the
+  patch hasn't, and registering it twice makes the patch entry a
+  *replacement*, which warns on every render.
 - Import/export .lbx files works end-to-end
 - Property panel for editing text, rect, and pose properties
 - Canvas previews the loaded cassette's tape/ink colors from live printer
@@ -285,7 +300,7 @@ Key weasel APIs used:
   While a drag is in flight the label follows the gesture rather than the
   committed scene — weasel doesn't commit a drag until pointer-up, so
   `src/useLiveLength.ts` subscribes to its gesture layer
-  (`subscribeGestures`/`getGestureVersion`, weasel 0.7) and refits on each
+  (`subscribeGestures`/`getGestureVersion`) and refits on each
   dispatcher pump. Covers move, resize, rotate and create-drag. The fit is
   still a per-node union over `getEffectiveBounds`, which reports the proposed
   pose for nodes under the gesture and the committed pose for the rest —

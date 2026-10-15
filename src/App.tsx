@@ -25,9 +25,8 @@ import {
   type ToolsApi,
   type InsertNodeFactory,
   type CanvasHelpers,
+  defineTool,
 } from '@weasel-js/core';
-// Tool routing moved off the barrel in weasel 0.7.
-import { defineTool } from '@weasel-js/core/routing';
 // Subpath imports (not the `@weasel-js/ui` barrel) so tsc/vite only pull in
 // the modules we use, not sibling components like DataGrid that trip a
 // duplicate-@types/react mismatch under this app's slightly newer React types.
@@ -50,7 +49,7 @@ import { fitLengthToContent } from './autoLength';
 import { migratePersistedScene } from './docMigrate';
 import { useLiveLength } from './useLiveLength';
 import { PALETTE_GROUP_ORDER, TOOL_GROUPS, inGroup } from './toolGroups';
-import { drawLabelNode } from './drawLabelNode';
+import { drawLabelNode, drawPrintNode } from './drawLabelNode';
 import {
   encodeBarcode,
   barcodeRequest,
@@ -364,7 +363,7 @@ export function App() {
     [applyCenteredView, canvasSize],
   );
 
-  const selection = useSelection();
+  const selection = useSelection({ mode: 'multi' });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- Session persistence ---
@@ -594,7 +593,7 @@ export function App() {
       const plan = labelRenderPlan(geometry);
       canvas.width = Math.max(1, Math.round(plan.sourceRect.width * plan.scale.x));
       canvas.height = Math.max(1, Math.round(plan.sourceRect.height * plan.scale.y));
-      const rgba = renderLabelToRgba({ scene, drawOne: drawLabelNode, gl, ...geometry });
+      const rgba = renderLabelToRgba({ scene, drawOne: drawPrintNode, gl, ...geometry });
       const mask = ditherToMask(rgba, {
         algorithm: ditherAlgorithm,
         protect: protectedRegions(scene.nodes.values(), {
@@ -661,12 +660,12 @@ export function App() {
         {
           kind: 'path',
           path: shadow,
-          fill: { fill: 'solid', color: '#000000' },
+          fill: { paint: { color: '#000000' } },
         },
         {
           kind: 'path',
           path: rectPath(0, 0, displayLength, paperHeight),
-          fill: { fill: 'solid', color: tapeCss, opacity: tapeClear ? 0.45 : 1 },
+          fill: { paint: { color: tapeCss, opacity: tapeClear ? 0.45 : 1 } },
           // A dark tape face would vanish against its black brick — lighten
           // the border so the tape edge stays readable.
           stroke: { paint: { color: printsAsInk(tapeCss) ? '#888888' : '#000000' }, width: strokeW },
@@ -738,7 +737,7 @@ export function App() {
   // `insertNodeFactories.barcode` entry below mints the node. The kit
   // explicitly supports factories for kinds it doesn't ship.
   const barcodeTool = useMemo(
-    () => defineTool<null>({
+    () => defineTool({
       id: 'barcode',
       capabilities: ['creates-shapes'],
       cursor: 'crosshair',
@@ -1128,7 +1127,7 @@ export function App() {
         printableDots: media.printableDots,
         dpi: media.dpi,
       };
-      const rgba = renderLabelToRgba({ scene, drawOne: drawLabelNode, ...geometry });
+      const rgba = renderLabelToRgba({ scene, drawOne: drawPrintNode, ...geometry });
       const raster = rgbaToRaster(rgba, media, {
         algorithm: ditherAlgorithm,
         protect: protectedRegions(scene.nodes.values(), {
@@ -1192,12 +1191,11 @@ export function App() {
   // the `colors` argument instead. Print takes neither path: it keeps the raw
   // node data (a white-ink remap would erase the label under the <128
   // luminance threshold) and takes the parameter defaults.
-  const drawScreenNode = useCallback((node: LabelNode, pose: LabelPose, view: View) => {
+  const drawScreenNode = useCallback((node: LabelNode, pose: LabelPose) => {
     const data = remapNodeInk(node.data, inkCss);
     return drawLabelNode(
       data === node.data ? node : { ...node, data },
       pose,
-      view,
       { ink: inkCss, paper: tapeCss },
     );
   }, [inkCss, tapeCss]);
@@ -1320,15 +1318,11 @@ export function App() {
                     height={canvasSize.height}
                     scene={scene}
                     selection={selection}
-                    selectionMode="multi"
-                    // Only the tool the kit must own — select is its internal
-                    // default. Every other palette tool is registered by
-                    // `tools` below, where this app controls both their order
-                    // and their grouping. Notably hand: `viewport` registers it
-                    // only when the patch hasn't, so listing it here as well
-                    // would turn the patch entry into a warning-per-render
-                    // replacement.
-                    defaultTools={['select']}
+                    // `pick` mounts the select tool. Every other palette tool
+                    // is registered by `tools` below, where this app controls
+                    // both their order and their grouping. Notably hand:
+                    // `view` registers it only when the patch hasn't.
+                    features={['view', 'pick', 'move', 'resize', 'edit']}
                     tools={toolsPatch}
                     insertNodeFactories={insertNodeFactories}
                     onToolsCreated={setTools}
@@ -1352,7 +1346,7 @@ export function App() {
                     isOpen
                     anchorRect={diagnosticAnchor}
                     placement="top"
-                    tone={activeDiagnostic.severity === 'error' ? 'danger' : 'warning'}
+                    stance={activeDiagnostic.severity === 'error' ? 'danger' : 'important'}
                     title={activeDiagnostic.title}
                     // Dismissal is ours: `isOpen` stays true while the finding
                     // stands, and `onDismiss` — the × or Escape, never the

@@ -14,7 +14,7 @@ import {
   rectPath,
   textCommand,
   type DrawCommand,
-  type View,
+  type SceneViewDrawOne,
 } from '@weasel-js/core';
 import {
   encodeBarcode,
@@ -25,7 +25,7 @@ import {
 } from './barcode';
 import { substituteFontFamily, toWeaselAlign, toWeaselVerticalAlign } from './fonts';
 import { imageDataUri } from './imageUtils';
-import { lineEndpoints, type LabelNode, type LabelPose } from './label';
+import { lineEndpoints, type LabelLayer, type LabelNode, type LabelNodeData, type LabelPose } from './label';
 
 /**
  * `colors` carries the two colors the *renderer* picks rather than the
@@ -38,7 +38,6 @@ import { lineEndpoints, type LabelNode, type LabelPose } from './label';
 export function drawLabelNode(
   node: LabelNode,
   pose: LabelPose,
-  _view: View,
   colors: { ink?: string; paper?: string } = {},
 ): DrawCommand[] {
   const ink = colors.ink ?? '#000000';
@@ -58,11 +57,11 @@ export function drawLabelNode(
           fontWeight: data.fontWeight,
           fontStyle: data.italic ? 'italic' : 'normal',
           align: toWeaselAlign(data.horizontalAlignment),
-          fill: { fill: 'solid', color: data.color },
         },
         width,   // maxWidth: word-wrap at the box
         height,  // box height for verticalAlign
         toWeaselVerticalAlign(data.verticalAlignment),
+        { fill: { paint: { color: data.color } } },
       )];
     }
     case 'rect':
@@ -70,7 +69,7 @@ export function drawLabelNode(
         kind: 'path',
         path: rectPath(x, y, width, height),
         stroke: { paint: { color: data.strokeStyle }, width: data.strokeWidth },
-        ...(data.fillColor ? { fill: { fill: 'solid', color: data.fillColor } } : {}),
+        ...(data.fillColor ? { fill: { paint: { color: data.fillColor } } } : {}),
       }];
     case 'line': {
       const [p, q] = lineEndpoints({ x, y, width, height }, data.descending);
@@ -91,7 +90,7 @@ export function drawLabelNode(
       return [{
         kind: 'path',
         path: rectPath(x, y, width, height),
-        fill: { fill: 'solid', color: '#f0f0f0' },
+        fill: { paint: { color: '#f0f0f0' } },
         stroke: { paint: { color: '#cccccc' }, width: 0.5 },
       }];
     }
@@ -103,7 +102,7 @@ export function drawLabelNode(
         return [{
           kind: 'path',
           path: rectPath(x, y, width, height),
-          fill: { fill: 'solid', color: '#f6f6f6' },
+          fill: { paint: { color: '#f6f6f6' } },
           stroke: { paint: { color: '#999999' }, width: 0.5 },
         }];
       }
@@ -117,14 +116,14 @@ export function drawLabelNode(
         commands.push({
           kind: 'path',
           path: rectPath(bg.x, bg.y, bg.width, bg.height),
-          fill: { fill: 'solid', color: paper },
+          fill: { paint: { color: paper } },
         });
       }
       for (const r of barcodeRects(symbol, pose, data.humanReadable)) {
         commands.push({
           kind: 'path',
           path: rectPath(r.x, r.y, r.width, r.height),
-          fill: { fill: 'solid', color: ink },
+          fill: { paint: { color: ink } },
         });
       }
       if (data.humanReadable && symbol.kind === '1d') {
@@ -138,11 +137,11 @@ export function drawLabelNode(
             fontWeight: 400,
             fontStyle: 'normal',
             align: toWeaselAlign(data.humanReadableAlignment),
-            fill: { fill: 'solid', color: ink },
           },
           width,
           HUMAN_READABLE_HEIGHT_PT,
           toWeaselVerticalAlign('BOTTOM'),
+          { fill: { paint: { color: ink } } },
         ));
       }
       return commands;
@@ -151,3 +150,8 @@ export function drawLabelNode(
       return [];
   }
 }
+
+/** The print path's painter: the document's own colors and the print defaults
+ *  for the renderer-picked ones. */
+export const drawPrintNode: SceneViewDrawOne<LabelNodeData, LabelLayer, LabelPose> =
+  (node, pose) => drawLabelNode(node, pose);

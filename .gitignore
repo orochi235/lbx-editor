@@ -8,3 +8,6 @@ public/fonts/local/
 # Editor and OS cruft
 .DS_Store
 .idea/
+
+# Session worktrees
+.claude/worktrees/

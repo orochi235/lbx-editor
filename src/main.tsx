@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import '@weasel-js/theme/tokens.css';
+import '@weasel-js/theme/fonts.css';
 // The published kit ships its component CSS as a file rather than injecting it
 // from the bundle — building from weasel's source used to hide this, because
 // Vite compiled the CSS modules along with everything else. Tokens first: the

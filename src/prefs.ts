@@ -4,7 +4,7 @@
  * an existing setter (and its localStorage persistence) in App.tsx, so
  * changes apply live and both surfaces stay in sync.
  */
-import type { PrefGroup } from '@weasel-js/ui/components/Prefs';
+import type { PrefGroup } from '@weasel-js/prefs';
 import type { DitherAlgorithm } from 'obwat';
 
 /** Display names for obwat's dither algorithms — shared by the Printer

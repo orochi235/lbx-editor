@@ -36,11 +36,14 @@ Before clicking Print, in `evaluate_script`:
 
 ```js
 localStorage.setItem('lbx-editor.hasUsbGrant', '1');   // forces the "asleep" path, no USB chooser
-const orig = OffscreenCanvas.prototype.getContext;
-window.__glCanvases = [];
-OffscreenCanvas.prototype.getContext = function (t, ...a) {
-  if (t === 'webgl2') window.__glCanvases.push(this);
-  return orig.call(this, t, ...a);
+// weasel 1.x releases the WebGL context of a canvas it created, so the
+// raster can't be read back from the canvas afterwards — catch it in flight.
+window.__reads = [];
+const rp = WebGL2RenderingContext.prototype.readPixels;
+WebGL2RenderingContext.prototype.readPixels = function (x, y, w, h, f, t, buf, ...r) {
+  const out = rp.call(this, x, y, w, h, f, t, buf, ...r);
+  if (buf?.length === w * h * 4) window.__reads.push({ w, h, data: buf.slice() });
+  return out;
 };
 ```
 
@@ -66,12 +69,11 @@ Outcomes, in pipeline order:
 - `Print blocked …` → `printPreflight` refused the document (undersized
   barcode, tape mismatch). Nothing rendered; fix the label, not the code.
 
-Capture the actual print pixels (weasel renders with
-`preserveDrawingBuffer: true`, so the buffer survives dispose):
+Capture the actual print pixels:
 
 ```js
-const c = window.__glCanvases.at(-1);          // print render, e.g. 360×128
-const png = await c.convertToBlob({type: 'image/png'});  // → FileReader → dataURL
+const { w, h, data } = window.__reads.at(-1);  // print render, e.g. 360×128
+// rows are bottom-up (GL order); flip before drawing into an ImageData
 ```
 
 Expected dims: width = round(labelLengthPt × dpi/72), height =

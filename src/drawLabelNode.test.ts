@@ -6,7 +6,7 @@
  * rather than printing a black box over the label.
  */
 import { describe, it, expect } from 'vitest';
-import { asNodeId, type DrawCommand, type View } from '@weasel-js/core';
+import { asNodeId, isSolidPaint, type DrawCommand } from '@weasel-js/core';
 import { drawLabelNode } from './drawLabelNode';
 import { encodeBarcode, barcodeRequest, barcodeBackgroundRect } from './barcode';
 import type { LabelBarcodeData, LabelNode, LabelPose } from './label';
@@ -35,20 +35,16 @@ const node = (over: Partial<LabelBarcodeData> = {}): LabelNode => ({
   data: { ...barcodeData, ...over },
 });
 
-/** Solid-fill colors, in paint order. `'color' in fill` is the narrowing that
- *  works: FillStyle's solid variant leaves `fill` optional. */
+/** Solid-fill colors, in paint order. */
 function fills(commands: DrawCommand[]): string[] {
   return commands.flatMap((c) =>
-    c.kind === 'path' && c.fill && 'color' in c.fill ? [c.fill.color] : [],
+    c.kind === 'path' && isSolidPaint(c.fill?.paint) ? [c.fill.paint.color] : [],
   );
 }
 
-// drawLabelNode ignores its view argument (`_view`).
-const view = {} as View;
-
 describe('drawLabelNode, barcode colors', () => {
   it('defaults to black bars on a white background', () => {
-    const painted = fills(drawLabelNode(node(), pose, view));
+    const painted = fills(drawLabelNode(node(), pose));
 
     // The background is first, so it paints under the bars.
     expect(painted[0]).toBe('#ffffff');
@@ -57,7 +53,7 @@ describe('drawLabelNode, barcode colors', () => {
 
   it('uses the cassette ink and tape colors when given them', () => {
     const painted = fills(
-      drawLabelNode(node(), pose, view, { ink: '#2149c0', paper: '#f7d117' }),
+      drawLabelNode(node(), pose, { ink: '#2149c0', paper: '#f7d117' }),
     );
 
     expect(painted[0]).toBe('#f7d117');
@@ -65,7 +61,7 @@ describe('drawLabelNode, barcode colors', () => {
   });
 
   it('draws no background when the flag is off', () => {
-    const painted = fills(drawLabelNode(node({ opaqueBackground: false }), pose, view));
+    const painted = fills(drawLabelNode(node({ opaqueBackground: false }), pose));
 
     expect(new Set(painted)).toEqual(new Set(['#000000']));
   });
@@ -75,7 +71,7 @@ describe('drawLabelNode, barcode colors', () => {
     if (!symbol.ok) throw new Error('fixture should encode');
     const expected = barcodeBackgroundRect(symbol, pose);
 
-    const [background] = drawLabelNode(node(), pose, view);
+    const [background] = drawLabelNode(node(), pose);
     // rectPath returns the RectPath fast-path subtype, which carries
     // x/y/width/height directly rather than a point list.
     if (background?.kind !== 'path' || background.path.kind !== 'rect') {
@@ -99,13 +95,13 @@ describe('drawLabelNode, barcode colors', () => {
     // `fills` above can't see this one — and without its own assertion the
     // band could go back to hardcoded black with every other test still green.
     const commands = drawLabelNode(
-      node({ humanReadable: true }), pose, view, { ink: '#2149c0', paper: '#f7d117' },
+      node({ humanReadable: true }), pose, { ink: '#2149c0', paper: '#f7d117' },
     );
     const text = commands.find((c) => c.kind === 'text');
     if (text?.kind !== 'text') throw new Error('expected a text command');
 
     expect(text.runs.map((r) => r.fill)).toEqual(
-      text.runs.map(() => ({ fill: 'solid', color: '#2149c0' })),
+      text.runs.map(() => ({ paint: { color: '#2149c0' } })),
     );
   });
 
@@ -115,7 +111,7 @@ describe('drawLabelNode, barcode colors', () => {
     // that is never going to print.
     const painted = fills(
       drawLabelNode(
-        node({ protocol: 'EAN13', data: 'nope' }), pose, view, { ink: '#2149c0', paper: '#f7d117' },
+        node({ protocol: 'EAN13', data: 'nope' }), pose, { ink: '#2149c0', paper: '#f7d117' },
       ),
     );
 
@@ -124,7 +120,7 @@ describe('drawLabelNode, barcode colors', () => {
 
   it('backs a 2d symbol as well as a 1d one', () => {
     const qr = node({ protocol: 'QRCODE', data: 'https://example.com', humanReadable: false });
-    const painted = fills(drawLabelNode(qr, pose, view, { ink: '#2149c0', paper: '#f7d117' }));
+    const painted = fills(drawLabelNode(qr, pose, { ink: '#2149c0', paper: '#f7d117' }));
 
     expect(painted[0]).toBe('#f7d117');
     expect(new Set(painted.slice(1))).toEqual(new Set(['#2149c0']));
