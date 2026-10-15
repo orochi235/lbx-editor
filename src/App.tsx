@@ -1340,7 +1340,7 @@ export function App() {
                     // is registered by `tools` below, where this app controls
                     // both their order and their grouping. Notably hand:
                     // `view` registers it only when the patch hasn't.
-                    features={['view', 'pick', 'move', 'resize', 'edit']}
+                    features={['view', 'pick', 'move', 'resize', 'edit', 'arrange']}
                     tools={toolsPatch}
                     insertNodeFactories={insertNodeFactories}
                     onToolsCreated={setTools}

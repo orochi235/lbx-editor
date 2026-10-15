@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ActionBar } from '@weasel-js/ui/components/ActionBar';
 import type { NodeId, Scene, SelectionApi } from '@weasel-js/core';
 import type { LabelLayer, LabelNodeData, LabelPose } from './label';
 import {
@@ -77,6 +78,10 @@ export function ArrangePanel({ scene, selection, labelRect }: ArrangePanelProps)
   return (
     <div className="arrange-panel">
       <h3>Arrange</h3>
+      <div className="arrange-panel__order">
+        <span>Order</span>
+        <ActionBar group="reorder" />
+      </div>
       <label className="arrange-panel__field">
         Align to
         <select

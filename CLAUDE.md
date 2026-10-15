@@ -14,7 +14,10 @@ Standalone Vite + React app consuming:
   Things 1.x changed that this app depends on:
   - **A bare `<SceneCanvas>` only renders.** Picking, moving, resizing, undo
     and the zoom keys come from `features` presets; this app names `view`,
-    `pick`, `move`, `resize` and `edit`. Leave out `rotate` (labels don't
+    `pick`, `move`, `resize`, `edit` and `arrange` (z-order, shown as the
+    kit's public `<ActionBar group="reorder">` in the Arrange panel — app
+    buttons calling the actions directly would need the `@experimental`
+    registry API; `arrange`'s flip leaves rect poses untouched). Leave out `rotate` (labels don't
     rotate) and `ingest`, whose drop handling would compete with the app's own
     `onDrop`. A canvas missing a preset type-checks fine and silently stops
     responding, so check a preset change in the browser.
@@ -212,14 +215,25 @@ Key weasel APIs used:
   the printable band (ink color, transparent elsewhere) while suppressing
   the live scene draw. The Dithering choice (threshold / Floyd–Steinberg /
   Atkinson / Bayer) feeds preview and print job alike.
-- Barcodes are exempt from dithering: `src/ditherProtect.ts` turns each
-  barcode's pose plus its quiet zone into dot-space rects and passes them as
-  obwat's `DitherOptions.protect`, which quantizes those pixels at plain
-  threshold and stops error diffusion at their boundary. Dithering is for
-  tone; a barcode's geometry is its payload, and diffusion carries a bar
-  edge's error into the bar beside it. obwat takes plain rectangles and
-  knows nothing about barcodes — what to protect is this app's call, so
-  hairlines or small type could join later.
+- Dither protection: `src/ditherProtect.ts` turns protected objects into
+  dot-space rects and passes them as obwat's `DitherOptions.protect`, which
+  quantizes those pixels at plain threshold and stops error diffusion at
+  their boundary. Dithering is for tone; a barcode's geometry is its payload,
+  and diffusion carries a bar edge's error into the bar beside it. Barcodes
+  are always protected (pose plus quiet zone); every other object follows its
+  "Don't dither" flag (`noDither`, app-only — not in .lbx), which defaults on
+  for everything but images (`isDitherProtected` in `src/dotSnap.ts`).
+- Barcodes print on whole printer dots (`src/dotSnap.ts`). Each module is a
+  whole number of dots — `snapNodePose`, which every path that sizes a
+  barcode goes through: the resize behavior on `selectTool.resize`, typed
+  W/H, match size, insert, import, and edits that change the module count.
+  And the barcode is *drawn* onto the dot grid (`gridAligned`, grid origin at
+  x = 0 and the printable band's top), because a symbol half a dot off the
+  grid puts every edge at 50% coverage, which the threshold resolves
+  differently bar to bar. Position is snapped at draw time rather than in the
+  pose so that move, nudge, paste and align need no hooks. Measured on the
+  print raster: runs went from a 1..8-dot mix to 2,4,6,8. Lines and
+  rectangles can opt into whole-dot strokes (`snapStroke`), stored snapped.
 - Barcodes draw an opaque background over that same region
   (`barcodeBackgroundRect`, which `ditherProtect` also calls, so the masked
   and the dither-exempt rect are one definition). Without it a barcode over
