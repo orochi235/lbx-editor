@@ -83,6 +83,7 @@ import { checkDocument, type CheckedNode, type Diagnostic } from './diagnostics'
 import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
 import { ArrangePanel } from './ArrangePanel';
+import { cutGuides, printableMarginGuides } from './guides';
 import { fileToBase64, guessMimeType, getImageDimensions } from './imageUtils';
 import { buildImageInsert, type PendingImage } from './imageInsert';
 import { BarcodeIcon } from './BarcodeIcon';
@@ -114,6 +115,7 @@ const USB_GRANT_FLAG = 'lbx-editor.hasUsbGrant';
 const AUTOCUT_KEY = 'lbx-editor.autoCut';
 const CASSETTE_COLORS_KEY = 'lbx-editor.cassetteColors';
 const DOCUMENT_WARNINGS_KEY = 'lbx-editor.documentWarnings';
+const MARGIN_GUIDES_KEY = 'lbx-editor.marginGuides';
 const PREFLIGHT_CHECKS_KEY = 'lbx-editor.preflightChecks';
 const PRINT_PREVIEW_KEY = 'lbx-editor.printPreview';
 const DITHER_KEY = 'lbx-editor.dither';
@@ -443,6 +445,13 @@ export function App() {
     setDocumentWarnings(on);
     localStorage.setItem(DOCUMENT_WARNINGS_KEY, on ? '1' : '0');
   }, []);
+  const [marginGuides, setMarginGuides] = useState(
+    () => localStorage.getItem(MARGIN_GUIDES_KEY) === '1',
+  );
+  const handleMarginGuidesChange = useCallback((on: boolean) => {
+    setMarginGuides(on);
+    localStorage.setItem(MARGIN_GUIDES_KEY, on ? '1' : '0');
+  }, []);
   const [preflightChecks, setPreflightChecks] = useState(
     () => localStorage.getItem(PREFLIGHT_CHECKS_KEY) !== '0',
   );
@@ -686,16 +695,12 @@ export function App() {
               h: printableBand.height,
             }]
           : []),
-        // Cut guides: dashed lines where the printer will cut the strip.
-        // Drawn last so they stay visible over the print preview.
-        ...cutMarks.map((x) => ({
-          kind: 'path' as const,
-          path: polygonFromPoints([{ x, y: 0 }, { x, y: paperHeight }]),
-          stroke: { paint: { color: '#e03131' }, width: 0.4, dash: [2, 2] },
-        })),
+        // Guides last, so they stay visible over the print preview.
+        ...(marginGuides ? printableMarginGuides(printableBand, displayLength) : []),
+        ...cutGuides(cutMarks, paperHeight),
       ],
     };
-  }, [displayLength, paperWidth, paperHeight, tapeCss, tapeClear, previewBitmap, printableBand, cutMarks]);
+  }, [displayLength, paperWidth, paperHeight, tapeCss, tapeClear, previewBitmap, printableBand, cutMarks, marginGuides]);
 
   // --- Object creation via weasel tools ---
   // The palette activates weasel's built-in rect/line/text tools; their drag
@@ -1013,8 +1018,8 @@ export function App() {
   const [prefsOpen, setPrefsOpen] = useState(false);
   const prefValues: EditorPrefValues = useMemo(() => ({
     printing: { autoCut, printPreview, dithering: ditherAlgorithm, preflightChecks },
-    canvas: { cassetteColors: cassetteColorsEnabled, documentWarnings },
-  }), [autoCut, printPreview, ditherAlgorithm, preflightChecks, cassetteColorsEnabled, documentWarnings]);
+    canvas: { cassetteColors: cassetteColorsEnabled, documentWarnings, marginGuides },
+  }), [autoCut, printPreview, ditherAlgorithm, preflightChecks, cassetteColorsEnabled, documentWarnings, marginGuides]);
   const handlePrefChange = useCallback((path: string, value: unknown) => {
     switch (path) {
       case 'printing.autoCut': handleAutoCutChange(value as boolean); break;
@@ -1022,9 +1027,10 @@ export function App() {
       case 'printing.dithering': handleDitherAlgorithmChange(value as DitherAlgorithm); break;
       case 'canvas.cassetteColors': handleCassetteColorsChange(value as boolean); break;
       case 'canvas.documentWarnings': handleDocumentWarningsChange(value as boolean); break;
+      case 'canvas.marginGuides': handleMarginGuidesChange(value as boolean); break;
       case 'printing.preflightChecks': handlePreflightChecksChange(value as boolean); break;
     }
-  }, [handleAutoCutChange, handlePrintPreviewChange, handleDitherAlgorithmChange, handleCassetteColorsChange, handleDocumentWarningsChange, handlePreflightChecksChange]);
+  }, [handleAutoCutChange, handlePrintPreviewChange, handleDitherAlgorithmChange, handleCassetteColorsChange, handleDocumentWarningsChange, handleMarginGuidesChange, handlePreflightChecksChange]);
 
   // One connectionless printer session per mount. Its keepalive keeps the
   // PT-P710BT awake (it auto-powers off after ~10 min idle); its status
@@ -1385,6 +1391,8 @@ export function App() {
                   onAutoCutChange={handleAutoCutChange}
                   printPreview={printPreview}
                   onPrintPreviewChange={handlePrintPreviewChange}
+                  marginGuides={marginGuides}
+                  onMarginGuidesChange={handleMarginGuidesChange}
                   ditherAlgorithm={ditherAlgorithm}
                   onDitherAlgorithmChange={handleDitherAlgorithmChange}
                 />

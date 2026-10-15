@@ -27,6 +27,7 @@ export interface EditorPrefValues {
   canvas: {
     cassetteColors: boolean;
     documentWarnings: boolean;
+    marginGuides: boolean;
   };
 }
 
@@ -87,6 +88,12 @@ export const PREFS_SCHEMA: PrefGroup = {
             'Point out objects that will not print correctly — barcodes too small to scan, ' +
             'or anything overhanging the printable area. Printing still blocks on problems it cannot render.',
           default: true,
+        },
+        marginGuides: {
+          kind: 'boolean',
+          name: 'Printable margins',
+          description: 'Draw dashed lines at the top and bottom of the band the printhead can reach',
+          default: false,
         },
       },
     },

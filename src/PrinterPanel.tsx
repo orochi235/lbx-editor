@@ -12,6 +12,8 @@ interface PrinterPanelProps {
   onAutoCutChange: (on: boolean) => void;
   printPreview: boolean;
   onPrintPreviewChange: (on: boolean) => void;
+  marginGuides: boolean;
+  onMarginGuidesChange: (on: boolean) => void;
   /** Drives both the on-canvas preview and the print job's quantization. */
   ditherAlgorithm: DitherAlgorithm;
   onDitherAlgorithmChange: (algorithm: DitherAlgorithm) => void;
@@ -28,6 +30,8 @@ export function PrinterPanel({
   onAutoCutChange,
   printPreview,
   onPrintPreviewChange,
+  marginGuides,
+  onMarginGuidesChange,
   ditherAlgorithm,
   onDitherAlgorithmChange,
 }: PrinterPanelProps) {
@@ -60,6 +64,17 @@ export function PrinterPanel({
           onChange={(e) => onPrintPreviewChange(e.target.checked)}
         />
         Print preview
+      </label>
+      <label
+        className="printer-panel__check"
+        title="Draw dashed lines at the top and bottom of the band the printhead can reach"
+      >
+        <input
+          type="checkbox"
+          checked={marginGuides}
+          onChange={(e) => onMarginGuidesChange(e.target.checked)}
+        />
+        Printable margins
       </label>
       <label className="printer-panel__field" title="How colors and grays quantize to the printer's black dots — applies to the preview and the printed label alike">
         Dithering
