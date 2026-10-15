@@ -35,20 +35,6 @@
   margin-bottom: 12px;
 }
 
-.property-panel .prop-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 6px;
-}
-
-.property-panel .prop-row span {
-  width: 40px;
-}
-
-.property-panel .prop-row input {
-  width: 70px;
-}
 
 .property-panel .prop-field {
   display: block;

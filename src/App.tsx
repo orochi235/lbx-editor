@@ -82,6 +82,7 @@ import { PREFS_SCHEMA, type EditorPrefValues } from './prefs';
 import { checkDocument, type CheckedNode, type Diagnostic } from './diagnostics';
 import { Toolbar } from './Toolbar';
 import { PropertyPanel } from './PropertyPanel';
+import { ArrangePanel } from './ArrangePanel';
 import { fileToBase64, guessMimeType, getImageDimensions } from './imageUtils';
 import { buildImageInsert, type PendingImage } from './imageInsert';
 import { BarcodeIcon } from './BarcodeIcon';
@@ -1370,6 +1371,11 @@ export function App() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <PropertyPanel scene={scene} selection={selection} />
+                <ArrangePanel
+                  scene={scene}
+                  selection={selection}
+                  labelRect={{ x: 0, y: printableBand.y, width: labelLength, height: printableBand.height }}
+                />
                 <PrinterPanel
                   lastSeen={printerLastSeen}
                   reachable={printerReachable}

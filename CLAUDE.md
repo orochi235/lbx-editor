@@ -169,7 +169,18 @@ Key weasel APIs used:
   patch hasn't, and registering it twice makes the patch entry a
   *replacement*, which warns on every render.
 - Import/export .lbx files works end-to-end
-- Property panel for editing text, rect, and pose properties
+- Property panel for editing text, rect, and pose properties. Numbers show in
+  pt at one decimal (0.035mm, finer than a 180dpi dot) through `NumberField`,
+  which holds the raw text while focused so rounding never rewrites typing.
+  With several objects selected, X/Y/W/H show the shared value or "mixed",
+  and typing sets all of them in one undo step.
+- Arrange panel (`src/ArrangePanel.tsx`, math in `src/arrange.ts`): align
+  edges/centers and match width/height to the key object, the selection's
+  bounds, or the label (its length by the printable band). The key object is
+  the last one added to the selection and doesn't move. Match keeps each
+  item's top-left corner, as typing W/H does. Written app-side rather than on
+  the kit's `useAlign` because its `{ node }` reference type and align icons
+  are `@experimental`.
 - Canvas previews the loaded cassette's tape/ink colors from live printer
   status (`src/tapeColors.ts`); Debug panel (below Properties) has the enable
   toggle and manual overrides. Clear cassettes render the tape strip

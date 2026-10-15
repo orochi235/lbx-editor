@@ -1,0 +1,4 @@
+plugin: node
+# vitest's own binary: npm does not pass onto's reporter fd 3.
+run: node_modules/.bin/vitest run
+runner: vitest

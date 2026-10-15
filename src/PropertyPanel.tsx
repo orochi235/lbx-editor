@@ -20,6 +20,9 @@ import {
 } from './barcode';
 import { imageDataUri } from './imageUtils';
 import { registeredFamilies, installedFamilies, substituteFontFamily } from './fonts';
+import { KIND_NAMES } from './nodeSummary';
+import { FieldPair, NumberField } from './NumberField';
+import { PoseFields } from './PoseFields';
 import './propertyPanel.css';
 
 interface PropertyPanelProps {
@@ -30,23 +33,25 @@ interface PropertyPanelProps {
   selection: SelectionApi;
 }
 
-const KIND_NAMES: Record<LabelNodeData['kind'], string> = {
-  text: 'Text',
-  rect: 'Rectangle',
-  line: 'Line',
-  image: 'Image',
-  barcode: 'Barcode',
-};
-
 export function PropertyPanel({ scene, selection }: PropertyPanelProps) {
   const selectedIds = selection.current;
 
-  if (selectedIds.length !== 1) {
+  if (selectedIds.length === 0) {
     return (
       <div className="property-panel">
-        <p className="prop-empty">
-          {selectedIds.length === 0 ? 'Select an object' : `${selectedIds.length} objects selected`}
-        </p>
+        <p className="prop-empty">Select an object</p>
+      </div>
+    );
+  }
+
+  if (selectedIds.length > 1) {
+    return (
+      <div className="property-panel">
+        <h3>
+          Properties
+          <span className="prop-type">{selectedIds.length} objects</span>
+        </h3>
+        <PoseFields scene={scene} ids={selectedIds as readonly NodeId[]} />
       </div>
     );
   }
@@ -61,7 +66,7 @@ export function PropertyPanel({ scene, selection }: PropertyPanelProps) {
         Properties
         <span className="prop-type">{KIND_NAMES[node.data.kind]}</span>
       </h3>
-      <PoseFields scene={scene} nodeId={nodeId} pose={node.pose} />
+      <PoseFields scene={scene} ids={[nodeId]} />
       {node.data.kind === 'text' && (
         <TextFields scene={scene} nodeId={nodeId} data={node.data} />
       )}
@@ -75,25 +80,6 @@ export function PropertyPanel({ scene, selection }: PropertyPanelProps) {
       {node.data.kind === 'barcode' && (
         <BarcodeFields scene={scene} nodeId={nodeId} pose={node.pose} data={node.data} />
       )}
-    </div>
-  );
-}
-
-function PoseFields({ scene, nodeId, pose }: {
-  scene: Scene<LabelNodeData, LabelLayer, LabelPose>;
-  nodeId: NodeId;
-  pose: LabelPose;
-}) {
-  const update = useCallback((partial: Partial<LabelPose>) => {
-    scene.setPose(nodeId, { ...pose, ...partial });
-  }, [scene, nodeId, pose]);
-
-  return (
-    <div className="prop-group">
-      <FieldRow label="X" value={pose.x} onChange={(v) => update({ x: v })} />
-      <FieldRow label="Y" value={pose.y} onChange={(v) => update({ y: v })} />
-      <FieldRow label="W" value={pose.width} onChange={(v) => update({ width: v })} />
-      <FieldRow label="H" value={pose.height} onChange={(v) => update({ height: v })} />
     </div>
   );
 }
@@ -142,8 +128,10 @@ function TextFields({ scene, nodeId, data }: {
           )}
         </select>
       </label>
-      <FieldRow label="Size" value={data.fontSize} onChange={(v) => update({ fontSize: v })} />
-      <FieldRow label="Weight" value={data.fontWeight} onChange={(v) => update({ fontWeight: v })} />
+      <FieldPair>
+        <NumberField label="Size" unit="pt" value={data.fontSize} onChange={(v) => update({ fontSize: v })} />
+        <NumberField label="Weight" decimals={0} step={100} value={data.fontWeight} onChange={(v) => update({ fontWeight: v })} />
+      </FieldPair>
       <label className="prop-check">
         <input type="checkbox" checked={data.italic} onChange={(e) => update({ italic: e.target.checked })} />
         Italic
@@ -179,10 +167,12 @@ function RectFields({ scene, nodeId, data }: {
         <input type="checkbox" checked={data.rounded} onChange={(e) => update({ rounded: e.target.checked })} />
         Rounded
       </label>
-      {data.rounded && (
-        <FieldRow label="Radius" value={data.roundness} onChange={(v) => update({ roundness: v })} />
-      )}
-      <FieldRow label="Stroke" value={data.strokeWidth} onChange={(v) => update({ strokeWidth: v })} />
+      <FieldPair>
+        <NumberField label="Stroke" unit="pt" decimals={2} value={data.strokeWidth} onChange={(v) => update({ strokeWidth: v })} />
+        {data.rounded && (
+          <NumberField label="Radius" unit="pt" value={data.roundness} onChange={(v) => update({ roundness: v })} />
+        )}
+      </FieldPair>
     </div>
   );
 }
@@ -198,7 +188,7 @@ function LineFields({ scene, nodeId, data }: {
 
   return (
     <div>
-      <FieldRow label="Stroke" value={data.strokeWidth} onChange={(v) => update({ strokeWidth: v })} />
+      <NumberField label="Stroke" unit="pt" decimals={2} value={data.strokeWidth} onChange={(v) => update({ strokeWidth: v })} />
       <label className="prop-field">
         Direction
         <select
@@ -436,19 +426,5 @@ function SizeWarning({ symbol, pose }: { symbol: BarcodeSymbol; pose: LabelPose 
         : `Small enough that scanners may struggle: each module is ${dots.toFixed(2)} printer
            dots, under the 2 that clear the usual minimums. Increase ${dimension} to be safe.`}
     </p>
-  );
-}
-
-function FieldRow({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
-  return (
-    <label className="prop-row">
-      <span>{label}</span>
-      <input
-        type="number"
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        step="0.1"
-      />
-    </label>
   );
 }
