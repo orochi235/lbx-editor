@@ -1241,7 +1241,7 @@ export function App() {
         <SelectionContextProvider>
           <LabShell
             title="Label Editor"
-            mode="light"
+            mode="auto"
             header={
               <Toolbar
                 tapeSize={tapeSize}

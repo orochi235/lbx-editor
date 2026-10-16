@@ -5,7 +5,7 @@ Web-based visual editor for Brother P-touch label files (.lbx).
 ## Architecture
 
 Standalone Vite + React app consuming:
-- `@weasel-js/core`, `/ui`, `/theme`, `/prefs` (from npm, pinned at exactly
+- `@weasel-js/core`, `/ui`, `/theme`, `/prefs`, `/labkit` (from npm, pinned at exactly
   **1.10.1**, as are the exact-version peers `@weasel-js/font` and
   `/animator` that core and ui require). Pinned rather than ranged because the
   kit's peers are exact: a caret range lets one package drift ahead of the
@@ -21,9 +21,12 @@ Standalone Vite + React app consuming:
     rotate) and `ingest`, whose drop handling would compete with the app's own
     `onDrop`. A canvas missing a preset type-checks fine and silently stops
     responding, so check a preset change in the browser.
-  - **`tokens.css` defaults to dark mode and sets no font.** `index.html` pins
-    `data-wzl-mode="light"` because the panels' own CSS is light, and
-    `main.tsx` imports `@weasel-js/theme/fonts.css` for the kit faces.
+  - **`tokens.css` defaults to dark mode and sets no font.** The app follows
+    the system instead: `LabShell mode="auto"` applies the theme for the
+    resolved mode, and the kit's overlays portal into its root, so they
+    match. App CSS uses `--wzl-*` tokens only. `main.tsx` imports
+    `@weasel-js/theme/fonts.css` for the kit faces and
+    `@weasel-js/labkit/styles.css` for the shell.
   - **Text color is `textCommand`'s 8th argument** (`{ fill: { paint } }`),
     not a `TextStyle` field. A color left in the style is ignored and the text
     renders black, with no type error if the object is built loosely.
@@ -155,6 +158,15 @@ Key weasel APIs used:
   `src/customFonts.ts`) or from gitignored `public/fonts/local/` +
   manifest — see docs/local-fonts.md. Text word-wraps at the box width;
   `\n` forces breaks; JUSTIFY renders as LEFT.
+- The page is labkit's `LabShell`: header is labkit's `Toolbar`
+  (`src/Toolbar.tsx`), footer is the kit `StatusBar` (`src/EditorStatusBar.tsx`:
+  tool, selection count, pointer position in mm, printer, zoom), and the right
+  column is a kit `Sidebar` (`src/Inspector.tsx`) of collapsible panels —
+  Properties, Arrange, Layers, Printer, Debug (collapsed by default), Custom
+  fonts — each remembering its folded state in localStorage. The pointer
+  position lives in `src/cursorStore.ts`, outside React state, so a pointer
+  move re-renders only the readout. The canvas backdrop is a theme token; the
+  tape keeps its physical color in both modes.
 - Objects can be created, selected, moved, resized via weasel tools
 - Tool palette reads in three clusters — Select/Hand, then Line/Rectangle/Text,
   then Image/Barcode (`src/toolGroups.ts`). `ToolPalette` clusters by each
@@ -172,20 +184,28 @@ Key weasel APIs used:
   patch hasn't, and registering it twice makes the patch entry a
   *replacement*, which warns on every render.
 - Import/export .lbx files works end-to-end
-- Property panel for editing text, rect, and pose properties. Numbers show in
-  pt at one decimal (0.035mm, finer than a 180dpi dot) through `NumberField`,
-  which holds the raw text while focused so rounding never rewrites typing.
-  With several objects selected, X/Y/W/H show the shared value or "mixed",
-  and typing sets all of them in one undo step.
+- Property panel: kit `PropertyField`s in a `PropertyList pack="pairs"`
+  (barcode fields in `src/BarcodeFields.tsx`). Numbers show in pt at one
+  decimal (0.035mm, finer than a 180dpi dot) via `src/numberDisplay.ts`; the
+  kit's typed field holds the raw text while focused, so rounding never
+  rewrites typing. With several objects selected, X/Y/W/H show the shared
+  value or "Mixed" (the field's own `mixed`), and typing sets all of them in
+  one undo step.
 - Arrange panel (`src/ArrangePanel.tsx`, math in `src/arrange.ts`): align
   edges/centers and match width/height to the key object, the selection's
   bounds, or the label (its length by the printable band). The key object is
   the last one added to the selection and doesn't move. Match keeps each
   item's top-left corner, as typing W/H does. Written app-side rather than on
   the kit's `useAlign` because its `{ node }` reference type and align icons
-  are `@experimental`.
+  are `@experimental` — so align draws `src/arrangeIcons.tsx`, while match
+  size uses ui's public `WiderIcon`/`TallerIcon`/`FitStretchIcon`.
+- Layers panel (`src/LayersPanel.tsx`): the kit's `useSceneLayerList` into a
+  `LayerList`, frontmost first; a row click selects, a drag restacks as one
+  undo step. No visibility toggle — neither print nor .lbx could honor it.
+  Stacking order is `scene.roots` (back to front), *not* `scene.nodes`, which
+  stays in insertion order through a restack; export reads `roots`.
 - Canvas previews the loaded cassette's tape/ink colors from live printer
-  status (`src/tapeColors.ts`); Debug panel (below Properties) has the enable
+  status (`src/tapeColors.ts`); the Debug panel has the enable
   toggle and manual overrides. Clear cassettes render the tape strip
   translucent (the paper layer draws only the brick's L-shaped shadow, so the
   canvas shows through the face).
@@ -203,10 +223,11 @@ Key weasel APIs used:
   only BMP.
 - Printer status chip is a button — click fires `queryStatus()`. obwat's
   keepalive polls fast (3 s) while the printer is absent, so power-on shows
-  up on the chip within seconds.
-- Printer panel in the right sidebar (between Properties and Debug): status
-  chip (same component as the toolbar's), Auto cut, Print preview toggle,
-  and the Dithering selector; future printer controls land there.
+  up on the chip within seconds. Chip, Printer panel and status bar all read
+  `usePrinterSummary` (`src/printerStatus.ts`).
+- Printer panel: status chip (same component as the toolbar's), Auto cut,
+  Print preview, Printable margins, and the Dithering selector; future
+  printer controls land there.
 - Preferences modal (toolbar gear → kit `PrefsDialog`, schema in
   `src/prefs.ts`): a second live view over the same persisted settings the
   panels edit (Auto cut, Print preview, Dithering, Cassette colors).
