@@ -1,110 +1,37 @@
-.property-panel {
-  width: 240px;
-  border-left: 1px solid #ddd;
-  background: #fafafa;
-  padding: 12px;
-  font-size: 12px;
-  overflow-y: auto;
-}
-
-.property-panel h3 {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin: 0 0 12px;
-  font-size: 14px;
-}
-
-.property-panel .prop-type {
-  font-size: 11px;
-  font-weight: normal;
-  color: #666;
-  background: #eee;
-  border: 1px solid #ddd;
-  border-radius: 3px;
-  padding: 1px 6px;
-}
-
-.property-panel .prop-empty {
-  color: #888;
-  font-size: 13px;
-  margin: 0;
-}
-
-.property-panel .prop-group {
-  margin-bottom: 12px;
-}
-
-
-.property-panel .prop-field {
-  display: block;
-  margin-bottom: 8px;
-}
-
-.property-panel .prop-field textarea {
-  width: 100%;
-  min-height: 60px;
-  margin-top: 4px;
-}
-
-.property-panel .prop-field input[type='text'],
-.property-panel .prop-field select {
-  width: 100%;
-  margin-top: 4px;
-}
-
-.property-panel .prop-check {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 8px;
-}
-
-.property-panel .prop-error,
-.property-panel .prop-warn,
-.property-panel .prop-note {
-  margin: -2px 0 8px;
-  padding: 6px 8px;
-  border-radius: 3px;
+.prop-message {
+  padding: var(--wzl-space-xs) var(--wzl-space-sm);
+  border: 1px solid var(--wzl-border);
+  border-radius: var(--wzl-radius-sm);
+  color: var(--wzl-fg-muted);
+  background: var(--wzl-surface-sunken);
+  font-size: var(--wzl-font-size-sm);
   overflow-wrap: anywhere;
 }
 
-.property-panel .prop-error {
-  color: #8a1f11;
-  background: #fdecea;
-  border: 1px solid #f5c6c0;
+.prop-message--error {
+  color: var(--wzl-danger);
+  border-color: var(--wzl-danger);
 }
 
-.property-panel .prop-warn {
-  color: #7a4a00;
-  background: #fff6e5;
-  border: 1px solid #f0d9ae;
+.prop-message--warn {
+  color: var(--wzl-warning);
+  border-color: var(--wzl-warning);
 }
 
-.property-panel .prop-note {
-  color: #555;
-  background: #f0f0f0;
-  border: 1px solid #e0e0e0;
-}
-
-.property-panel .prop-info {
-  border-top: 1px solid #e5e5e5;
-  padding-top: 8px;
-  margin-top: 4px;
-}
-
-.property-panel .prop-info dl {
+.prop-info dl {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 2px 10px;
+  gap: 2px var(--wzl-space-sm);
   margin: 0;
+  font-size: var(--wzl-font-size-sm);
 }
 
-.property-panel .prop-info dt {
-  color: #888;
+.prop-info dt {
+  color: var(--wzl-fg-muted);
 }
 
-.property-panel .prop-info dd {
+.prop-info dd {
   margin: 0;
   overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }

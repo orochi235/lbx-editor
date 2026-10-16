@@ -1,4 +1,5 @@
 import type { NodeId, Scene } from '@weasel-js/core';
+import { PropertyField } from '@weasel-js/ui/components/Properties';
 import type { LabelLayer, LabelNodeData, LabelPose } from './label';
 import { isDitherProtected, snapToDots } from './dotSnap';
 import { PRINT_DPI } from './printDpi';
@@ -24,35 +25,26 @@ export function PrintOptions({ scene, nodeId, data }: {
   const update = (next: LabelNodeData) => scene.update(nodeId, { data: next });
 
   return (
-    <div className="prop-group">
-      <label
-        className="prop-check"
-        title="Print this object at plain threshold, so dithering never breaks up its edges"
-      >
-        <input
-          type="checkbox"
-          checked={isDitherProtected(data)}
-          onChange={(e) => update({ ...data, noDither: e.target.checked })}
-        />
-        Don't dither
-      </label>
+    <>
+      <PropertyField
+        kind="boolean"
+        label="Don't dither"
+        description="Print this object at plain threshold, so dithering never breaks up its edges"
+        value={isDitherProtected(data)}
+        onChange={(noDither) => update({ ...data, noDither })}
+      />
       {(data.kind === 'rect' || data.kind === 'line') && (
-        <label
-          className="prop-check"
-          title="Round the stroke to a whole number of printer dots, so it prints the same width everywhere"
-        >
-          <input
-            type="checkbox"
-            checked={data.snapStroke ?? false}
-            onChange={(e) => {
-              const snapStroke = e.target.checked;
-              const next = { ...data, snapStroke };
-              update({ ...next, strokeWidth: storedStrokeWidth(next, data.strokeWidth) });
-            }}
-          />
-          Snap stroke to dots
-        </label>
+        <PropertyField
+          kind="boolean"
+          label="Snap stroke"
+          description="Round the stroke to a whole number of printer dots, so it prints the same width everywhere"
+          value={data.snapStroke ?? false}
+          onChange={(snapStroke) => {
+            const next = { ...data, snapStroke };
+            update({ ...next, strokeWidth: storedStrokeWidth(next, data.strokeWidth) });
+          }}
+        />
       )}
-    </div>
+    </>
   );
 }

@@ -1,15 +1,24 @@
 import type { NodeId, Scene } from '@weasel-js/core';
+import { PropertyField } from '@weasel-js/ui/components/Properties';
 import type { LabelLayer, LabelNodeData, LabelPose } from './label';
-import { FieldPair, NumberField } from './NumberField';
 import { snapNodePose } from './dotSnap';
 import { PRINT_DPI } from './printDpi';
+import { PT_DISPLAY } from './numberDisplay';
 
 type LabelScene = Scene<LabelNodeData, LabelLayer, LabelPose>;
 
+const FIELDS: { key: keyof LabelPose; label: string }[] = [
+  { key: 'x', label: 'X' },
+  { key: 'y', label: 'Y' },
+  { key: 'width', label: 'W' },
+  { key: 'height', label: 'H' },
+];
+
 /**
- * X/Y/W/H for one node or many. With several selected, each field shows the
- * value they share, or "mixed" where they differ, and typing into one sets
- * that field on all of them as a single undo step.
+ * X/Y/W/H for one node or many, as four cells of a paired property list. With
+ * several selected, each field shows the value they share, or "Mixed" where
+ * they differ, and typing into one sets that field on all of them as a single
+ * undo step.
  */
 export function PoseFields({ scene, ids }: { scene: LabelScene; ids: readonly NodeId[] }) {
   const poses = ids.flatMap((id) => {
@@ -29,15 +38,23 @@ export function PoseFields({ scene, ids }: { scene: LabelScene; ids: readonly No
   };
 
   return (
-    <div className="prop-group">
-      <FieldPair>
-        <NumberField label="X" unit="pt" value={shared('x')} onChange={set('x')} />
-        <NumberField label="Y" unit="pt" value={shared('y')} onChange={set('y')} />
-      </FieldPair>
-      <FieldPair>
-        <NumberField label="W" unit="pt" value={shared('width')} onChange={set('width')} />
-        <NumberField label="H" unit="pt" value={shared('height')} onChange={set('height')} />
-      </FieldPair>
-    </div>
+    <>
+      {FIELDS.map(({ key, label }) => {
+        const value = shared(key);
+        return (
+          <PropertyField
+            key={key}
+            kind="number"
+            label={label}
+            unit="pt"
+            display={PT_DISPLAY}
+            step={0.1}
+            value={value}
+            mixed={value === null}
+            onChange={set(key)}
+          />
+        );
+      })}
+    </>
   );
 }
