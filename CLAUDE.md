@@ -128,9 +128,10 @@ flat one in points.
 
 weasel resolves as an ordinary dependency: its own `exports` map answers the
 barrel and the `@weasel-js/ui/components/*` subpaths, so nothing mirrors its
-source layout. Subpath imports (not the `@weasel-js/ui` barrel) are deliberate
-— the barrel pulls in sibling components like DataGrid that trip a
-duplicate-`@types/react` mismatch against this app's newer React types.
+source layout. Components come in through subpaths; the icons have no subpath,
+so they come from the `@weasel-js/ui` barrel, as `LabShell`, `Toolbar` and
+`ZoomControl` come from `@weasel-js/labkit`'s. Both barrels type-check
+against this app's React types at 1.10.1.
 
 Until 0.6.0 this went through `weaselAliases()` against a sibling checkout,
 because the published `ui` package shipped neither types nor subpaths.
