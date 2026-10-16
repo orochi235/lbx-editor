@@ -6,14 +6,14 @@ import { encodeCode128 } from './barcode/code128';
  * encoder the tool inserts. Vector, so it stays a real barcode at any size —
  * scannable if you zoom in, barcode-shaped texture at palette size.
  */
-export function BarcodeIcon() {
+export function BarcodeIcon({ size = 20 }: { size?: number }) {
   const symbol = useMemo(() => encodeCode128('1337', { gs1: false }), []);
   if (!symbol.ok || symbol.kind !== '1d') return null;
 
   return (
     <svg
-      width="20"
-      height="20"
+      width={size}
+      height={size}
       viewBox={`0 0 ${symbol.totalModules} ${symbol.totalModules}`}
       fill="currentColor"
       aria-hidden="true"

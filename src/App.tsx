@@ -962,10 +962,12 @@ export function App() {
 
   // --- Export ---
   const handleExport = useCallback(async () => {
-    const nodes: { id: string; data: LabelNodeData; pose: LabelPose }[] = [];
-    for (const [, node] of scene.nodes) {
-      nodes.push({ id: node.id, data: node.data, pose: node.pose });
-    }
+    // `roots` is stacking order, back to front; `nodes` is insertion order,
+    // which a restack leaves untouched.
+    const nodes = scene.roots.flatMap((id) => {
+      const node = scene.get(id);
+      return node ? [{ id: node.id, data: node.data, pose: node.pose }] : [];
+    });
     const buf = await exportLbx(nodes, tapeSize, autoLength, labelLength, cutMarks);
     const blob = new Blob([buf as BlobPart], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);

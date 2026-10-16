@@ -5,6 +5,7 @@ import type { LabelLayer, LabelNodeData, LabelPose } from './label';
 import { InspectorPanel } from './InspectorPanel';
 import { PropertyPanel } from './PropertyPanel';
 import { ArrangePanel } from './ArrangePanel';
+import { LayersPanel } from './LayersPanel';
 import { PrinterPanel } from './PrinterPanel';
 import { DebugPanel } from './DebugPanel';
 import { CustomFontsPanel } from './CustomFontsPanel';
@@ -27,6 +28,9 @@ export function Inspector({ scene, selection, labelRect, printer, debug }: Inspe
       </InspectorPanel>
       <InspectorPanel id="arrange" title="Arrange">
         <ArrangePanel scene={scene} selection={selection} labelRect={labelRect} />
+      </InspectorPanel>
+      <InspectorPanel id="layers" title="Layers">
+        <LayersPanel scene={scene} selection={selection} />
       </InspectorPanel>
       <InspectorPanel id="printer" title="Printer">
         <PrinterPanel {...printer} />
