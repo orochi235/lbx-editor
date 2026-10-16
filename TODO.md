@@ -25,3 +25,9 @@ callout's close button rather than the field. Typing then goes nowhere, and Back
 reaches the canvas's delete binding — which skips editable targets, but the target is the button —
 so the selected object is removed. Seen 2026-10-16 on the base commit e9ec414 as well as the labkit
 refresh, so it predates it; with document warnings off, fields keep focus normally.
+
+## A reload restores a zoom that runs the label off the canvas
+
+After a reload the view comes back at the zoom it was left at (224% for `test/fixtures/barcodes.lbx`
+on 24mm tape, at 1440×900) but not refitted, so a long label runs past the canvas's right edge until
+Fit is pressed. Seen 2026-10-16 on main (e9ec414) and on the labkit refresh alike.

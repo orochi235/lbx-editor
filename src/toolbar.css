@@ -10,3 +10,8 @@
 .toolbar__labels {
   --wzl-number-field-width: 4ch;
 }
+
+.toolbar__length,
+.toolbar__labels {
+  margin-inline-start: var(--wzl-space-3);
+}
