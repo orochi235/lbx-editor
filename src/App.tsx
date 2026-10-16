@@ -72,18 +72,19 @@ import {
   type TextColor,
 } from 'obwat';
 import { printsAsInk, remapNodeInk, tapeColorCss, tapeIsClear, textColorCss } from './tapeColors';
-import { DebugPanel } from './DebugPanel';
-import { PrinterPanel } from './PrinterPanel';
-import { CustomFontsPanel } from './CustomFontsPanel';
 import { labelRenderPlan, printableBandPt, renderLabelToRgba } from './labelRender';
 import { maskToRgba } from './printPreview';
 import { protectedRegions } from './ditherProtect';
 import { equalCutMarks, sliceRasterAtCuts } from './cutMarks';
 import { PREFS_SCHEMA, type EditorPrefValues } from './prefs';
 import { checkDocument, type CheckedNode, type Diagnostic } from './diagnostics';
+import { LabShell } from '@weasel-js/labkit';
 import { Toolbar } from './Toolbar';
-import { PropertyPanel } from './PropertyPanel';
-import { ArrangePanel } from './ArrangePanel';
+import { Inspector } from './Inspector';
+import { EditorStatusBar } from './EditorStatusBar';
+import { createCursorStore } from './cursorStore';
+import { usePersistedFlag } from './usePersistedFlag';
+import './app.css';
 import { cutGuides, printableMarginGuides } from './guides';
 import { snapNodePose } from './dotSnap';
 import { PRINT_DPI } from './printDpi';
@@ -337,7 +338,7 @@ export function App() {
     );
   }, [displayLength, paperHeight, canvasSize]);
 
-  const zoomPercent = Math.round(meanScale(view.scale) * 100);
+  const zoom = meanScale(view.scale);
   const handleZoomIn = useCallback(
     () => setView((v) => zoomAt(v, { x: canvasSize.width / 2, y: canvasSize.height / 2 }, 1.25)),
     [canvasSize],
@@ -347,9 +348,9 @@ export function App() {
     [canvasSize],
   );
   const handleZoomSet = useCallback(
-    (percent: number) => {
+    (scale: number) => {
       setView((v) =>
-        zoomAt(v, { x: canvasSize.width / 2, y: canvasSize.height / 2 }, percent / 100 / meanScale(v.scale)),
+        zoomAt(v, { x: canvasSize.width / 2, y: canvasSize.height / 2 }, scale / meanScale(v.scale)),
       );
     },
     [canvasSize],
@@ -434,34 +435,10 @@ export function App() {
   // printer lays down its one ink regardless of what the screen shows.
   const [printerLastSeen, setPrinterLastSeen] = useState<{ status: PrinterStatus; at: number } | null>(null);
   const [printerReachable, setPrinterReachable] = useState(false);
-  const [cassetteColorsEnabled, setCassetteColorsEnabled] = useState(
-    () => localStorage.getItem(CASSETTE_COLORS_KEY) !== '0',
-  );
-  const handleCassetteColorsChange = useCallback((on: boolean) => {
-    setCassetteColorsEnabled(on);
-    localStorage.setItem(CASSETTE_COLORS_KEY, on ? '1' : '0');
-  }, []);
-  const [documentWarnings, setDocumentWarnings] = useState(
-    () => localStorage.getItem(DOCUMENT_WARNINGS_KEY) !== '0',
-  );
-  const handleDocumentWarningsChange = useCallback((on: boolean) => {
-    setDocumentWarnings(on);
-    localStorage.setItem(DOCUMENT_WARNINGS_KEY, on ? '1' : '0');
-  }, []);
-  const [marginGuides, setMarginGuides] = useState(
-    () => localStorage.getItem(MARGIN_GUIDES_KEY) === '1',
-  );
-  const handleMarginGuidesChange = useCallback((on: boolean) => {
-    setMarginGuides(on);
-    localStorage.setItem(MARGIN_GUIDES_KEY, on ? '1' : '0');
-  }, []);
-  const [preflightChecks, setPreflightChecks] = useState(
-    () => localStorage.getItem(PREFLIGHT_CHECKS_KEY) !== '0',
-  );
-  const handlePreflightChecksChange = useCallback((on: boolean) => {
-    setPreflightChecks(on);
-    localStorage.setItem(PREFLIGHT_CHECKS_KEY, on ? '1' : '0');
-  }, []);
+  const [cassetteColorsEnabled, handleCassetteColorsChange] = usePersistedFlag(CASSETTE_COLORS_KEY, true);
+  const [documentWarnings, handleDocumentWarningsChange] = usePersistedFlag(DOCUMENT_WARNINGS_KEY, true);
+  const [marginGuides, handleMarginGuidesChange] = usePersistedFlag(MARGIN_GUIDES_KEY, false);
+  const [preflightChecks, handlePreflightChecksChange] = usePersistedFlag(PREFLIGHT_CHECKS_KEY, true);
   const [tapeColorOverride, setTapeColorOverride] = useState<TapeColor | null>(null);
   const [textColorOverride, setTextColorOverride] = useState<TextColor | null>(null);
 
@@ -553,13 +530,7 @@ export function App() {
   // dots take the cassette ink color, everything else is transparent so the
   // tape face shows through. One long-lived GL context is reused across
   // renders; the debounce absorbs bursts of scene mutations.
-  const [printPreview, setPrintPreview] = useState(
-    () => localStorage.getItem(PRINT_PREVIEW_KEY) === '1',
-  );
-  const handlePrintPreviewChange = useCallback((on: boolean) => {
-    setPrintPreview(on);
-    localStorage.setItem(PRINT_PREVIEW_KEY, on ? '1' : '0');
-  }, []);
+  const [printPreview, handlePrintPreviewChange] = usePersistedFlag(PRINT_PREVIEW_KEY, false);
   // Dither algorithm — one setting drives both the preview and the real
   // print job (rgbaToRaster), so what you see is what the head lays down.
   const [ditherAlgorithm, setDitherAlgorithm] = useState<DitherAlgorithm>(savedDitherAlgorithm);
@@ -1015,11 +986,7 @@ export function App() {
 
   // --- Print ---
   const [printing, setPrinting] = useState(false);
-  const [autoCut, setAutoCut] = useState(() => localStorage.getItem(AUTOCUT_KEY) !== '0');
-  const handleAutoCutChange = useCallback((on: boolean) => {
-    setAutoCut(on);
-    localStorage.setItem(AUTOCUT_KEY, on ? '1' : '0');
-  }, []);
+  const [autoCut, handleAutoCutChange] = usePersistedFlag(AUTOCUT_KEY, true);
   const printingRef = useRef(false);
 
   // --- Preferences modal ---
@@ -1257,39 +1224,64 @@ export function App() {
     // redraws (mirroring how `previewBitmap` already does).
   }), [paperLayer, previewBitmap, drawNothing, drawScreenNode, dimOffLabel, fontsLoaded]);
 
+  // Pointer position in label points, for the status bar. The view is a
+  // camera: world = view origin + client offset / scale.
+  const cursor = useMemo(createCursorStore, []);
+  const handleCanvasPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const v = viewRef.current;
+    cursor.set({ x: v.x + (e.clientX - r.left) / v.scale.x, y: v.y + (e.clientY - r.top) / v.scale.y });
+  }, [cursor]);
+
   return (
     <DepRegistryProvider>
       <ActionsProvider>
         <SelectionContextProvider>
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-            <Toolbar
-              tapeSize={tapeSize}
-              onTapeSizeChange={setTapeSize}
-              autoLength={autoLength}
-              onAutoLengthChange={handleAutoLengthChange}
-              // The display value, so the readout tracks a drag in progress.
-              // Safe in both modes: the field is disabled under Auto (pure
-              // readout), and with Auto off the live hook is disabled, so this
-              // is exactly `labelLength`.
-              labelLength={displayLength}
-              onLabelLengthChange={setManualLength}
-              labelsCount={cutMarks.length + 1}
-              onLabelsCountChange={handleLabelsCountChange}
-              onExport={handleExport}
-              onImport={() => fileInputRef.current?.click()}
-              onPrint={handlePrint}
-              printDisabled={printing}
-              zoomPercent={zoomPercent}
-              onZoomIn={handleZoomIn}
-              onZoomOut={handleZoomOut}
-              onZoomSet={handleZoomSet}
-              onZoomFit={handleZoomFit}
-              onZoomReset={handleZoomReset}
-              printerLastSeen={printerLastSeen}
-              printerReachable={printerReachable}
-              onPrinterRefresh={handlePrinterRefresh}
-              onOpenPrefs={() => setPrefsOpen(true)}
-            />
+          <LabShell
+            title="Label Editor"
+            mode="light"
+            header={
+              <Toolbar
+                tapeSize={tapeSize}
+                onTapeSizeChange={setTapeSize}
+                autoLength={autoLength}
+                onAutoLengthChange={handleAutoLengthChange}
+                // The display value, so the readout tracks a drag in progress.
+                // Safe in both modes: the field is disabled under Auto (pure
+                // readout), and with Auto off the live hook is disabled, so this
+                // is exactly `labelLength`.
+                labelLength={displayLength}
+                onLabelLengthChange={setManualLength}
+                labelsCount={cutMarks.length + 1}
+                onLabelsCountChange={handleLabelsCountChange}
+                onExport={handleExport}
+                onImport={() => fileInputRef.current?.click()}
+                onPrint={handlePrint}
+                printDisabled={printing}
+                zoom={zoom}
+                onZoomIn={handleZoomIn}
+                onZoomOut={handleZoomOut}
+                onZoomSet={handleZoomSet}
+                onZoomFit={handleZoomFit}
+                onZoomReset={handleZoomReset}
+                printerLastSeen={printerLastSeen}
+                printerReachable={printerReachable}
+                onPrinterRefresh={handlePrinterRefresh}
+                onOpenPrefs={() => setPrefsOpen(true)}
+              />
+            }
+            footer={
+              <EditorStatusBar
+                activeTool={tools?.active ?? null}
+                selectedCount={selection.current.length}
+                cursor={cursor}
+                printerLastSeen={printerLastSeen}
+                printerReachable={printerReachable}
+                printing={printing}
+                zoomPercent={Math.round(zoom * 100)}
+              />
+            }
+          >
             <PrefsDialog
               isOpen={prefsOpen}
               onOpenChange={setPrefsOpen}
@@ -1301,34 +1293,21 @@ export function App() {
                 file that wouldn't parse. Document problems get an anchored
                 callout instead, since those have an object to point at. */}
             <ToastRegion />
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".lbx"
-              style={{ display: 'none' }}
-              onChange={handleImport}
-            />
-            <input
-              ref={imageInputRef}
-              type="file"
-              accept="image/*"
-              style={{ display: 'none' }}
-              onChange={handleImagePick}
-            />
-            <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-              {/* `view` hoisted so the hand tool sits right below select. */}
+            <input ref={fileInputRef} type="file" accept=".lbx" hidden onChange={handleImport} />
+            <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={handleImagePick} />
+            <div className="editor-body">
               {tools && (
-                <ToolPalette
-                  tools={tools}
-                  orientation="vertical"
-                  groupOrder={PALETTE_GROUP_ORDER}
-                />
+                <div className="editor-tools">
+                  <ToolPalette tools={tools} orientation="vertical" groupOrder={PALETTE_GROUP_ORDER} />
+                </div>
               )}
               <div
                 ref={canvasContainerRef}
-                style={{ flex: 1, position: 'relative', overflow: 'hidden', background: '#e0e0e0', lineHeight: 0 }}
+                className="editor-canvas"
                 onDrop={handleDrop}
                 onDragOver={handleDragOver}
+                onPointerMove={handleCanvasPointerMove}
+                onPointerLeave={() => cursor.set(null)}
               >
                 {canvasMounted && (
                   <SceneCanvas<LabelNodeData, LabelLayer, LabelPose>
@@ -1345,10 +1324,8 @@ export function App() {
                     insertNodeFactories={insertNodeFactories}
                     onToolsCreated={setTools}
                     selectTool={{ rotate: false, resize: { behaviors: resizeBehaviors } }}
-                    // Truthy `viewport` registers the hand (pan) tool so it
-                    // appears in the palette. Wheel pan + zoom are on by default
-                    // regardless. `recenter` routes Cmd-0 through the same
-                    // center-the-label view as the toolbar Reset button.
+                    // `recenter` routes Cmd-0 through the same center-the-label
+                    // view as the toolbar Reset button.
                     viewport={{ recenter: handleZoomReset }}
                     view={view}
                     onViewChange={setView}
@@ -1386,40 +1363,36 @@ export function App() {
                   </Callout>
                 )}
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <PropertyPanel scene={scene} selection={selection} />
-                <ArrangePanel
-                  scene={scene}
-                  selection={selection}
-                  labelRect={{ x: 0, y: printableBand.y, width: labelLength, height: printableBand.height }}
-                />
-                <PrinterPanel
-                  lastSeen={printerLastSeen}
-                  reachable={printerReachable}
-                  printing={printing}
-                  onRefresh={handlePrinterRefresh}
-                  autoCut={autoCut}
-                  onAutoCutChange={handleAutoCutChange}
-                  printPreview={printPreview}
-                  onPrintPreviewChange={handlePrintPreviewChange}
-                  marginGuides={marginGuides}
-                  onMarginGuidesChange={handleMarginGuidesChange}
-                  ditherAlgorithm={ditherAlgorithm}
-                  onDitherAlgorithmChange={handleDitherAlgorithmChange}
-                />
-                <DebugPanel
-                  cassetteColorsEnabled={cassetteColorsEnabled}
-                  onCassetteColorsEnabledChange={handleCassetteColorsChange}
-                  tapeColorOverride={tapeColorOverride}
-                  onTapeColorOverrideChange={setTapeColorOverride}
-                  textColorOverride={textColorOverride}
-                  onTextColorOverrideChange={setTextColorOverride}
-                  liveStatus={liveStatus}
-                />
-                <CustomFontsPanel />
-              </div>
+              <Inspector
+                scene={scene}
+                selection={selection}
+                labelRect={{ x: 0, y: printableBand.y, width: labelLength, height: printableBand.height }}
+                printer={{
+                  lastSeen: printerLastSeen,
+                  reachable: printerReachable,
+                  printing,
+                  onRefresh: handlePrinterRefresh,
+                  autoCut,
+                  onAutoCutChange: handleAutoCutChange,
+                  printPreview,
+                  onPrintPreviewChange: handlePrintPreviewChange,
+                  marginGuides,
+                  onMarginGuidesChange: handleMarginGuidesChange,
+                  ditherAlgorithm,
+                  onDitherAlgorithmChange: handleDitherAlgorithmChange,
+                }}
+                debug={{
+                  cassetteColorsEnabled,
+                  onCassetteColorsEnabledChange: handleCassetteColorsChange,
+                  tapeColorOverride,
+                  onTapeColorOverrideChange: setTapeColorOverride,
+                  textColorOverride,
+                  onTextColorOverrideChange: setTextColorOverride,
+                  liveStatus,
+                }}
+              />
             </div>
-          </div>
+          </LabShell>
         </SelectionContextProvider>
       </ActionsProvider>
     </DepRegistryProvider>

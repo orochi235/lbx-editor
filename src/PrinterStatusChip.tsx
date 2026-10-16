@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react';
-import type { PrinterStatus } from 'obwat';
+import { usePrinterSummary, type PrinterSeen } from './printerStatus';
 import './printerStatusChip.css';
 
 export interface PrinterStatusChipProps {
-  lastSeen: { status: PrinterStatus; at: number } | null;
+  lastSeen: PrinterSeen | null;
   reachable: boolean;
   printing: boolean;
   /** Click handler: fire an immediate status query (result arrives via the
@@ -11,45 +10,10 @@ export interface PrinterStatusChipProps {
   onRefresh?: () => void;
 }
 
-const MODEL = 'PT-P710BT';
-
-function relativeTime(at: number, now: number): string {
-  const mins = Math.floor((now - at) / 60_000);
-  return mins < 1 ? 'just now' : `${mins}m ago`;
-}
-
-/** Toolbar chip: printer reachability, tape width, error state, last-seen.
- *  Clicking re-queries the printer. */
+/** Printer reachability, tape width, error state, last-seen. Clicking
+ *  re-queries the printer. */
 export function PrinterStatusChip({ lastSeen, reachable, printing, onRefresh }: PrinterStatusChipProps) {
-  // Re-render on a coarse timer so the relative time stays honest.
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const handle = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(handle);
-  }, []);
-
-  let variant: 'ready' | 'error' | 'unknown' | 'printing';
-  let text: string;
-  let tooltip: string;
-
-  if (printing) {
-    variant = 'printing';
-    text = `${MODEL} · printing…`;
-    tooltip = 'Sending job to the printer';
-  } else if (!reachable || !lastSeen) {
-    variant = 'unknown';
-    text = `${MODEL} · —`;
-    tooltip = 'Printer not detected — it may be asleep (press its power button)';
-  } else {
-    const { status, at } = lastSeen;
-    variant = status.hasError ? 'error' : 'ready';
-    const width = status.mediaWidthMm !== null ? `${status.mediaWidthMm}mm` : '—';
-    text = `${MODEL} · ${width} · ${relativeTime(at, now)}`;
-    tooltip = status.hasError
-      ? `Printer reports an error — check tape/cover (last seen ${new Date(at).toLocaleTimeString()})`
-      : `Ready (last seen ${new Date(at).toLocaleTimeString()})`;
-  }
-
+  const { variant, text, tooltip } = usePrinterSummary(lastSeen, reachable, printing);
   return (
     <button
       type="button"

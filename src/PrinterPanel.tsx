@@ -1,7 +1,13 @@
 import type { DitherAlgorithm } from 'obwat';
+import { PropertyField, PropertyGroup, PropertyList, PropertySpan } from '@weasel-js/ui/components/Properties';
 import { PrinterStatusChip, type PrinterStatusChipProps } from './PrinterStatusChip';
 import { DITHER_LABELS } from './prefs';
 import './printerPanel.css';
+
+const DITHER_OPTIONS = (Object.keys(DITHER_LABELS) as DitherAlgorithm[]).map((a) => ({
+  value: a,
+  label: DITHER_LABELS[a],
+}));
 
 interface PrinterPanelProps {
   lastSeen: PrinterStatusChipProps['lastSeen'];
@@ -19,74 +25,49 @@ interface PrinterPanelProps {
   onDitherAlgorithmChange: (algorithm: DitherAlgorithm) => void;
 }
 
-/** Sidebar panel for printer state and job settings. Shows the same status
- *  chip as the toolbar; more printer controls will land here over time. */
-export function PrinterPanel({
-  lastSeen,
-  reachable,
-  printing,
-  onRefresh,
-  autoCut,
-  onAutoCutChange,
-  printPreview,
-  onPrintPreviewChange,
-  marginGuides,
-  onMarginGuidesChange,
-  ditherAlgorithm,
-  onDitherAlgorithmChange,
-}: PrinterPanelProps) {
+/** Printer state and job settings. */
+export function PrinterPanel(props: PrinterPanelProps) {
   return (
-    <div className="printer-panel">
-      <h3>Printer</h3>
-      <div className="printer-panel__chip">
+    <PropertyList>
+      <PropertySpan className="printer-panel__chip">
         <PrinterStatusChip
-          lastSeen={lastSeen}
-          reachable={reachable}
-          printing={printing}
-          onRefresh={onRefresh}
+          lastSeen={props.lastSeen}
+          reachable={props.reachable}
+          printing={props.printing}
+          onRefresh={props.onRefresh}
         />
-      </div>
-      <label className="printer-panel__check" title="Cut the tape automatically after printing">
-        <input
-          type="checkbox"
-          checked={autoCut}
-          onChange={(e) => onAutoCutChange(e.target.checked)}
+      </PropertySpan>
+      <PropertyGroup title="Output">
+        <PropertyField
+          kind="boolean"
+          label="Auto cut"
+          description="Cut the tape automatically after printing"
+          value={props.autoCut}
+          onChange={props.onAutoCutChange}
         />
-        Auto cut
-      </label>
-      <label
-        className="printer-panel__check"
-        title="Show the label as the printer will render it: dithered black-and-white dots at print resolution"
-      >
-        <input
-          type="checkbox"
-          checked={printPreview}
-          onChange={(e) => onPrintPreviewChange(e.target.checked)}
+        <PropertyField
+          kind="boolean"
+          label="Print preview"
+          description="Show the label as the printer will render it: dithered black-and-white dots at print resolution"
+          value={props.printPreview}
+          onChange={props.onPrintPreviewChange}
         />
-        Print preview
-      </label>
-      <label
-        className="printer-panel__check"
-        title="Draw dashed lines at the top and bottom of the band the printhead can reach"
-      >
-        <input
-          type="checkbox"
-          checked={marginGuides}
-          onChange={(e) => onMarginGuidesChange(e.target.checked)}
+        <PropertyField
+          kind="boolean"
+          label="Printable margins"
+          description="Draw dashed lines at the top and bottom of the band the printhead can reach"
+          value={props.marginGuides}
+          onChange={props.onMarginGuidesChange}
         />
-        Printable margins
-      </label>
-      <label className="printer-panel__field" title="How colors and grays quantize to the printer's black dots — applies to the preview and the printed label alike">
-        Dithering
-        <select
-          value={ditherAlgorithm}
-          onChange={(e) => onDitherAlgorithmChange(e.target.value as DitherAlgorithm)}
-        >
-          {(Object.keys(DITHER_LABELS) as DitherAlgorithm[]).map((a) => (
-            <option key={a} value={a}>{DITHER_LABELS[a]}</option>
-          ))}
-        </select>
-      </label>
-    </div>
+      </PropertyGroup>
+      <PropertyField<DitherAlgorithm>
+        kind="enum"
+        label="Dithering"
+        description="How colors and grays quantize to the printer's black dots — applies to the preview and the printed label alike"
+        value={props.ditherAlgorithm}
+        options={DITHER_OPTIONS}
+        onChange={props.onDitherAlgorithmChange}
+      />
+    </PropertyList>
   );
 }

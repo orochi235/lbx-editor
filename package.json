@@ -14,6 +14,7 @@
     "@weasel-js/animator": "1.10.1",
     "@weasel-js/core": "1.10.1",
     "@weasel-js/font": "1.10.1",
+    "@weasel-js/labkit": "1.10.1",
     "@weasel-js/prefs": "1.10.1",
     "@weasel-js/theme": "1.10.1",
     "@weasel-js/ui": "1.10.1",

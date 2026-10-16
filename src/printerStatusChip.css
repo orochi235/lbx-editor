@@ -1,20 +1,22 @@
 .printer-chip {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-family: inherit;
-  font-size: 12px;
-  color: #444;
+  gap: var(--wzl-space-xs);
+  font: inherit;
+  font-size: var(--wzl-font-size-sm);
+  color: var(--wzl-fg-muted);
   background: none;
-  padding: 2px 8px;
-  border: 1px solid #ddd;
-  border-radius: 12px;
+  padding: 2px var(--wzl-space-sm);
+  border: 1px solid var(--wzl-border);
+  border-radius: var(--wzl-radius-pill);
   white-space: nowrap;
   cursor: pointer;
+  font-variant-numeric: tabular-nums;
 }
 
 .printer-chip:hover {
-  background: #f2f2f2;
+  background: var(--wzl-surface-hover);
+  color: var(--wzl-fg);
 }
 
 .printer-chip__dot {
@@ -22,22 +24,19 @@
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
+  background: var(--wzl-fg-subtle);
 }
 
 .printer-chip--ready .printer-chip__dot {
-  background: #2e9e44;
+  background: var(--wzl-success);
 }
 
 .printer-chip--error .printer-chip__dot {
-  background: #d33;
-}
-
-.printer-chip--unknown .printer-chip__dot {
-  background: #aaa;
+  background: var(--wzl-danger);
 }
 
 .printer-chip--printing .printer-chip__dot {
-  background: #2b7de9;
+  background: var(--wzl-accent);
   animation: printer-chip-pulse 1s ease-in-out infinite;
 }
 

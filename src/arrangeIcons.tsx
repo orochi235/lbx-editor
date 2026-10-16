@@ -1,4 +1,4 @@
-import type { AlignEdge, MatchDims } from './arrange';
+import type { AlignEdge } from './arrange';
 
 // The kit ships align icons, but as @experimental; these stay ours until it
 // publishes them.
@@ -20,20 +20,6 @@ export function AlignIcon({ edge }: { edge: AlignEdge }) {
       {bars.map(([x, y, w, h]) => (
         <rect key={`${x},${y}`} x={x} y={y} width={w} height={h} fill="currentColor" />
       ))}
-    </svg>
-  );
-}
-
-const MATCH_ARROWS: Record<MatchDims, string> = {
-  width: 'M1 8h14M1 8l3-3M1 8l3 3M15 8l-3-3M15 8l-3 3',
-  height: 'M8 1v14M8 1l-3 3M8 1l3 3M8 15l-3-3M8 15l3-3',
-  both: 'M2 2l12 12M2 2v4M2 2h4M14 14v-4M14 14h-4',
-};
-
-export function MatchIcon({ dims }: { dims: MatchDims }) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d={MATCH_ARROWS[dims]} stroke="currentColor" strokeWidth="1.5" fill="none" />
     </svg>
   );
 }

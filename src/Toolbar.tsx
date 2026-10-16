@@ -1,23 +1,16 @@
-import { useEffect, useState } from 'react';
+import { Toolbar as KitToolbar, ZoomControl } from '@weasel-js/labkit';
+import { Checkbox } from '@weasel-js/ui/components/Checkbox';
+import { NumberField } from '@weasel-js/ui/components/NumberField';
+import { Select } from '@weasel-js/ui/components/Select';
+import { ExportIcon, FitIcon, OpenIcon, ResetIcon, SettingsIcon, ZoomInIcon, ZoomOutIcon } from '@weasel-js/ui';
 import { TAPE_SIZES, type TapeSize } from './label';
 import { PrinterStatusChip, type PrinterStatusChipProps } from './PrinterStatusChip';
+import './toolbar.css';
 
-// Zoom slider: logarithmic mapping over weasel's zoom clamp range (0.1×–8×), so
-// equal slider travel is equal proportional zoom. Expressed in percent.
-const ZOOM_MIN_PCT = 10;
-const ZOOM_MAX_PCT = 800;
-const SLIDER_STEPS = 1000;
-const LOG_RATIO = Math.log(ZOOM_MAX_PCT / ZOOM_MIN_PCT);
-
-function sliderToPercent(slider: number): number {
-  const t = slider / SLIDER_STEPS;
-  return ZOOM_MIN_PCT * Math.exp(LOG_RATIO * t);
-}
-
-function percentToSlider(percent: number): number {
-  const clamped = Math.min(Math.max(percent, ZOOM_MIN_PCT), ZOOM_MAX_PCT);
-  return (Math.log(clamped / ZOOM_MIN_PCT) / LOG_RATIO) * SLIDER_STEPS;
-}
+const TAPE_OPTIONS = Object.entries(TAPE_SIZES).map(([key, val]) => ({
+  value: key as TapeSize,
+  label: val.displayName,
+}));
 
 interface ToolbarProps {
   tapeSize: TapeSize;
@@ -34,10 +27,11 @@ interface ToolbarProps {
   onImport: () => void;
   onPrint: () => void;
   printDisabled?: boolean;
-  zoomPercent: number;
+  /** As a scale factor: 1 is 100%. */
+  zoom: number;
   onZoomIn: () => void;
   onZoomOut: () => void;
-  onZoomSet: (percent: number) => void;
+  onZoomSet: (zoom: number) => void;
   onZoomFit: () => void;
   onZoomReset: () => void;
   printerLastSeen: PrinterStatusChipProps['lastSeen'];
@@ -46,192 +40,90 @@ interface ToolbarProps {
   onOpenPrefs: () => void;
 }
 
-export function Toolbar({
-  tapeSize,
-  onTapeSizeChange,
-  autoLength,
-  onAutoLengthChange,
-  labelLength,
-  onLabelLengthChange,
-  labelsCount,
-  onLabelsCountChange,
-  onExport,
-  onImport,
-  onPrint,
-  printDisabled,
-  zoomPercent,
-  onZoomIn,
-  onZoomOut,
-  onZoomSet,
-  onZoomFit,
-  onZoomReset,
-  printerLastSeen,
-  printerReachable,
-  onPrinterRefresh,
-  onOpenPrefs,
-}: ToolbarProps) {
+export function Toolbar(props: ToolbarProps) {
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: '12px',
-      padding: '8px 16px',
-      borderBottom: '1px solid #ddd',
-      background: '#fff',
-      flexShrink: 0,
-      flexWrap: 'wrap',
-    }}>
-      {/* Tape config */}
-      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}>
-        Tape:
-        <select
-          value={tapeSize}
-          onChange={(e) => onTapeSizeChange(e.target.value as TapeSize)}
+    <KitToolbar aria-label="Document">
+      <KitToolbar.Group aria-label="Tape">
+        <Select<TapeSize>
+          aria-label="Tape"
+          width="fit"
+          selectedKey={props.tapeSize}
+          onSelectionChange={props.onTapeSizeChange}
+          options={TAPE_OPTIONS}
+        />
+        <span title="Fit the label length to the content, the way P-touch's auto length does">
+          <Checkbox isSelected={props.autoLength} onChange={props.onAutoLengthChange}>
+            Auto length
+          </Checkbox>
+        </span>
+        <NumberField
+          label="Length (pt)"
+          orientation="row"
+          width="fit"
+          hideSteppers
+          className="toolbar__length"
+          // Fitted lengths carry float noise (145.39999…); show one decimal.
+          formatOptions={{ maximumFractionDigits: 1 }}
+          minValue={1}
+          value={props.labelLength}
+          onChange={(v) => Number.isFinite(v) && props.onLabelLengthChange(v)}
+          isDisabled={props.autoLength}
+        />
+        <span title="Cut the strip into this many equal labels when printing">
+          <NumberField
+            label="Labels"
+            orientation="row"
+            width="fit"
+            hideSteppers
+            className="toolbar__labels"
+            minValue={1}
+            maxValue={50}
+            step={1}
+            value={props.labelsCount}
+            onChange={(v) => Number.isFinite(v) && props.onLabelsCountChange(v)}
+          />
+        </span>
+      </KitToolbar.Group>
+      <KitToolbar.Group aria-label="Zoom">
+        <KitToolbar.Button iconOnly aria-label="Zoom out" title="Zoom out" onClick={props.onZoomOut}>
+          <ZoomOutIcon />
+        </KitToolbar.Button>
+        <ZoomControl zoom={props.zoom} onZoomChange={props.onZoomSet} />
+        <KitToolbar.Button iconOnly aria-label="Zoom in" title="Zoom in" onClick={props.onZoomIn}>
+          <ZoomInIcon />
+        </KitToolbar.Button>
+        <KitToolbar.Button iconOnly aria-label="Zoom to fit" title="Zoom to fit" onClick={props.onZoomFit}>
+          <FitIcon />
+        </KitToolbar.Button>
+        <KitToolbar.Button
+          iconOnly
+          aria-label="Reset to 100%"
+          title="Reset to 100%, centered"
+          onClick={props.onZoomReset}
         >
-          {Object.entries(TAPE_SIZES).map(([key, val]) => (
-            <option key={key} value={key}>{val.displayName}</option>
-          ))}
-        </select>
-      </label>
-
-      <label
-        style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
-        title="Fit the label length to the content, the way P-touch's auto length does"
-      >
-        <input
-          type="checkbox"
-          checked={autoLength}
-          onChange={(e) => onAutoLengthChange(e.target.checked)}
+          <ResetIcon />
+        </KitToolbar.Button>
+      </KitToolbar.Group>
+      <KitToolbar.Group end aria-label="File">
+        <PrinterStatusChip
+          lastSeen={props.printerLastSeen}
+          reachable={props.printerReachable}
+          printing={props.printDisabled ?? false}
+          onRefresh={props.onPrinterRefresh}
         />
-        Auto
-      </label>
-
-      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}>
-        Length:
-        <input
-          type="number"
-          // Fitted lengths carry float noise (145.39999…) — the field is a
-          // readout under auto, so round it for display.
-          value={autoLength ? Math.round(labelLength * 10) / 10 : labelLength}
-          onChange={(e) => onLabelLengthChange(Number(e.target.value))}
-          disabled={autoLength}
-          style={{ width: '50px' }}
-        />
-        pt
-      </label>
-
-      <label
-        style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
-        title="Cut the strip into this many equal labels when printing"
-      >
-        Labels:
-        <input
-          type="number"
-          min={1}
-          value={labelsCount}
-          onChange={(e) => onLabelsCountChange(Number(e.target.value))}
-          style={{ width: '40px' }}
-        />
-      </label>
-
-      {/* Separator */}
-      <div style={{ width: '1px', height: '24px', background: '#ddd' }} />
-
-      {/* Zoom */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <button onClick={onZoomOut} title="Zoom out">−</button>
-        <input
-          type="range"
-          min={0}
-          max={SLIDER_STEPS}
-          value={Math.round(percentToSlider(zoomPercent))}
-          onChange={(e) => onZoomSet(sliderToPercent(Number(e.target.value)))}
-          title="Zoom"
-          style={{ width: '110px' }}
-        />
-        <button onClick={onZoomIn} title="Zoom in">+</button>
-        <ZoomInput percent={zoomPercent} onCommit={onZoomSet} />
-        <button onClick={onZoomFit} title="Zoom to fit">⤢</button>
-        <button onClick={onZoomReset} title="Reset to 100%">Reset</button>
-      </div>
-
-      {/* Spacer */}
-      <div style={{ flex: 1 }} />
-
-      {/* Printer status */}
-      <PrinterStatusChip
-        lastSeen={printerLastSeen}
-        reachable={printerReachable}
-        printing={printDisabled ?? false}
-        onRefresh={onPrinterRefresh}
-      />
-
-      {/* File actions */}
-      <button onClick={onImport}>Open .lbx</button>
-      <button onClick={onExport}>Export .lbx</button>
-      <button type="button" onClick={onPrint} disabled={printDisabled} title="Print to label printer">
-        Print
-      </button>
-      <button type="button" onClick={onOpenPrefs} title="Preferences" aria-label="Preferences">
-        ⚙
-      </button>
-    </div>
-  );
-}
-
-/**
- * Editable zoom percentage. Shows the live zoom while not being edited; commits
- * a typed value on Enter or blur. Escape reverts to the live value.
- */
-function ZoomInput({
-  percent,
-  onCommit,
-}: {
-  percent: number;
-  onCommit: (percent: number) => void;
-}) {
-  const [draft, setDraft] = useState(String(percent));
-  const [editing, setEditing] = useState(false);
-
-  // Track the live zoom whenever the user isn't mid-edit.
-  useEffect(() => {
-    if (!editing) setDraft(String(percent));
-  }, [percent, editing]);
-
-  const commit = () => {
-    setEditing(false);
-    const value = Number(draft);
-    if (Number.isFinite(value) && value > 0) {
-      onCommit(value);
-    } else {
-      setDraft(String(percent));
-    }
-  };
-
-  return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: '2px', fontSize: '13px' }}>
-      <input
-        type="text"
-        inputMode="numeric"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onFocus={(e) => {
-          setEditing(true);
-          e.target.select();
-        }}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.currentTarget.blur();
-          } else if (e.key === 'Escape') {
-            setDraft(String(percent));
-            setEditing(false);
-            e.currentTarget.blur();
-          }
-        }}
-        style={{ width: '40px', textAlign: 'right' }}
-      />
-      %
-    </label>
+        <KitToolbar.Button onClick={props.onImport}>
+          <OpenIcon size={16} /> Open .lbx
+        </KitToolbar.Button>
+        <KitToolbar.Button onClick={props.onExport}>
+          <ExportIcon size={16} /> Export .lbx
+        </KitToolbar.Button>
+        <KitToolbar.Button onClick={props.onPrint} disabled={props.printDisabled} title="Print to label printer">
+          Print
+        </KitToolbar.Button>
+        <KitToolbar.Button iconOnly aria-label="Preferences" title="Preferences" onClick={props.onOpenPrefs}>
+          <SettingsIcon />
+        </KitToolbar.Button>
+      </KitToolbar.Group>
+    </KitToolbar>
   );
 }

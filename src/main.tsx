@@ -7,6 +7,7 @@ import '@weasel-js/theme/fonts.css';
 // Vite compiled the CSS modules along with everything else. Tokens first: the
 // component styles read from them.
 import '@weasel-js/ui/style.css';
+import '@weasel-js/labkit/styles.css';
 import { App } from './App';
 
 const container = document.getElementById('root')!;

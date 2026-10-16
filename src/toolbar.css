@@ -1,0 +1,12 @@
+.toolbar__length,
+.toolbar__labels {
+  font-variant-numeric: tabular-nums;
+}
+
+.toolbar__length {
+  --wzl-number-field-width: 7ch;
+}
+
+.toolbar__labels {
+  --wzl-number-field-width: 4ch;
+}

@@ -9,6 +9,9 @@ import {
   validateMetricsJson,
   type CustomFontSummary,
 } from './customFonts';
+import { Button } from '@weasel-js/ui/components/Button';
+import { CloseButton } from '@weasel-js/ui/components/CloseButton';
+import { PropertyField, PropertyList } from '@weasel-js/ui/components/Properties';
 import './customFontsPanel.css';
 
 interface PendingUpload {
@@ -124,31 +127,29 @@ export function CustomFontsPanel() {
     }
   }
 
+  const variantName = (f: CustomFontSummary) =>
+    `${f.family} ${f.weight}${f.style === 'italic' ? ' italic' : ''}`;
+
   return (
     <div className="custom-fonts-panel">
-      <h3>Custom fonts</h3>
       {fonts.length === 0 ? (
-        <p className="custom-fonts-panel__empty">No custom fonts yet.</p>
+        <p className="custom-fonts-panel__note">No custom fonts yet.</p>
       ) : (
         <ul className="custom-fonts-panel__list">
           {fonts.map((f) => (
             <li key={f.key} className="custom-fonts-panel__row">
               {removedKeys.has(f.key) ? (
                 <span className="custom-fonts-panel__note">
-                  {f.family} {f.weight}{f.style === 'italic' ? ' italic' : ''} — removed, takes effect on reload
+                  {variantName(f)} — removed, takes effect on reload
                 </span>
               ) : overwrittenKeys.has(f.key) ? (
                 <span className="custom-fonts-panel__note">
-                  {f.family} {f.weight}{f.style === 'italic' ? ' italic' : ''} — updated, takes effect on reload
+                  {variantName(f)} — updated, takes effect on reload
                 </span>
               ) : (
                 <>
-                  <span>
-                    {f.family} {f.weight}{f.style === 'italic' ? ' italic' : ''}
-                  </span>
-                  <button type="button" onClick={() => handleRemove(f.key)} title="Remove">
-                    ✕
-                  </button>
+                  <span>{variantName(f)}</span>
+                  <CloseButton ariaLabel={`Remove ${variantName(f)}`} onClick={() => handleRemove(f.key)} />
                 </>
               )}
             </li>
@@ -159,14 +160,14 @@ export function CustomFontsPanel() {
       {error && !addOpen && <p className="custom-fonts-panel__error">{error}</p>}
 
       {!addOpen && (
-        <button type="button" className="custom-fonts-panel__add-toggle" onClick={() => setAddOpen(true)}>
+        <Button size="sm" fullWidth onClick={() => setAddOpen(true)}>
           Add font…
-        </button>
+        </Button>
       )}
 
       {addOpen && (
         <div className="custom-fonts-panel__form">
-          <label>
+          <label className="custom-fonts-panel__file">
             Atlas pair (.json + .png)
             <input
               type="file"
@@ -177,47 +178,46 @@ export function CustomFontsPanel() {
           </label>
 
           {pending && (
-            <>
-              <label>
-                Family
-                <input
-                  type="text"
-                  value={pending.family}
-                  onChange={(e) => setPending({ ...pending, family: e.target.value })}
-                />
-              </label>
-              <label>
-                Weight
-                <input
-                  type="number"
-                  step={100}
-                  min={100}
-                  max={900}
-                  value={pending.weight}
-                  onChange={(e) => setPending({ ...pending, weight: Number(e.target.value) })}
-                />
-              </label>
-              <label className="custom-fonts-panel__check">
-                <input
-                  type="checkbox"
-                  checked={pending.italic}
-                  onChange={(e) => setPending({ ...pending, italic: e.target.checked })}
-                />
-                Italic
-              </label>
-            </>
+            <PropertyList>
+              <PropertyField
+                kind="string"
+                label="Family"
+                value={pending.family}
+                onChange={(family) => setPending({ ...pending, family })}
+              />
+              <PropertyField
+                kind="number"
+                label="Weight"
+                step={100}
+                min={100}
+                max={900}
+                value={pending.weight}
+                onChange={(weight) => setPending({ ...pending, weight })}
+              />
+              <PropertyField
+                kind="boolean"
+                label="Italic"
+                value={pending.italic}
+                onChange={(italic) => setPending({ ...pending, italic })}
+              />
+            </PropertyList>
           )}
 
           {error && <p className="custom-fonts-panel__error">{error}</p>}
 
           <div className="custom-fonts-panel__actions">
             {pending && (
-              <button type="button" onClick={() => void handleConfirmAdd()} disabled={busy || !pending.family.trim()}>
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => void handleConfirmAdd()}
+                disabled={busy || !pending.family.trim()}
+              >
                 Add
-              </button>
+              </Button>
             )}
-            <button
-              type="button"
+            <Button
+              size="sm"
               onClick={() => {
                 setAddOpen(false);
                 setPending(null);
@@ -225,7 +225,7 @@ export function CustomFontsPanel() {
               }}
             >
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       )}

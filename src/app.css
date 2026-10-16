@@ -1,0 +1,33 @@
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+.editor-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.editor-tools {
+  display: flex;
+  flex: none;
+  padding: var(--wzl-space-sm) var(--wzl-space-xs);
+  border-inline-end: 1px solid var(--wzl-border);
+  background: var(--wzl-surface);
+}
+
+/* The backdrop follows the theme; the tape drawn on it keeps its physical
+   color in both modes. */
+.editor-canvas {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  background: var(--wzl-surface-sunken);
+  line-height: 0;
+}

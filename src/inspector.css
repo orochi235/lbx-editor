@@ -1,0 +1,11 @@
+.inspector {
+  width: 300px;
+  flex: none;
+  min-height: 0;
+  overflow-y: auto;
+  border-inline-start: 1px solid var(--wzl-border);
+}
+
+.inspector > * {
+  padding-inline: var(--wzl-space-sm);
+}

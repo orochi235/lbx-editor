@@ -1,4 +1,5 @@
 import type { PrinterStatus, TapeColor, TextColor } from 'obwat';
+import { PropertyField, PropertyList, PropertyNote, type PropertyOption } from '@weasel-js/ui/components/Properties';
 import {
   TAPE_COLOR_OPTIONS,
   TEXT_COLOR_OPTIONS,
@@ -6,6 +7,8 @@ import {
   textColorCss,
 } from './tapeColors';
 import './debugPanel.css';
+
+const LIVE = 'live';
 
 interface DebugPanelProps {
   cassetteColorsEnabled: boolean;
@@ -19,65 +22,53 @@ interface DebugPanelProps {
   liveStatus: PrinterStatus | null;
 }
 
-/** Dev/testing panel: cassette-color toggle + manual overrides for the
- *  tape/ink colors the canvas preview uses. */
-export function DebugPanel({
-  cassetteColorsEnabled,
-  onCassetteColorsEnabledChange,
-  tapeColorOverride,
-  onTapeColorOverrideChange,
-  textColorOverride,
-  onTextColorOverrideChange,
-  liveStatus,
-}: DebugPanelProps) {
-  return (
-    <div className="debug-panel">
-      <h3>Debug</h3>
-      <label className="debug-check">
-        <input
-          type="checkbox"
-          checked={cassetteColorsEnabled}
-          onChange={(e) => onCassetteColorsEnabledChange(e.target.checked)}
-        />
-        Cassette colors on canvas
-      </label>
-      <label>
-        Tape color
-        <ColorSwatch css={tapeColorCss(tapeColorOverride)} />
-        <select
-          value={tapeColorOverride ?? ''}
-          disabled={!cassetteColorsEnabled}
-          onChange={(e) => onTapeColorOverrideChange((e.target.value || null) as TapeColor | null)}
-        >
-          <option value="">(live)</option>
-          {TAPE_COLOR_OPTIONS.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Text color
-        <ColorSwatch css={textColorCss(textColorOverride)} />
-        <select
-          value={textColorOverride ?? ''}
-          disabled={!cassetteColorsEnabled}
-          onChange={(e) => onTextColorOverrideChange((e.target.value || null) as TextColor | null)}
-        >
-          <option value="">(live)</option>
-          {TEXT_COLOR_OPTIONS.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
-      </label>
-      <div className="debug-live">
-        live cassette: {liveStatus ? `${liveStatus.tapeColor ?? '?'} / ${liveStatus.textColor ?? '?'} ink` : 'none'}
-      </div>
-    </div>
-  );
-}
-
 function ColorSwatch({ css }: { css: string | null }) {
   if (!css) return null;
   // Data-driven color — the one legitimate inline style.
   return <span className="debug-swatch" style={{ background: css }} />;
+}
+
+function colorOptions<C extends string>(colors: readonly C[], css: (c: C) => string | null): PropertyOption<string>[] {
+  return [
+    { value: LIVE, label: '(live)' },
+    ...colors.map((c) => ({ value: c, label: c, glyph: <ColorSwatch css={css(c)} /> })),
+  ];
+}
+
+const TAPE_OPTIONS = colorOptions(TAPE_COLOR_OPTIONS, tapeColorCss);
+const TEXT_OPTIONS = colorOptions(TEXT_COLOR_OPTIONS, textColorCss);
+
+/** Dev/testing panel: cassette-color toggle + manual overrides for the
+ *  tape/ink colors the canvas preview uses. */
+export function DebugPanel(props: DebugPanelProps) {
+  const { liveStatus } = props;
+  return (
+    <PropertyList>
+      <PropertyField
+        kind="boolean"
+        label="Cassette colors on canvas"
+        value={props.cassetteColorsEnabled}
+        onChange={props.onCassetteColorsEnabledChange}
+      />
+      <PropertyField
+        kind="enum"
+        label="Tape color"
+        value={props.tapeColorOverride ?? LIVE}
+        options={TAPE_OPTIONS}
+        disabled={!props.cassetteColorsEnabled}
+        onChange={(v) => props.onTapeColorOverrideChange(v === LIVE ? null : (v as TapeColor))}
+      />
+      <PropertyField
+        kind="enum"
+        label="Text color"
+        value={props.textColorOverride ?? LIVE}
+        options={TEXT_OPTIONS}
+        disabled={!props.cassetteColorsEnabled}
+        onChange={(v) => props.onTextColorOverrideChange(v === LIVE ? null : (v as TextColor))}
+      />
+      <PropertyNote>
+        live cassette: {liveStatus ? `${liveStatus.tapeColor ?? '?'} / ${liveStatus.textColor ?? '?'} ink` : 'none'}
+      </PropertyNote>
+    </PropertyList>
+  );
 }

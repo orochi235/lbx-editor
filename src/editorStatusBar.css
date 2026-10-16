@@ -1,0 +1,18 @@
+.editor-status {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Readouts that change on every pointer move or zoom step are pinned to their
+   widest value, so the items after them hold still. */
+.editor-status__selection {
+  min-width: 16ch;
+}
+
+.editor-status__cursor {
+  min-width: 26ch;
+}
+
+.editor-status__zoom {
+  min-width: 10ch;
+  text-align: end;
+}

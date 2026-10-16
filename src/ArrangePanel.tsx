@@ -1,5 +1,9 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ActionBar } from '@weasel-js/ui/components/ActionBar';
+import { ButtonBar } from '@weasel-js/ui/components/ButtonBar';
+import { ToggleBar } from '@weasel-js/ui/components/ToggleBar';
+import { PropertyList, PropertyNote, PropertyRow } from '@weasel-js/ui/components/Properties';
+import { FitStretchIcon, TallerIcon, WiderIcon } from '@weasel-js/ui';
 import type { NodeId, Scene, SelectionApi } from '@weasel-js/core';
 import type { LabelLayer, LabelNodeData, LabelPose } from './label';
 import {
@@ -10,11 +14,10 @@ import {
   type MatchDims,
   type Posed,
 } from './arrange';
-import { AlignIcon, MatchIcon } from './arrangeIcons';
+import { AlignIcon } from './arrangeIcons';
 import { nodeSummary } from './nodeSummary';
 import { snapNodePose } from './dotSnap';
 import { PRINT_DPI } from './printDpi';
-import './arrangePanel.css';
 
 type Reference = 'key' | 'selection' | 'label';
 
@@ -27,10 +30,10 @@ const EDGES: { edge: AlignEdge; title: string }[] = [
   { edge: 'bottom', title: 'Align bottom edges' },
 ];
 
-const MATCHES: { dims: MatchDims; title: string }[] = [
-  { dims: 'width', title: 'Match width' },
-  { dims: 'height', title: 'Match height' },
-  { dims: 'both', title: 'Match width and height' },
+const MATCHES: { dims: MatchDims; title: string; icon: ReactNode }[] = [
+  { dims: 'width', title: 'Match width', icon: <WiderIcon size={16} /> },
+  { dims: 'height', title: 'Match height', icon: <TallerIcon size={16} /> },
+  { dims: 'both', title: 'Match width and height', icon: <FitStretchIcon size={16} /> },
 ];
 
 interface ArrangePanelProps {
@@ -48,7 +51,13 @@ interface ArrangePanelProps {
 export function ArrangePanel({ scene, selection, labelRect }: ArrangePanelProps) {
   const [choice, setChoice] = useState<Reference>('key');
   const ids = selection.current as readonly NodeId[];
-  if (ids.length === 0) return null;
+  if (ids.length === 0) {
+    return (
+      <PropertyList>
+        <PropertyNote>Select objects to arrange them.</PropertyNote>
+      </PropertyList>
+    );
+  }
 
   const multi = ids.length > 1;
   const reference: Reference = multi ? choice : 'label';
@@ -74,59 +83,57 @@ export function ArrangePanel({ scene, selection, labelRect }: ArrangePanelProps)
   };
 
   const keyNode = scene.get(keyId);
+  const cannotMove = !refRect || movers.length === 0;
 
   return (
-    <div className="arrange-panel">
-      <h3>Arrange</h3>
-      <div className="arrange-panel__order">
-        <span>Order</span>
+    <PropertyList>
+      <PropertyRow label="Order" group>
         <ActionBar group="reorder" />
-      </div>
-      <label className="arrange-panel__field">
-        Align to
-        <select
+      </PropertyRow>
+      <PropertyRow label="Align to" group>
+        <ToggleBar<Reference>
+          ariaLabel="Align to"
+          size="sm"
           value={reference}
-          disabled={!multi}
-          onChange={(e) => setChoice(e.target.value as Reference)}
-        >
-          {multi && <option value="key">Key object</option>}
-          {multi && <option value="selection">Selection</option>}
-          <option value="label">Label</option>
-        </select>
-      </label>
+          onChange={(next) => next && setChoice(next)}
+          items={[
+            { value: 'key', label: 'Key object', disabled: !multi },
+            { value: 'selection', label: 'Selection', disabled: !multi },
+            { value: 'label', label: 'Label' },
+          ]}
+        />
+      </PropertyRow>
       {reference === 'key' && keyNode && (
-        <p className="arrange-panel__key">
-          Key: {nodeSummary(keyNode.data)}
-        </p>
+        <PropertyNote>Key: {nodeSummary(keyNode.data)}</PropertyNote>
       )}
-      <div className="arrange-panel__buttons" role="group" aria-label="Align">
-        {EDGES.map(({ edge, title }) => (
-          <button
-            key={edge}
-            type="button"
-            title={title}
-            aria-label={title}
-            disabled={!refRect || movers.length === 0}
-            onClick={() => refRect && apply(title, alignTo(movers, refRect, edge))}
-          >
-            <AlignIcon edge={edge} />
-          </button>
-        ))}
-      </div>
-      <div className="arrange-panel__buttons" role="group" aria-label="Match size">
-        {MATCHES.map(({ dims, title }) => (
-          <button
-            key={dims}
-            type="button"
-            title={title}
-            aria-label={title}
-            disabled={!refRect || movers.length === 0 || reference === 'selection'}
-            onClick={() => refRect && apply(title, matchSize(movers, refRect, dims))}
-          >
-            <MatchIcon dims={dims} />
-          </button>
-        ))}
-      </div>
-    </div>
+      <PropertyRow label="Align" group>
+        <ButtonBar
+          ariaLabel="Align"
+          size="sm"
+          items={EDGES.map(({ edge, title }) => ({
+            value: edge,
+            label: <AlignIcon edge={edge} />,
+            ariaLabel: title,
+            tooltip: title,
+            disabled: cannotMove,
+            onAction: () => refRect && apply(title, alignTo(movers, refRect, edge)),
+          }))}
+        />
+      </PropertyRow>
+      <PropertyRow label="Match size" group>
+        <ButtonBar
+          ariaLabel="Match size"
+          size="sm"
+          items={MATCHES.map(({ dims, title, icon }) => ({
+            value: dims,
+            label: icon,
+            ariaLabel: title,
+            tooltip: title,
+            disabled: cannotMove || reference === 'selection',
+            onAction: () => refRect && apply(title, matchSize(movers, refRect, dims)),
+          }))}
+        />
+      </PropertyRow>
+    </PropertyList>
   );
 }
