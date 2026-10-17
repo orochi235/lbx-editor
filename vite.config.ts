@@ -8,5 +8,5 @@ export default defineConfig({
   // Served from https://orochi235.github.io/lbx-editor/ on Pages; root locally.
   base: process.env.GITHUB_ACTIONS ? '/lbx-editor/' : '/',
   plugins: [react()],
-  server: { port: 5180 },
+  server: { host: '::', port: 5180 },
 });
