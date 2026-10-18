@@ -928,20 +928,20 @@ export function App() {
       setManualLength(result.labelLength);
       setCutMarks(result.cutMarks);
 
-      // Clear existing scene
-      for (const [id] of scene.nodes) {
-        scene.remove(id);
-      }
-      // Insert imported nodes
-      for (const node of result.nodes) {
-        scene.add({
-          kind: 'leaf',
-          id: asNodeId(node.id),
-          layer: 'objects' as LabelLayer,
-          pose: snapNodePose(node.data, node.pose, PRINT_DPI),
-          data: node.data,
-        });
-      }
+      scene.batch(`Open ${file.name}`, () => {
+        for (const [id] of scene.nodes) {
+          scene.remove(id);
+        }
+        for (const node of result.nodes) {
+          scene.add({
+            kind: 'leaf',
+            id: asNodeId(node.id),
+            layer: 'objects' as LabelLayer,
+            pose: snapNodePose(node.data, node.pose, PRINT_DPI),
+            data: node.data,
+          });
+        }
+      });
     } catch {
       toast.error('Not a readable .lbx', {
         description: `"${file.name}" couldn't be parsed as a P-touch label file.`,
