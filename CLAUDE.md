@@ -364,8 +364,7 @@ Key weasel APIs used:
   would delete marks on a drag the user then abandons.
   The head stays pinned at x=0; only the tail moves. Leftward growth was built
   and removed — it can't coexist with the canvas's continuous refit, which
-  anchors to the label's left edge and pushes the dragged object back. See
-  docs/superpowers/specs/2026-07-28-live-auto-length-design.md.
+  anchors to the label's left edge and pushes the dragged object back.
   On import the *recorded* length wins over our own fit: `paper.height` only
   holds the length for fixed-length files — under autoLength P-touch parks its
   1000mm ceiling (2834.4pt) there and records the real extent in

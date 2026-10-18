@@ -38,6 +38,5 @@ export function fitLengthToContent(poses: Iterable<LabelPose>): number {
  * it cannot coexist with the canvas's continuous refit. Growing the head moves
  * the very edge `fitViewToBounds` anchors to, so the refit pans, the pan maps
  * the same screen pointer to a larger world x, and the object is pushed back:
- * a feedback loop that parks the object at x≈0 and never grows the label. See
- * docs/superpowers/specs/2026-07-28-live-auto-length-design.md.
+ * a feedback loop that parks the object at x≈0 and never grows the label.
  */

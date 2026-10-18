@@ -18,8 +18,7 @@ export const HUMAN_READABLE_HEIGHT_PT = 8;
  * It lives outside the pose: no encoder bakes one into its `totalModules`
  * (pinned across all of them in `encode.test.ts`). The pose is the bars, which
  * is what P-touch's object box means under the `margin="false"` we always
- * export; measured against a P-touch-authored file in
- * docs/superpowers/specs/2026-07-28-barcode-backgrounds-design.md.
+ * export, measured against a P-touch-authored file.
  */
 export function quietZonePt(
   symbol: BarcodeSymbol,
