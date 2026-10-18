@@ -1347,6 +1347,7 @@ export function App() {
                 {activeDiagnostic && diagnosticAnchor && (
                   <Callout
                     isOpen
+                    className="diagnostic-callout"
                     anchorRect={diagnosticAnchor}
                     placement="top"
                     stance={activeDiagnostic.severity === 'error' ? 'danger' : 'important'}
