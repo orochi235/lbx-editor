@@ -340,12 +340,18 @@ export function App() {
   // Reading the display pair rather than the committed one is what makes the
   // canvas zoom out to follow a label growing under the cursor — the effect
   // then re-runs each frame the extent actually changes.
+  //
+  // Mid-gesture the view only zooms out, never in: zooming in under a
+  // shrinking label maps the still pointer further left, which shrinks the
+  // label again — a drag on the rightmost object ran away to its minimum. The
+  // committed length refits once the gesture ends.
   useEffect(() => {
     if (canvasSize.width === 0 || canvasSize.height === 0) return;
     if (prevPaperSize.current.w === displayLength && prevPaperSize.current.h === paperHeight) return;
+    if (liveLength !== null && displayLength < prevPaperSize.current.w) return;
     prevPaperSize.current = { w: displayLength, h: paperHeight };
     applyFitView(displayLength, paperHeight, canvasSize);
-  }, [displayLength, paperHeight, canvasSize, applyFitView]);
+  }, [displayLength, liveLength, paperHeight, canvasSize, applyFitView]);
 
   const zoom = meanScale(view.scale);
   const handleZoomIn = useCallback(
