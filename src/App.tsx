@@ -275,17 +275,29 @@ export function App() {
 
   const prevPaperSize = useRef({ w: paperWidth, h: paperHeight });
   const viewInitialized = useRef(false);
-  // The last view our own centering produced. While the live view still
-  // equals it (the user hasn't panned/zoomed), container resizes re-center
-  // instead of leaving the label drifting off-center.
-  const lastCenteredView = useRef<View | null>(null);
+  // The last view our own centering or fitting produced, and how to redo it.
+  // While the live view still equals it (the user hasn't panned/zoomed),
+  // container resizes redo the framing instead of leaving the label drifting
+  // off-center or running off the canvas.
+  const autoFrame = useRef<{ view: View; frame: (canvas: CanvasSize) => View } | null>(null);
+
+  const applyFrame = useCallback((frame: (canvas: CanvasSize) => View, canvas: CanvasSize) => {
+    const v = frame(canvas);
+    autoFrame.current = { view: v, frame };
+    setView(v);
+  }, []);
 
   const applyCenteredView = useCallback((canvas: CanvasSize) => {
     const { w, h } = prevPaperSize.current;
-    const v = centeredView(w, h, canvas);
-    lastCenteredView.current = v;
-    setView(v);
-  }, []);
+    applyFrame((c) => centeredView(w, h, c), canvas);
+  }, [applyFrame]);
+
+  const applyFitView = useCallback((length: number, height: number, canvas: CanvasSize) => {
+    applyFrame(
+      (c) => fitViewToBounds(paperBounds(length, height), c, viewRef.current, { padding: FIT_PADDING }),
+      canvas,
+    );
+  }, [applyFrame]);
 
   // Measure the container before paint and on resize. On the first valid
   // measurement, center the paper at 100%. Later resizes keep the label
@@ -307,10 +319,11 @@ export function App() {
       } else {
         // Compared OUTSIDE the state updater: mutating the ref inside a
         // setView callback breaks under StrictMode's double-invocation.
-        const c = lastCenteredView.current;
+        const auto = autoFrame.current;
+        const c = auto?.view;
         const v = viewRef.current;
         if (c && v.x === c.x && v.y === c.y && v.scale.x === c.scale.x && v.scale.y === c.scale.y) {
-          applyCenteredView({ width, height });
+          applyFrame(auto.frame, { width, height });
         }
       }
     };
@@ -318,7 +331,7 @@ export function App() {
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [applyCenteredView]);
+  }, [applyCenteredView, applyFrame]);
 
   // Fit the paper to the canvas whenever the paper size changes (tape/length
   // edits and imports both flow through here). The ref guard makes this a no-op
@@ -331,12 +344,8 @@ export function App() {
     if (canvasSize.width === 0 || canvasSize.height === 0) return;
     if (prevPaperSize.current.w === displayLength && prevPaperSize.current.h === paperHeight) return;
     prevPaperSize.current = { w: displayLength, h: paperHeight };
-    setView((v) =>
-      fitViewToBounds(paperBounds(displayLength, paperHeight), canvasSize, v, {
-        padding: FIT_PADDING,
-      }),
-    );
-  }, [displayLength, paperHeight, canvasSize]);
+    applyFitView(displayLength, paperHeight, canvasSize);
+  }, [displayLength, paperHeight, canvasSize, applyFitView]);
 
   const zoom = meanScale(view.scale);
   const handleZoomIn = useCallback(
@@ -356,13 +365,10 @@ export function App() {
     [canvasSize],
   );
   // Reads `displayLength` so a Fit pressed mid-drag frames what's on screen.
-  const handleZoomFit = useCallback(() => {
-    setView((v) =>
-      fitViewToBounds(paperBounds(displayLength, paperHeight), canvasSize, v, {
-        padding: FIT_PADDING,
-      }),
-    );
-  }, [displayLength, paperHeight, canvasSize]);
+  const handleZoomFit = useCallback(
+    () => applyFitView(displayLength, paperHeight, canvasSize),
+    [applyFitView, displayLength, paperHeight, canvasSize],
+  );
   // One centering path for toolbar Reset, Cmd-0 (via viewport.recenter),
   // and initial load.
   const handleZoomReset = useCallback(
