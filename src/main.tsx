@@ -8,11 +8,15 @@ import '@weasel-js/theme/fonts.css';
 // component styles read from them.
 import '@weasel-js/ui/style.css';
 import '@weasel-js/labkit/styles.css';
+import { IconRegistryProvider } from '@weasel-js/core';
 import { App } from './App';
+import { iconTables } from './icons';
 
 const container = document.getElementById('root')!;
 createRoot(container).render(
   <StrictMode>
-    <App />
+    <IconRegistryProvider icons={iconTables}>
+      <App />
+    </IconRegistryProvider>
   </StrictMode>,
 );

@@ -90,7 +90,7 @@ import { snapNodePose } from './dotSnap';
 import { PRINT_DPI } from './printDpi';
 import { fileToBase64, guessMimeType, getImageDimensions } from './imageUtils';
 import { buildImageInsert, type PendingImage } from './imageInsert';
-import { BarcodeIcon } from './BarcodeIcon';
+import { icon } from './icons';
 import {
   tapeMismatchMessage,
   unrenderableBarcodeMessage,
@@ -728,7 +728,7 @@ export function App() {
       id: 'barcode',
       capabilities: ['creates-shapes'],
       cursor: 'crosshair',
-      presentation: { label: 'Barcode', group: TOOL_GROUPS.barcode, icon: <BarcodeIcon /> },
+      presentation: { label: 'Barcode', group: TOOL_GROUPS.barcode, icon: icon('barcode') },
       bindings: [
         { spec: { kind: 'drag' }, actionId: 'insert', opts: { params: { kind: 'barcode' } } },
       ],

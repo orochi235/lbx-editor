@@ -3,7 +3,7 @@ import { ActionBar } from '@weasel-js/ui/components/ActionBar';
 import { ButtonBar } from '@weasel-js/ui/components/ButtonBar';
 import { ToggleBar } from '@weasel-js/ui/components/ToggleBar';
 import { PropertyList, PropertyNote, PropertyRow } from '@weasel-js/ui/components/Properties';
-import { FitStretchIcon, TallerIcon, WiderIcon } from '@weasel-js/ui';
+import { Icon } from '@weasel-js/ui';
 import type { NodeId, Scene, SelectionApi } from '@weasel-js/core';
 import type { LabelLayer, LabelNodeData, LabelPose } from './label';
 import {
@@ -14,26 +14,27 @@ import {
   type MatchDims,
   type Posed,
 } from './arrange';
-import { AlignIcon } from './arrangeIcons';
+import type { IconRef } from '@weasel-js/icons';
+import { icon } from './icons';
 import { nodeSummary } from './nodeSummary';
 import { snapNodePose } from './dotSnap';
 import { PRINT_DPI } from './printDpi';
 
 type Reference = 'key' | 'selection' | 'label';
 
-const EDGES: { edge: AlignEdge; title: string }[] = [
-  { edge: 'left', title: 'Align left edges' },
-  { edge: 'center-x', title: 'Align horizontal centers' },
-  { edge: 'right', title: 'Align right edges' },
-  { edge: 'top', title: 'Align top edges' },
-  { edge: 'center-y', title: 'Align vertical centers' },
-  { edge: 'bottom', title: 'Align bottom edges' },
+const EDGES: { edge: AlignEdge; title: string; icon: IconRef }[] = [
+  { edge: 'left', title: 'Align left edges', icon: icon('core:alignLeft') },
+  { edge: 'center-x', title: 'Align horizontal centers', icon: icon('core:alignCenterX') },
+  { edge: 'right', title: 'Align right edges', icon: icon('core:alignRight') },
+  { edge: 'top', title: 'Align top edges', icon: icon('core:alignTop') },
+  { edge: 'center-y', title: 'Align vertical centers', icon: icon('core:alignCenterY') },
+  { edge: 'bottom', title: 'Align bottom edges', icon: icon('core:alignBottom') },
 ];
 
 const MATCHES: { dims: MatchDims; title: string; icon: ReactNode }[] = [
-  { dims: 'width', title: 'Match width', icon: <WiderIcon size={16} /> },
-  { dims: 'height', title: 'Match height', icon: <TallerIcon size={16} /> },
-  { dims: 'both', title: 'Match width and height', icon: <FitStretchIcon size={16} /> },
+  { dims: 'width', title: 'Match width', icon: <Icon name={icon('ui:wider')} size={16} /> },
+  { dims: 'height', title: 'Match height', icon: <Icon name={icon('ui:taller')} size={16} /> },
+  { dims: 'both', title: 'Match width and height', icon: <Icon name={icon('ui:fitStretch')} size={16} /> },
 ];
 
 interface ArrangePanelProps {
@@ -110,9 +111,9 @@ export function ArrangePanel({ scene, selection, labelRect }: ArrangePanelProps)
         <ButtonBar
           ariaLabel="Align"
           size="sm"
-          items={EDGES.map(({ edge, title }) => ({
+          items={EDGES.map(({ edge, title, icon: glyph }) => ({
             value: edge,
-            label: <AlignIcon edge={edge} />,
+            label: <Icon name={glyph} size={16} />,
             ariaLabel: title,
             tooltip: title,
             disabled: cannotMove,

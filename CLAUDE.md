@@ -5,8 +5,8 @@ Web-based visual editor for Brother P-touch label files (.lbx).
 ## Architecture
 
 Standalone Vite + React app consuming:
-- `@weasel-js/core`, `/ui`, `/theme`, `/prefs`, `/labkit` (from npm, pinned at exactly
-  **1.10.1**, as are the exact-version peers `@weasel-js/font` and
+- `@weasel-js/core`, `/ui`, `/theme`, `/prefs`, `/labkit`, `/icons` (from npm, pinned at exactly
+  **1.11.0**, as are the exact-version peers `@weasel-js/font` and
   `/animator` that core and ui require). Pinned rather than ranged because the
   kit's peers are exact: a caret range lets one package drift ahead of the
   others it must match.
@@ -128,10 +128,19 @@ flat one in points.
 
 weasel resolves as an ordinary dependency: its own `exports` map answers the
 barrel and the `@weasel-js/ui/components/*` subpaths, so nothing mirrors its
-source layout. Components come in through subpaths; the icons have no subpath,
-so they come from the `@weasel-js/ui` barrel, as `LabShell`, `Toolbar` and
-`ZoomControl` come from `@weasel-js/labkit`'s. Both barrels type-check
-against this app's React types at 1.10.1.
+source layout. Components come in through subpaths; `Icon` comes from the
+`@weasel-js/ui` barrel, as `LabShell`, `Toolbar` and `ZoomControl` come from
+`@weasel-js/labkit`'s. Both barrels type-check against this app's React types
+at 1.11.0.
+
+Icons are names, not components (since 1.11.0): `<Icon name={icon('ui:zoomIn')}/>`,
+and a tool's `presentation.icon` is the bare `icon(...)` ref. `src/icons.ts`
+holds the app's `icon()` and its own `lbx` table (the barcode glyph); `main.tsx`
+mounts an `IconRegistryProvider` with that table plus the kit's whole
+`kitIcons`. A name no registered table holds draws a placeholder in dev and
+nothing in production, so check a new icon in the browser. The kit's
+`weaselIcons` build plugin would ship only the glyphs used; this app doesn't
+use it.
 
 Until 0.6.0 this went through `weaselAliases()` against a sibling checkout,
 because the published `ui` package shipped neither types nor subpaths.
@@ -197,12 +206,15 @@ Key weasel APIs used:
   bounds, or the label (its length by the printable band). The key object is
   the last one added to the selection and doesn't move. Match keeps each
   item's top-left corner, as typing W/H does. Written app-side rather than on
-  the kit's `useAlign` because its `{ node }` reference type and align icons
-  are `@experimental` — so align draws `src/arrangeIcons.tsx`, while match
-  size uses ui's public `WiderIcon`/`TallerIcon`/`FitStretchIcon`.
+  the kit's `useAlign` because its `{ node }` reference type is
+  `@experimental`. The glyphs are the kit's: `core:align*` and
+  `ui:wider`/`ui:taller`/`ui:fitStretch`.
 - Layers panel (`src/LayersPanel.tsx`): the kit's `useSceneLayerList` into a
   `LayerList`, frontmost first; a row click selects, a drag restacks as one
-  undo step. No visibility toggle — neither print nor .lbx could honor it.
+  undo step. No visibility toggle — neither print nor .lbx could honor it — so
+  the panel drops the `onVisibilityChange` `useSceneLayerList` returns. Its
+  lock toggle (new in 1.11.0) stays: locking is editor-only and harms no
+  output.
   Stacking order is `scene.roots` (back to front), *not* `scene.nodes`, which
   stays in insertion order through a restack; export reads `roots`.
 - Canvas previews the loaded cassette's tape/ink colors from live printer

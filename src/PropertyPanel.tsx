@@ -8,6 +8,7 @@ import {
 } from '@weasel-js/core';
 import { PropertyField, PropertyList, PropertyNote, PropertySpan } from '@weasel-js/ui/components/Properties';
 import { Icon } from '@weasel-js/ui';
+import { icon } from './icons';
 import type { LabelNodeData, LabelLayer, LabelPose } from './label';
 import { imageDataUri } from './imageUtils';
 import { registeredFamilies, installedFamilies, substituteFontFamily } from './fonts';
@@ -25,10 +26,10 @@ const STROKE_DISPLAY = fixedDecimals(2);
 const WEIGHT_DISPLAY = fixedDecimals(0);
 
 const TEXT_ALIGN_OPTIONS = [
-  { value: 'LEFT', label: 'Left', glyph: <Icon name="textAlignLeft" size={16} /> },
-  { value: 'CENTER', label: 'Center', glyph: <Icon name="textAlignCenter" size={16} /> },
-  { value: 'RIGHT', label: 'Right', glyph: <Icon name="textAlignRight" size={16} /> },
-  { value: 'JUSTIFY', label: 'Justify', glyph: <Icon name="textAlignJustify" size={16} /> },
+  { value: 'LEFT', label: 'Left', glyph: <Icon name={icon('core:textAlignLeft')} size={16} /> },
+  { value: 'CENTER', label: 'Center', glyph: <Icon name={icon('core:textAlignCenter')} size={16} /> },
+  { value: 'RIGHT', label: 'Right', glyph: <Icon name={icon('core:textAlignRight')} size={16} /> },
+  { value: 'JUSTIFY', label: 'Justify', glyph: <Icon name={icon('core:textAlignJustify')} size={16} /> },
 ] as const;
 
 const DIRECTION_OPTIONS = [

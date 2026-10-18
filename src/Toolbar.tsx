@@ -2,7 +2,8 @@ import { Toolbar as KitToolbar, ZoomControl } from '@weasel-js/labkit';
 import { Checkbox } from '@weasel-js/ui/components/Checkbox';
 import { NumberField } from '@weasel-js/ui/components/NumberField';
 import { Select } from '@weasel-js/ui/components/Select';
-import { ExportIcon, FitIcon, OpenIcon, ResetIcon, SettingsIcon, ZoomInIcon, ZoomOutIcon } from '@weasel-js/ui';
+import { Icon } from '@weasel-js/ui';
+import { icon } from './icons';
 import { TAPE_SIZES, type TapeSize } from './label';
 import { PrinterStatusChip, type PrinterStatusChipProps } from './PrinterStatusChip';
 import './toolbar.css';
@@ -86,14 +87,14 @@ export function Toolbar(props: ToolbarProps) {
       </KitToolbar.Group>
       <KitToolbar.Group aria-label="Zoom">
         <KitToolbar.Button iconOnly aria-label="Zoom out" title="Zoom out" onClick={props.onZoomOut}>
-          <ZoomOutIcon />
+          <Icon name={icon('ui:zoomOut')} />
         </KitToolbar.Button>
         <ZoomControl zoom={props.zoom} onZoomChange={props.onZoomSet} />
         <KitToolbar.Button iconOnly aria-label="Zoom in" title="Zoom in" onClick={props.onZoomIn}>
-          <ZoomInIcon />
+          <Icon name={icon('ui:zoomIn')} />
         </KitToolbar.Button>
         <KitToolbar.Button iconOnly aria-label="Zoom to fit" title="Zoom to fit" onClick={props.onZoomFit}>
-          <FitIcon />
+          <Icon name={icon('ui:fit')} />
         </KitToolbar.Button>
         <KitToolbar.Button
           iconOnly
@@ -101,7 +102,7 @@ export function Toolbar(props: ToolbarProps) {
           title="Reset to 100%, centered"
           onClick={props.onZoomReset}
         >
-          <ResetIcon />
+          <Icon name={icon('ui:reset')} />
         </KitToolbar.Button>
       </KitToolbar.Group>
       <KitToolbar.Group end aria-label="File">
@@ -112,16 +113,16 @@ export function Toolbar(props: ToolbarProps) {
           onRefresh={props.onPrinterRefresh}
         />
         <KitToolbar.Button onClick={props.onImport}>
-          <OpenIcon size={16} /> Open .lbx
+          <Icon name={icon('ui:open')} size={16} /> Open .lbx
         </KitToolbar.Button>
         <KitToolbar.Button onClick={props.onExport}>
-          <ExportIcon size={16} /> Export .lbx
+          <Icon name={icon('ui:export')} size={16} /> Export .lbx
         </KitToolbar.Button>
         <KitToolbar.Button onClick={props.onPrint} disabled={props.printDisabled} title="Print to label printer">
           Print
         </KitToolbar.Button>
         <KitToolbar.Button iconOnly aria-label="Preferences" title="Preferences" onClick={props.onOpenPrefs}>
-          <SettingsIcon />
+          <Icon name={icon('ui:settings')} />
         </KitToolbar.Button>
       </KitToolbar.Group>
     </KitToolbar>
