@@ -84,6 +84,8 @@ import { createCursorStore } from './cursorStore';
 import { useEditorPrefs } from './useEditorPrefs';
 import { usePrinterSession } from './usePrinterSession';
 import { useCassetteColors } from './useCassetteColors';
+import { usePrintPreview } from './usePrintPreview';
+import { usePrintJob } from './usePrintJob';
 import './app.css';
 import { cutGuides, printableMarginGuides } from './guides';
 import { snapNodePose } from './dotSnap';
@@ -99,9 +101,6 @@ import {
 import { registerFonts, canvasFontsInUse } from './fonts';
 
 const FIT_PADDING = 16;
-
-/** Set once a USB device grant exists; lets us distinguish "printer asleep" from "never granted". */
-const USB_GRANT_FLAG = 'lbx-editor.hasUsbGrant';
 
 interface CanvasSize {
   width: number;
@@ -400,80 +399,9 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDiagnostic, scene, sceneVersion, view, canvasSize]);
 
-  // --- Dithered print preview ---
-  // Runs the real print pipeline (renderLabelToRgba → ditherToMask, default
-  // threshold — exactly what rgbaToRaster quantizes with) on every committed
-  // scene change and draws the resulting dots over the printable band; ink
-  // dots take the cassette ink color, everything else is transparent so the
-  // tape face shows through. One long-lived GL context is reused across
-  // renders; the debounce absorbs bursts of scene mutations.
-  const [previewBitmap, setPreviewBitmap] = useState<ImageBitmap | null>(null);
-  const previewGlRef = useRef<{ canvas: OffscreenCanvas; gl: WebGL2RenderingContext } | null>(null);
-  // While the preview is up the live scene draw is suppressed, so nothing
-  // else pulls image nodes through the kit cache — the preview render itself
-  // starts the decode and this epoch re-runs it when the bitmap lands.
-  const [imageEpoch, setImageEpoch] = useState(0);
-  useEffect(() => subscribeImageReady(() => setImageEpoch((n) => n + 1)), []);
-  useEffect(() => {
-    if (!printPreview) {
-      setPreviewBitmap((prev) => {
-        prev?.close();
-        return null;
-      });
-      return;
-    }
-    let cancelled = false;
-    const handle = setTimeout(async () => {
-      // Text needs its MSDF atlases registered before renderLabelToRgba draws
-      // it; registerFonts() is idempotent so this is a no-op once settled.
-      await registerFonts();
-      if (cancelled) return;
-      if (!previewGlRef.current) {
-        const canvas = new OffscreenCanvas(1, 1);
-        const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, stencil: true });
-        if (!gl) return;
-        previewGlRef.current = { canvas, gl };
-      }
-      const { canvas, gl } = previewGlRef.current;
-      const media = Printers.ptP710bt.media(tapeWidthMm(tapeSize));
-      const geometry = {
-        labelLengthPt: labelLength,
-        tapeWidthPt: paperHeight,
-        printableDots: media.printableDots,
-        dpi: media.dpi,
-      };
-      // Size the context's drawing buffer to this render before weasel uses it.
-      const plan = labelRenderPlan(geometry);
-      canvas.width = Math.max(1, Math.round(plan.sourceRect.width * plan.scale.x));
-      canvas.height = Math.max(1, Math.round(plan.sourceRect.height * plan.scale.y));
-      const drawOne = printDrawOne({ dpi: media.dpi, originY: printableBandPt(geometry).y });
-      const rgba = renderLabelToRgba({ scene, drawOne, gl, ...geometry });
-      const mask = ditherToMask(rgba, {
-        algorithm: ditherAlgorithm,
-        protect: protectedRegions(scene.nodes.values(), {
-          band: printableBandPt(geometry),
-          dpi: geometry.dpi,
-        }),
-      });
-      const pixels = maskToRgba(mask, rgba.width, rgba.height, inkCss);
-      const out = new OffscreenCanvas(rgba.width, rgba.height);
-      const ctx = out.getContext('2d')!;
-      ctx.putImageData(new ImageData(pixels, rgba.width, rgba.height), 0, 0);
-      const bmp = out.transferToImageBitmap();
-      if (cancelled) {
-        bmp.close();
-        return;
-      }
-      setPreviewBitmap((prev) => {
-        prev?.close();
-        return bmp;
-      });
-    }, 120);
-    return () => {
-      cancelled = true;
-      clearTimeout(handle);
-    };
-  }, [printPreview, sceneVersion, imageEpoch, scene, tapeSize, labelLength, paperHeight, inkCss, ditherAlgorithm]);
+  const previewBitmap = usePrintPreview({
+    enabled: printPreview, scene, sceneVersion, tapeSize, labelLength, paperHeight, inkCss, ditherAlgorithm,
+  });
 
   // --- Paper background layer ---
   // The tape is drawn as a black "raised brick": the shadow is the tape's
@@ -853,147 +781,16 @@ export function App() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [loadLbxFile]);
 
-  // --- Print ---
-  const [printing, setPrinting] = useState(false);
-  const printingRef = useRef(false);
+  const reraiseDiagnostics = useCallback(() => setDismissedDiagnostics(new Set()), []);
+  const { printing, handlePrint } = usePrintJob({
+    printerRef, scene, tapeSize, labelLength, paperHeight, autoCut, ditherAlgorithm, cutMarks,
+    preflightChecks,
+    // Re-raise every dismissed callout: the job is being refused over a
+    // problem the user may have waved away, so put it back on the object.
+    onBlocked: reraiseDiagnostics,
+  });
 
   const [prefsOpen, setPrefsOpen] = useState(false);
-
-  const handlePrint = useCallback(async () => {
-    if (printingRef.current) return;
-    const printer = printerRef.current;
-    if (!printer) return;
-    const widthMm = tapeWidthMm(tapeSize);
-    if (!('usb' in navigator) && !('serial' in navigator)) {
-      toast.error('Printing not supported here', {
-        description: 'This browser has neither WebUSB nor Web Serial. Use Chrome or Edge.',
-      });
-      return;
-    }
-    // Preflight before touching the printer: a barcode we can't encode draws
-    // as a placeholder box, and one scaled under a dot per module prints as a
-    // smear. Either way the tape is spent on a label whose barcode isn't one.
-    // Skipped wholesale when pre-print checks are off — the user has said they
-    // want the job sent regardless, and the printer remains the authority.
-    let unrenderable = 0;
-    let undersized = 0;
-    for (const [, node] of (preflightChecks ? scene.nodes : [])) {
-      if (node.data.kind !== 'barcode') continue;
-      const symbol = encodeBarcode(barcodeRequest(node.data));
-      if (!symbol.ok) {
-        unrenderable++;
-      } else if (
-        moduleFitness(barcodeModuleDots(symbol, node.pose, Printers.ptP710bt.dpi)) === 'unrenderable'
-      ) {
-        undersized++;
-      }
-    }
-    const barcodeProblem = unrenderableBarcodeMessage(unrenderable)
-      ?? undersizedBarcodeMessage(undersized);
-    if (barcodeProblem) {
-      // Re-raise every dismissed callout: the job is being refused over a
-      // problem the user may have waved away, so put it back on the object.
-      setDismissedDiagnostics(new Set());
-      toast.error('Print blocked', { description: barcodeProblem });
-      return;
-    }
-
-    setPrinting(true);
-    printingRef.current = true;
-    try {
-      // Preflight: the printer tells us what tape it's holding, so a
-      // mismatched job (printer blinks red, generic error reply) is caught
-      // before it's sent. Unknown media (asleep printer, no usable width in
-      // the reply) proceeds — the printer stays the authority.
-      const loaded = await printer.queryMedia();
-      const mismatch = preflightChecks
-        ? tapeMismatchMessage(widthMm, loaded?.tapeWidthMm ?? null)
-        : null;
-      if (mismatch) {
-        toast.error('Tape size mismatch', { description: mismatch });
-        return;
-      }
-      const media = Printers.ptP710bt.media(widthMm);
-      // Text needs its MSDF atlases registered before renderLabelToRgba draws
-      // it; registerFonts() is idempotent so this is a no-op once settled.
-      await registerFonts();
-      const machineFamilies: string[] = [];
-      for (const [, node] of scene.nodes) {
-        if (node.data.kind === 'text') machineFamilies.push(node.data.fontFamily);
-      }
-      const machineFonts = canvasFontsInUse(machineFamilies);
-      if (preflightChecks && machineFonts.length > 0) {
-        toast.info('Using fonts from this machine', {
-          description:
-            `${machineFonts.join(', ')} — this label prints correctly here, but machines ` +
-            'without those fonts will substitute.',
-        });
-      }
-      // Same drawOne as the screen path, through weasel's headless renderer —
-      // print is the screen's rendering at printer resolution.
-      const geometry = {
-        labelLengthPt: labelLength,
-        tapeWidthPt: paperHeight,
-        printableDots: media.printableDots,
-        dpi: media.dpi,
-      };
-      const drawOne = printDrawOne({ dpi: media.dpi, originY: printableBandPt(geometry).y });
-      const rgba = renderLabelToRgba({ scene, drawOne, ...geometry });
-      const raster = rgbaToRaster(rgba, media, {
-        algorithm: ditherAlgorithm,
-        protect: protectedRegions(scene.nodes.values(), {
-          band: printableBandPt(geometry),
-          dpi: media.dpi,
-        }),
-      });
-      // Cut marks slice the job into pages; the cutter fires between pages
-      // (with auto-cut on), printing the document as a strip of labels.
-      const job = sliceRasterAtCuts(raster, cutMarks, media.dpi);
-      const jobOpts = { tapeWidthMm: widthMm, autoCut, marginDots: 0 };
-
-      let status: PrinterStatus;
-      try {
-        // Zero-click path: an already-granted device. The facade's mutex waits
-        // out any in-flight keepalive tick (≤2 s; Chrome's user-activation
-        // window comfortably outlives it if we fall through to the picker).
-        status = await printer.print(job, jobOpts);
-      } catch (err) {
-        if (!(err instanceof NoGrantedDeviceError)) throw err;
-        if (localStorage.getItem(USB_GRANT_FLAG)) {
-          // One-shot hint: clearing the flag means a repeat click falls through to
-          // the picker, so a revoked permission can't dead-end the Print button.
-          localStorage.removeItem(USB_GRANT_FLAG);
-          toast.error('Printer not found', {
-            description:
-              'It may have auto-powered off. Press its power button, then print again.',
-          });
-          return;
-        }
-        await printer.requestDevice();
-        status = await printer.print(job, jobOpts);
-      }
-      // A grant exists (the print went through) — remember for the
-      // asleep-vs-never-granted hint. Serial grants don't persist, so
-      // the flag stays USB-only.
-      if ('usb' in navigator) localStorage.setItem(USB_GRANT_FLAG, '1');
-      if (status.hasError) {
-        toast.error('Printer reported an error', {
-          description: 'Check the tape and that the cover is closed.',
-        });
-      } else if (status.incomplete) {
-        toast.warning('Print sent, status unclear', {
-          description: "The printer's status reply was incomplete — check the printer.",
-        });
-      }
-    } catch (err) {
-      // Dismissing the device/port picker is a normal cancel, not a failure.
-      if (err instanceof DOMException && err.name === 'NotFoundError') return;
-      toast.error('Print failed', { description: (err as Error).message });
-    } finally {
-      printingRef.current = false;
-      setPrinting(false);
-    }
-  }, [printing, tapeSize, scene, labelLength, paperHeight, autoCut, ditherAlgorithm, cutMarks, preflightChecks]);
 
   // Two recolor paths, and they are not interchangeable. `remapNodeInk`
   // rewrites colors the *document* carries — a text's color, a rect's fill —
