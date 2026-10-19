@@ -45,7 +45,8 @@ import {
 import { useLabelConfig } from './useLabelConfig';
 import { useAutosave } from './useAutosave';
 import { genNodeId } from './nodeIds';
-import { useLiveLength } from './useLiveLength';
+import { useCanvasView } from './useCanvasView';
+import { useCanvasLayers } from './useCanvasLayers';
 import { PALETTE_GROUP_ORDER, TOOL_GROUPS, inGroup } from './toolGroups';
 import { drawLabelNode, printDrawOne } from './drawLabelNode';
 import {
@@ -100,48 +101,7 @@ import {
 } from './printPreflight';
 import { registerFonts, canvasFontsInUse } from './fonts';
 
-const FIT_PADDING = 16;
-
-interface CanvasSize {
-  width: number;
-  height: number;
-}
-
-/** The paper layer extrudes its black brick shadow this far down-right of
- *  the tape rect (see `paperLayer`). Fit/center math counts it as content. */
-function paperShadowDepth(paperHeight: number): number {
-  return paperHeight * 0.08;
-}
-
-// The full drawn footprint of the tape: paper rect + brick shadow.
-function paperBounds(paperWidth: number, paperHeight: number) {
-  const depth = paperShadowDepth(paperHeight);
-  return { x: 0, y: 0, width: paperWidth + depth, height: paperHeight + depth };
-}
-
-// View that centers the drawn tape (shadow included) at 100% (scale 1) in a
-// canvas of the given size.
-function centeredView(paperWidth: number, paperHeight: number, canvas: CanvasSize): View {
-  const depth = paperShadowDepth(paperHeight);
-  return {
-    x: (paperWidth + depth) / 2 - canvas.width / 2,
-    y: (paperHeight + depth) / 2 - canvas.height / 2,
-    scale: { x: 1, y: 1 },
-  };
-}
-
 export function App() {
-  // MSDF fonts register asynchronously; text draws blank (no glyphs) until
-  // this settles. Flipping this state forces the canvas layers to a new
-  // identity (see the `layers` memo below) so text appears without the user
-  // having to interact with the canvas.
-  const [fontsLoaded, setFontsLoaded] = useState(false);
-  useEffect(() => {
-    // No cancellation guard on this async callback: App is the root
-    // component and never unmounts, so there's nothing to race.
-    registerFonts().then(() => setFontsLoaded(true));
-  }, []);
-
   // Declared up here because the label length derives from the scene contents
   // under auto-length, and everything below reads that length.
   const scene = useScene<LabelNodeData, LabelLayer, LabelPose>({
@@ -165,151 +125,10 @@ export function App() {
   const paperWidth = labelLength;
   const paperHeight = tape.width;
 
-  // --- Viewport / zoom ---
-  // The canvas fills its container; we measure it and feed the size to
-  // SceneCanvas (weasel handles device-pixel-ratio internally). All zoom/fit
-  // math uses the live size.
-  const canvasContainerRef = useRef<HTMLDivElement>(null);
-  // Weasel writes its overlay-aware pose/bounds lookups and its gesture
-  // subscription here each render. `getEffectiveBounds` reports the in-flight
-  // gesture's proposed box for a node under drag/resize/rotate, and the
-  // committed box otherwise — the one reading that lets the label follow a
-  // drag weasel hasn't committed yet.
-  const helpersRef = useRef<CanvasHelpers<LabelPose> | null>(null);
-
-  const [canvasSize, setCanvasSize] = useState<CanvasSize>({ width: 0, height: 0 });
-  const canvasMounted = canvasSize.width > 0 && canvasSize.height > 0;
-
-  // While a drag is in flight the label follows the gesture instead of the
-  // committed scene. `displayLength` is for DRAWING ONLY — `labelLength` and
-  // `paperWidth` above stay committed, so export, print, autosave, cut-mark
-  // pruning and diagnostics never see a transient value. That separation is
-  // load-bearing: a mid-drag shrink reaching the cut-mark pruning above would
-  // destroy marks on a drag the user then abandoned.
-  const getNodeIds = useCallback(() => [...scene.nodes.keys()].map(String), [scene]);
-  const liveLength = useLiveLength({
-    enabled: autoLength,
-    // The hook subscribes to weasel's gesture layer, which only exists once
-    // the canvas below has rendered — the same condition that gates it.
-    ready: canvasMounted,
-    getNodeIds,
-    helpersRef,
-  });
-  const displayLength = liveLength ?? paperWidth;
-
-  const [view, setView] = useState<View>({ x: 0, y: 0, scale: { x: 1, y: 1 } });
-  // Live mirror for callbacks that fire outside the render cycle (ResizeObserver).
-  const viewRef = useRef(view);
-  viewRef.current = view;
-
-  const prevPaperSize = useRef({ w: paperWidth, h: paperHeight });
-  const viewInitialized = useRef(false);
-  // The last view our own centering or fitting produced, and how to redo it.
-  // While the live view still equals it (the user hasn't panned/zoomed),
-  // container resizes redo the framing instead of leaving the label drifting
-  // off-center or running off the canvas.
-  const autoFrame = useRef<{ view: View; frame: (canvas: CanvasSize) => View } | null>(null);
-
-  const applyFrame = useCallback((frame: (canvas: CanvasSize) => View, canvas: CanvasSize) => {
-    const v = frame(canvas);
-    autoFrame.current = { view: v, frame };
-    setView(v);
-  }, []);
-
-  const applyCenteredView = useCallback((canvas: CanvasSize) => {
-    const { w, h } = prevPaperSize.current;
-    applyFrame((c) => centeredView(w, h, c), canvas);
-  }, [applyFrame]);
-
-  const applyFitView = useCallback((length: number, height: number, canvas: CanvasSize) => {
-    applyFrame(
-      (c) => fitViewToBounds(paperBounds(length, height), c, viewRef.current, { padding: FIT_PADDING }),
-      canvas,
-    );
-  }, [applyFrame]);
-
-  // Measure the container before paint and on resize. On the first valid
-  // measurement, center the paper at 100%. Later resizes keep the label
-  // centered as long as the view is still the centered one — the palette and
-  // side panels mount a beat after the first measurement and shrink the
-  // container, which otherwise strands the label off-center. Once the user
-  // moves the view, resizes just change the drawing surface.
-  useLayoutEffect(() => {
-    const el = canvasContainerRef.current;
-    if (!el) return;
-    const measure = () => {
-      const width = el.clientWidth;
-      const height = el.clientHeight;
-      setCanvasSize({ width, height });
-      if (width <= 0 || height <= 0) return;
-      if (!viewInitialized.current) {
-        viewInitialized.current = true;
-        applyCenteredView({ width, height });
-      } else {
-        // Compared OUTSIDE the state updater: mutating the ref inside a
-        // setView callback breaks under StrictMode's double-invocation.
-        const auto = autoFrame.current;
-        const c = auto?.view;
-        const v = viewRef.current;
-        if (c && v.x === c.x && v.y === c.y && v.scale.x === c.scale.x && v.scale.y === c.scale.y) {
-          applyFrame(auto.frame, { width, height });
-        }
-      }
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [applyCenteredView, applyFrame]);
-
-  // Fit the paper to the canvas whenever the paper size changes (tape/length
-  // edits and imports both flow through here). The ref guard makes this a no-op
-  // on the initial centered view and on canvas-only resizes.
-  //
-  // Reading the display pair rather than the committed one is what makes the
-  // canvas zoom out to follow a label growing under the cursor — the effect
-  // then re-runs each frame the extent actually changes.
-  //
-  // Mid-gesture the view only zooms out, never in: zooming in under a
-  // shrinking label maps the still pointer further left, which shrinks the
-  // label again — a drag on the rightmost object ran away to its minimum. The
-  // committed length refits once the gesture ends.
-  useEffect(() => {
-    if (canvasSize.width === 0 || canvasSize.height === 0) return;
-    if (prevPaperSize.current.w === displayLength && prevPaperSize.current.h === paperHeight) return;
-    if (liveLength !== null && displayLength < prevPaperSize.current.w) return;
-    prevPaperSize.current = { w: displayLength, h: paperHeight };
-    applyFitView(displayLength, paperHeight, canvasSize);
-  }, [displayLength, liveLength, paperHeight, canvasSize, applyFitView]);
-
-  const zoom = meanScale(view.scale);
-  const handleZoomIn = useCallback(
-    () => setView((v) => zoomAt(v, { x: canvasSize.width / 2, y: canvasSize.height / 2 }, 1.25)),
-    [canvasSize],
-  );
-  const handleZoomOut = useCallback(
-    () => setView((v) => zoomAt(v, { x: canvasSize.width / 2, y: canvasSize.height / 2 }, 0.8)),
-    [canvasSize],
-  );
-  const handleZoomSet = useCallback(
-    (scale: number) => {
-      setView((v) =>
-        zoomAt(v, { x: canvasSize.width / 2, y: canvasSize.height / 2 }, scale / meanScale(v.scale)),
-      );
-    },
-    [canvasSize],
-  );
-  // Reads `displayLength` so a Fit pressed mid-drag frames what's on screen.
-  const handleZoomFit = useCallback(
-    () => applyFitView(displayLength, paperHeight, canvasSize),
-    [applyFitView, displayLength, paperHeight, canvasSize],
-  );
-  // One centering path for toolbar Reset, Cmd-0 (via viewport.recenter),
-  // and initial load.
-  const handleZoomReset = useCallback(
-    () => applyCenteredView(canvasSize),
-    [applyCenteredView, canvasSize],
-  );
+  const {
+    canvasContainerRef, helpersRef, canvasSize, canvasMounted, displayLength, view, setView, viewRef,
+    zoom, handleZoomIn, handleZoomOut, handleZoomSet, handleZoomFit, handleZoomReset,
+  } = useCanvasView({ scene, autoLength, paperWidth, paperHeight });
 
   const selection = useSelection({ mode: 'multi' });
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -345,77 +164,6 @@ export function App() {
   const previewBitmap = usePrintPreview({
     enabled: printPreview, scene, sceneVersion, tapeSize, labelLength, paperHeight, inkCss, ditherAlgorithm,
   });
-
-  // --- Paper background layer ---
-  // The tape is drawn as a black "raised brick": the shadow is the tape's
-  // rectangle extruded down-right by `depth`, connected to the tape by
-  // diagonal side edges instead of floating behind it. Only the visible
-  // L-shaped shadow region is filled (not the front face), so a translucent
-  // face — clear tape — shows the canvas background through the strip. The
-  // tape face (with a black border) sits on top. Everything is in world units
-  // so it scales and pans with the paper; `depth` is keyed to the tape width
-  // to stay proportional across tape sizes.
-  const paperLayer = useMemo<RenderLayer<unknown>>(() => {
-    const depth = paperShadowDepth(paperHeight);
-    // The brick silhouette minus the front face, sprung from the face
-    // stroke's OUTER boundary (the rect expanded by half the stroke width):
-    // attaching at the rect edge instead would leave the stroke's outer half
-    // poking past the top-right diagonal as a barb. From the outline's
-    // top-right, out to the back face's top-right, around its right +
-    // bottom, back to the outline's bottom-left, then along the outline's
-    // bottom and right edges.
-    const strokeW = 0.5;
-    const s = strokeW / 2;
-    const x0 = -s;
-    const y0 = -s;
-    const x1 = displayLength + s;
-    const y1 = paperHeight + s;
-    const shadow = polygonFromPoints([
-      { x: x1, y: y0 },
-      { x: x1 + depth, y: y0 + depth },
-      { x: x1 + depth, y: y1 + depth },
-      { x: x0 + depth, y: y1 + depth },
-      { x: x0, y: y1 },
-      { x: x1, y: y1 },
-    ]);
-    return {
-      id: 'paper',
-      label: 'Label tape',
-      draw: () => [
-        {
-          kind: 'path',
-          path: shadow,
-          fill: { paint: { color: '#000000' } },
-        },
-        {
-          kind: 'path',
-          path: rectPath(0, 0, displayLength, paperHeight),
-          fill: { paint: { color: tapeCss, opacity: tapeClear ? 0.45 : 1 } },
-          // A dark tape face would vanish against its black brick — lighten
-          // the border so the tape edge stays readable.
-          stroke: { paint: { color: printsAsInk(tapeCss) ? '#888888' : '#000000' }, width: strokeW },
-        },
-        // Dithered print preview: the print pipeline's ink dots over the
-        // printable band (scene content is suppressed while this is up).
-        // Pinned to committed geometry, not the display pair — it's a render
-        // of the committed scene, so it goes briefly stale during a gesture
-        // and refreshes on commit.
-        ...(previewBitmap
-          ? [{
-              kind: 'image' as const,
-              image: previewBitmap,
-              x: 0,
-              y: printableBand.y,
-              w: paperWidth,
-              h: printableBand.height,
-            }]
-          : []),
-        // Guides last, so they stay visible over the print preview.
-        ...(marginGuides ? printableMarginGuides(printableBand, displayLength) : []),
-        ...cutGuides(cutMarks, paperHeight),
-      ],
-    };
-  }, [displayLength, paperWidth, paperHeight, tapeCss, tapeClear, previewBitmap, printableBand, cutMarks, marginGuides]);
 
   // --- Object creation via weasel tools ---
   // The palette activates weasel's built-in rect/line/text tools; their drag
@@ -734,60 +482,10 @@ export function App() {
 
   const [prefsOpen, setPrefsOpen] = useState(false);
 
-  // Two recolor paths, and they are not interchangeable. `remapNodeInk`
-  // rewrites colors the *document* carries — a text's color, a rect's fill —
-  // which it can only do because they're on the node. A barcode has none: its
-  // bars and its background are picked by the renderer, so they come through
-  // the `options` argument instead. Print takes neither path: it keeps the raw
-  // node data (a white-ink remap would erase the label under the <128
-  // luminance threshold) and takes the parameter defaults.
-  const drawScreenNode = useCallback((node: LabelNode, pose: LabelPose) => {
-    const data = remapNodeInk(node.data, inkCss);
-    return drawLabelNode(
-      data === node.data ? node : { ...node, data },
-      pose,
-      { ink: inkCss, paper: tapeCss, grid: { dpi: PRINT_DPI, originY: printableBand.y } },
-    );
-  }, [inkCss, tapeCss, printableBand]);
-
-  // --- Printable-bounds overlay ---
-  // Content outside the printable area won't print: print crops at the label
-  // length horizontally and at the printhead's reach vertically (the tape's
-  // top/bottom margins — labelRender renders only the centered printable
-  // band). Draw the scene twice: a faded full copy, then a crisp copy
-  // clipped to that band — anything unprintable reads as semitransparent.
-  // Commands and the clip path are world-space; weasel applies the view.
-  // Follows the display pair: without that, a dragged object would read as
-  // semitransparent — "outside the label" — while sitting inside the label
-  // that just grew to hold it.
-  const printablePath = useMemo(
-    () => rectPath(0, printableBand.y, displayLength, printableBand.height),
-    [printableBand, displayLength],
-  );
-  const dimOffLabel = useCallback(
-    (cmds: DrawCommand[]): DrawCommand[] =>
-      cmds.length === 0
-        ? cmds
-        : [
-            { kind: 'group', alpha: 0.35, children: cmds },
-            { kind: 'group', clip: printablePath, children: cmds },
-          ],
-    [printablePath],
-  );
-
-  // While the print preview bitmap is up, the live scene draw is suppressed —
-  // the paper layer's dithered dots ARE the content. Selection handles stay.
-  const drawNothing = useCallback(() => [], []);
-  const layers = useMemo(() => ({
-    paper: { layer: paperLayer, before: 'scene' as const },
-    scene: previewBitmap
-      ? { drawOne: drawNothing }
-      : { drawOne: drawScreenNode, postProcess: dimOffLabel },
-    selectionOverlay: { handles: { size: 5 } },
-    // fontsLoaded isn't read here — it's a dependency only, so that the
-    // fonts-ready transition changes this object's identity and SceneCanvas
-    // redraws (mirroring how `previewBitmap` already does).
-  }), [paperLayer, previewBitmap, drawNothing, drawScreenNode, dimOffLabel, fontsLoaded]);
+  const layers = useCanvasLayers({
+    displayLength, paperWidth, paperHeight, tapeCss, tapeClear, inkCss, previewBitmap, printableBand,
+    cutMarks, marginGuides,
+  });
 
   // Pointer position in label points, for the status bar. The view is a
   // camera: world = view origin + client offset / scale.
