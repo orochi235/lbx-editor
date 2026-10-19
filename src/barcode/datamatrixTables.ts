@@ -57,6 +57,16 @@ export const SQUARE_SIZES: readonly DataMatrixSymbol[] = [
   { size: 144, dataCodewords: 1558, eccCodewords: 620, region: 22, regions: 6, blocks: 10 },
 ];
 
+/**
+ * Room left once `used` codewords are written, in the smallest symbol with
+ * room for at least one more -- so a payload exactly filling a symbol counts
+ * the next size up, as BWIPP's `numremcws` does. Infinity past the largest.
+ */
+export function remainingAfter(used: number): number {
+  const symbol = SQUARE_SIZES.find((s) => s.dataCodewords > used);
+  return symbol ? symbol.dataCodewords - used : Infinity;
+}
+
 /** The smallest square symbol holding `codewords` data codewords, or null if
  *  none does. */
 export function smallestSymbolFor(codewords: number): DataMatrixSymbol | null {

@@ -19,19 +19,23 @@
  * any region separators added by the caller.
  */
 
-export function placeCodewords(
-  codewords: readonly number[],
-  rows: number,
-  cols: number,
-): boolean[][] {
-  const grid: (boolean | null)[][] = Array.from({ length: rows }, () =>
+/** Which codeword bit lands in a cell: the codeword's index in the placed
+ *  sequence, and the bit numbered 1..8 from the most significant. */
+export type PlacedBit = readonly [index: number, bit: number];
+
+/**
+ * The placement walk on its own: for each cell of the data area, the codeword
+ * bit that goes there, or null for the standard's unused 2x2 corner.
+ */
+export function placementMap(rows: number, cols: number): (PlacedBit | null)[][] {
+  const grid: (PlacedBit | null)[][] = Array.from({ length: rows }, () =>
     Array.from({ length: cols }, () => null),
   );
 
   /** Write one bit, wrapping a position that fell off the top or the left edge
    *  back around. The column shift on a row wrap (and vice versa) is what
    *  keeps the wrapped bits clear of the ones already placed. */
-  const bit = (r: number, c: number, value: boolean) => {
+  const bit = (r: number, c: number, value: PlacedBit) => {
     let row = r;
     let col = c;
     if (row < 0) {
@@ -49,8 +53,8 @@ export function placeCodewords(
     grid[row]![col] = value;
   };
 
-  /** Bit n of the codeword, numbered 1..8 from the most significant. */
-  const bitsOf = (cw: number) => (n: number) => (cw & (1 << (8 - n))) !== 0;
+  /** Bit n of the codeword at index cw, numbered 1..8 from the most significant. */
+  const bitsOf = (cw: number) => (n: number): PlacedBit => [cw, n];
 
   const utah = (r: number, c: number, cw: number) => {
     const b = bitsOf(cw);
@@ -128,14 +132,14 @@ export function placeCodewords(
     // whose side is 4 mod 8 and corner2 for 6 mod 8; corner3 and corner4 never
     // fire, and only earn their keep on the rectangular symbols this module
     // does not yet emit.
-    if (row === rows && col === 0) corner1(codewords[index++] ?? 0);
-    else if (row === rows - 2 && col === 0 && cols % 4 !== 0) corner2(codewords[index++] ?? 0);
-    else if (row === rows - 2 && col === 0 && cols % 8 === 4) corner3(codewords[index++] ?? 0);
-    else if (row === rows + 4 && col === 2 && cols % 8 === 0) corner4(codewords[index++] ?? 0);
+    if (row === rows && col === 0) corner1(index++);
+    else if (row === rows - 2 && col === 0 && cols % 4 !== 0) corner2(index++);
+    else if (row === rows - 2 && col === 0 && cols % 8 === 4) corner3(index++);
+    else if (row === rows + 4 && col === 2 && cols % 8 === 0) corner4(index++);
 
     // Sweep up and to the right.
     do {
-      if (free(row, col)) utah(row, col, codewords[index++] ?? 0);
+      if (free(row, col)) utah(row, col, index++);
       row -= 2;
       col += 2;
     } while (row >= 0 && col < cols);
@@ -144,7 +148,7 @@ export function placeCodewords(
 
     // Sweep down and to the left.
     do {
-      if (free(row, col)) utah(row, col, codewords[index++] ?? 0);
+      if (free(row, col)) utah(row, col, index++);
       row += 2;
       col -= 2;
     } while (row < rows && col >= 0);
@@ -152,15 +156,32 @@ export function placeCodewords(
     col += 1;
   } while (row < rows || col < cols);
 
+  return grid;
+}
+
+export function placeCodewords(
+  codewords: readonly number[],
+  rows: number,
+  cols: number,
+): boolean[][] {
+  const map = placementMap(rows, cols);
+  const grid = map.map((row) =>
+    row.map((cell) => {
+      if (!cell) return false;
+      const cw = codewords[cell[0]] ?? 0;
+      return (cw & (1 << (8 - cell[1]))) !== 0;
+    }),
+  );
+
   // The bottom-right 2x2 is unused in symbols whose area is not a multiple of
   // 8 — the square sides that are 2 or 6 mod 8 — and the standard fills it with
   // a fixed checkerboard rather than data.
-  if (grid[rows - 1]![cols - 1] === null) {
+  if (map[rows - 1]![cols - 1] === null) {
     grid[rows - 2]![cols - 2] = true;
     grid[rows - 2]![cols - 1] = false;
     grid[rows - 1]![cols - 2] = false;
     grid[rows - 1]![cols - 1] = true;
   }
 
-  return grid.map((r) => r.map((cell) => cell ?? false));
+  return grid;
 }

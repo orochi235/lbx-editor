@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SQUARE_SIZES, smallestSymbolFor } from './datamatrixTables';
+import { SQUARE_SIZES, remainingAfter, smallestSymbolFor } from './datamatrixTables';
 
 describe('DataMatrix square symbol sizes', () => {
   it('lists sizes in ascending capacity', () => {
@@ -18,6 +18,15 @@ describe('DataMatrix square symbol sizes', () => {
     expect(smallestSymbolFor(5)!.size).toBe(12);
     expect(smallestSymbolFor(6)!.size).toBe(14);
     expect(smallestSymbolFor(44)!.size).toBe(26);
+  });
+
+  it('counts the room left in the symbol the next codeword lands in', () => {
+    expect(remainingAfter(0)).toBe(3);
+    expect(remainingAfter(1)).toBe(2);
+    expect(remainingAfter(2)).toBe(1);
+    expect(remainingAfter(3)).toBe(2); // 10x10 is full; 12x12 holds 5
+    expect(remainingAfter(1557)).toBe(1);
+    expect(remainingAfter(1558)).toBe(Infinity);
   });
 
   it('returns null when nothing holds the payload', () => {

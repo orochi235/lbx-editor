@@ -7,15 +7,18 @@
  *
  * The pieces live apart because each is worth testing on its own: field
  * arithmetic in `reedSolomon.ts`, the size table in `datamatrixTables.ts`,
- * encodation in `datamatrixEncode.ts`, the bit walk in `datamatrixPlace.ts`,
- * block interleaving and region tiling in `datamatrixBlocks.ts`. What is here
- * is assembly -- and `datamatrix.test.ts` diffs the whole thing against
- * bwip-js at every size, which is what actually proves it.
+ * encodation in `datamatrixEncode.ts` (mode choice in `datamatrixLookahead.ts`,
+ * C40 and Text values in `datamatrixC40.ts`), the bit walk in
+ * `datamatrixPlace.ts`, block interleaving and region tiling in
+ * `datamatrixBlocks.ts`. What is here is assembly -- and the tests diff the
+ * whole thing against bwip-js at every size (`datamatrix.test.ts`) and across
+ * the encodation modes (`datamatrixEncodation.test.ts`), which is what
+ * actually proves it.
  */
 import type { EncodeResult } from './types';
 import { uniformQuiet } from './types';
 import { smallestSymbolFor } from './datamatrixTables';
-import { encodeAscii, padCodewords } from './datamatrixEncode';
+import { encodeCodewords, padCodewords } from './datamatrixEncode';
 import { placeCodewords } from './datamatrixPlace';
 import { interleaveEcc, tileRegions } from './datamatrixBlocks';
 
@@ -26,7 +29,7 @@ export function encodeDataMatrix(data: string): EncodeResult {
 
   let codewords: number[];
   try {
-    codewords = encodeAscii(data);
+    codewords = encodeCodewords(data);
   } catch (err) {
     return {
       ok: false,

@@ -304,7 +304,7 @@ Key weasel APIs used:
   `margin="false"` we always export, P-touch's object box is the bars alone.
   (The EAN family used to bake in 9, drawing ~19% narrow and double-counting
   its quiet zone in the background and the dither-protected region.)
-- DataMatrix (ECC200, square, ASCII encodation) and PDF417 (byte compaction)
+- DataMatrix (ECC200, square, ASCII/C40/Text) and PDF417 (byte compaction)
   encode in `src/barcode/`, each diffed module-for-module against bwip-js —
   DataMatrix across every size it emits, PDF417 across free, pinned-width and
   pinned-shape layouts. Both are decomposed so each piece is testable alone
@@ -314,9 +314,16 @@ Key weasel APIs used:
   144x144's uneven, rotated block split) and fails closed past 1558
   codewords. The tape is the tighter limit: the 128-dot printable band fits a
   symbol plus its quiet zone at 2 dots a module only up to 52x52, and at 1 dot
-  only up to 120x120, and the diagnostics flag both. ASCII-only encodation
-  means an uppercase-heavy payload draws a larger symbol than a mode-switching
-  encoder would (both valid, both decode the same).
+  only up to 120x120, and the diagnostics flag both. Encodation switches
+  between ASCII, C40 and Text by BWIPP's own look-ahead (float32 costs and
+  all), so on any payload bwip-js encodes in those three modes the symbols
+  match module for module, and a plain-ASCII fallback means a payload never
+  costs more than ASCII alone would. X12 and EDIFACT are not written, so
+  where bwip-js uses them ours can be a few codewords longer, sometimes one
+  size up (a MAC address draws 20x20 against its 18x18). Characters past
+  ASCII still fail closed. `datamatrixTestDecode.ts` is a test-only decoder
+  that reads every mode back to text, so a mode-switching bug can't pass as
+  merely a different encoding.
   MaxiCode and GS1 DataBar still fail closed, for opposite reasons: MaxiCode is
   a fixed 26.9mm tall against an 18.1mm printable band, and DataBar has neither
   a working oracle nor an obtainable sample of an unstacked variant. Both say
