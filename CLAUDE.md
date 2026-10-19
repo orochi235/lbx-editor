@@ -76,7 +76,7 @@ Standalone Vite + React app consuming:
   acquisition, keepalive, status events). Weasel renders pixels for print via
   `renderSceneToPixels` (`src/labelRender.ts` is just the unit math); obwat
   owns pixels-to-paper. UX policy (grant-flag localStorage, alert copy) stays
-  in App.tsx.
+  app-side, in `src/usePrintJob.ts`.
 
 ## Local development
 
@@ -157,7 +157,8 @@ Key weasel APIs used:
 
 ## Current state
 
-- Print renders through weasel's headless `renderSceneToPixels` with the same `drawOne` as the screen — print is the screen's rendering at printer resolution (WYSIWYG by construction). Uniform dpi/72 scale on both axes; only the tape's centered printable band renders (`printableBandPt` in `src/labelRender.ts`), and the canvas dims content outside it.
+- Print renders through weasel's headless `renderSceneToPixels` with the same `drawOne` as the screen — print is the screen's rendering at printer resolution (WYSIWYG by construction). Uniform dpi/72 scale on both axes; only the tape's centered printable band renders (`printableBandPt` in `src/labelRender.ts`), and the canvas dims content outside it. The print job and the print preview share one render, `renderForPrint` (`src/printRender.ts`).
+- `App.tsx` is the composition root: each concern is a `use*` hook beside it in `src/` (`useLabelConfig`, `useCanvasView`, `useCanvasLayers`, `usePrintJob`, `useLabelFiles`, …), wired together there.
 - Text renders via weasel MSDF text (screen and print share the same
   `textCommand` in `drawLabelNode`, so WYSIWYG holds). Bundled atlases
   (Inter, Barlow Condensed, JetBrains Mono; 400+700, synthetic italic) in
@@ -226,7 +227,8 @@ Key weasel APIs used:
   translucent (the paper layer draws only the brick's L-shaped shadow, so the
   canvas shows through the face).
 - Content outside the label rect renders semitransparent via weasel's scene
-  `postProcess` hook (faded full draw + clipped crisp draw in App.tsx)
+  `postProcess` hook (faded full draw + clipped crisp draw in
+  `src/useCanvasLayers.ts`)
 - Images render through weasel's kit `imageCache` (data-URI keys via
   `imageDataUri`); SceneCanvas redraws when a decode lands, so no app-side
   bitmap cache. Undecodable picks alert and revert to the select tool.
@@ -343,7 +345,7 @@ Key weasel APIs used:
   wrong. It is also why `model` has no control in the property panel — one
   would change the exported file while the screen kept drawing Model 2. The
   findings surface as anchored callouts; presentation and the pref gating them
-  live in App.tsx.
+  live in `src/useDocumentChecks.ts` and `src/DiagnosticCallout.tsx`.
 - A barcode's two colors are picked by the renderer, not stored on the node,
   so they come through `drawLabelNode`'s `colors` argument: bars in the
   cassette ink, background in the tape color, both screen-only. The defaults
@@ -387,7 +389,7 @@ Key weasel APIs used:
   read; content-fitting is the fallback for files with no band. Export writes
   the band explicitly (`backgroundFor`), since an auto-length label's length
   has nowhere else to live.
-- The document autosaves to localStorage (`lbx-editor.doc`: scene JSON +
+- The document autosaves to localStorage (`src/useAutosave.ts`; `lbx-editor.doc`: scene JSON +
   tape config + cut marks, 300 ms debounce) and restores on load, so
   refreshes keep the label being edited.
 - Cut marks (`src/cutMarks.ts`): the toolbar's Labels control makes N-1
