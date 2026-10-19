@@ -1,7 +1,7 @@
 /**
  * Preferences schema for the kit `PrefsDialog`. The modal is a second view
- * over App state the sidebar panels already edit — each leaf's path maps to
- * an existing setter (and its localStorage persistence) in App.tsx, so
+ * over settings the sidebar panels already edit — each leaf's path maps to
+ * an existing setter (and its localStorage persistence) in useEditorPrefs, so
  * changes apply live and both surfaces stay in sync.
  */
 import type { PrefGroup } from '@weasel-js/prefs';
