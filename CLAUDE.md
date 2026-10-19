@@ -309,11 +309,14 @@ Key weasel APIs used:
   DataMatrix across every size it emits, PDF417 across free, pinned-width and
   pinned-shape layouts. Both are decomposed so each piece is testable alone
   (field arithmetic, size table, encodation, bit placement / codeword table,
-  compaction, layout, assembly). Two limits worth knowing: DataMatrix stops at
-  one data region — 44 codewords, ~88 digits — and fails closed above that
-  rather than emitting a symbol that looks right and scans as nothing; and
-  ASCII-only encodation means an uppercase-heavy payload draws a larger symbol
-  than a mode-switching encoder would (both valid, both decode the same).
+  compaction, layout, assembly). DataMatrix covers every square size to
+  144x144 (multiple data regions, interleaved Reed-Solomon blocks, and
+  144x144's uneven, rotated block split) and fails closed past 1558
+  codewords. The tape is the tighter limit: the 128-dot printable band fits a
+  symbol plus its quiet zone at 2 dots a module only up to 52x52, and at 1 dot
+  only up to 120x120, and the diagnostics flag both. ASCII-only encodation
+  means an uppercase-heavy payload draws a larger symbol than a mode-switching
+  encoder would (both valid, both decode the same).
   MaxiCode and GS1 DataBar still fail closed, for opposite reasons: MaxiCode is
   a fixed 26.9mm tall against an 18.1mm printable band, and DataBar has neither
   a working oracle nor an obtainable sample of an unstacked variant. Both say
