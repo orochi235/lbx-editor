@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Scene } from '@weasel-js/core';
+import { Printers } from 'obwat';
 import {
+  TAPE_SIZES,
   DEFAULT_TAPE,
+  tapeWidthMm,
   DEFAULT_LABEL_LENGTH,
   type LabelLayer,
   type LabelNodeData,
@@ -10,8 +13,9 @@ import {
 } from './label';
 import { fitLengthToContent } from './autoLength';
 import { equalCutMarks } from './cutMarks';
+import { printableBandPt } from './labelRender';
 
-/** The document's tape, length and cut marks — everything about the label
+/** The document's tape, length, and cut marks — everything about the label
  *  that isn't an object on it. */
 export function useLabelConfig(
   scene: Scene<LabelNodeData, LabelLayer, LabelPose>,
@@ -59,12 +63,27 @@ export function useLabelConfig(
     );
   }, [labelLength]);
 
+  // P-touch labels are landscape: tape width is the short dimension, so it is
+  // the paper's height on the canvas.
+  const paperHeight = TAPE_SIZES[tapeSize].width;
+
+  // The printhead-reachable band of the current tape, in label points —
+  // shared by the dim overlay, the print-preview bitmap, and its placement.
+  const printableBand = useMemo(() => {
+    const media = Printers.ptP710bt.media(tapeWidthMm(tapeSize));
+    return printableBandPt({
+      tapeWidthPt: paperHeight,
+      printableDots: media.printableDots,
+      dpi: media.dpi,
+    });
+  }, [tapeSize, paperHeight]);
+
   return {
     tapeSize, setTapeSize,
     autoLength, setAutoLength, handleAutoLengthChange,
     manualLength, setManualLength,
     cutMarks, setCutMarks, handleLabelsCountChange,
-    labelLength,
+    labelLength, paperHeight, printableBand,
   };
 }
 

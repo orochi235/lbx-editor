@@ -1,4 +1,5 @@
-import { useSyncExternalStore } from 'react';
+import { useCallback, useMemo, useSyncExternalStore, type RefObject } from 'react';
+import type { View } from '@weasel-js/core';
 
 export interface Point {
   x: number;
@@ -33,4 +34,17 @@ export function createCursorStore(): CursorStore {
 
 export function useCursor(store: CursorStore): Point | null {
   return useSyncExternalStore(store.subscribe, store.get);
+}
+
+/** A cursor store fed by the canvas container's pointer events. The view is
+ *  a camera: world = view origin + client offset / scale. */
+export function useCanvasCursor(viewRef: RefObject<View>) {
+  const cursor = useMemo(createCursorStore, []);
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const v = viewRef.current;
+    cursor.set({ x: v.x + (e.clientX - r.left) / v.scale.x, y: v.y + (e.clientY - r.top) / v.scale.y });
+  }, [cursor, viewRef]);
+  const handlePointerLeave = useCallback(() => cursor.set(null), [cursor]);
+  return { cursor, handlePointerMove, handlePointerLeave };
 }

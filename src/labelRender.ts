@@ -7,9 +7,9 @@ import type { LabelNodeData, LabelLayer, LabelPose } from './label'
 import type { RgbaImage } from 'obwat'
 
 interface LabelGeometry {
-  /** Label length along the tape, in points (the paper's full width in App.tsx). */
+  /** Label length along the tape, in points (the paper's full width on the canvas). */
   labelLengthPt: number
-  /** Full tape width in points (the paper's full height in App.tsx, i.e. `TAPE_SIZES[...].width`). */
+  /** Full tape width in points (the paper's full height on the canvas, i.e. `TAPE_SIZES[...].width`). */
   tapeWidthPt: number
   printableDots: number
   dpi: number
