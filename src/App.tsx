@@ -744,10 +744,8 @@ export function App() {
 
   // Key order is registration order for ids the kit isn't already registering,
   // and registration order is render order within a cluster — so this literal
-  // is the palette's top-to-bottom layout. Every entry here is an addition
-  // rather than a replacement, which is the quiet part: replacing a bundled
-  // tool warns on every render, so `hand` is deliberately absent from
-  // `defaultTools` and arrives here instead.
+  // is the palette's top-to-bottom layout. `hand` replaces the built-in `view`
+  // brings, in its slot; it must stay out of `defaultTools`, or weasel warns.
   const toolsPatch = useMemo(
     () => ({
       hand: inGroup(handTool, TOOL_GROUPS.hand),
@@ -1331,8 +1329,8 @@ export function App() {
                     selection={selection}
                     // `pick` mounts the select tool. Every other palette tool
                     // is registered by `tools` below, where this app controls
-                    // both their order and their grouping. Notably hand:
-                    // `view` registers it only when the patch hasn't.
+                    // both their order and their grouping. Notably hand,
+                    // whose patch entry replaces the one `view` brings.
                     features={['view', 'pick', 'move', 'resize', 'edit', 'arrange']}
                     tools={toolsPatch}
                     insertNodeFactories={insertNodeFactories}

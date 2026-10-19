@@ -190,9 +190,9 @@ Key weasel APIs used:
   own canonical one that `defaultTools` order won't move. So every tool whose
   position matters is registered by the `tools` patch, whose key order is the
   palette's layout, and `defaultTools` is gone — `pick` supplies select.
-  Hand must stay out of any built-in list: `view` registers it only when the
-  patch hasn't, and registering it twice makes the patch entry a
-  *replacement*, which warns on every render.
+  `view` brings the built-in hand, and the patch's hand replaces it in that
+  slot. Keep hand out of `defaultTools`: weasel warns, on every render, about
+  a tool both named there and replaced in the patch.
 - Import/export .lbx files works end-to-end
 - Property panel: kit `PropertyField`s in a `PropertyList pack="pairs"`
   (barcode fields in `src/BarcodeFields.tsx`). Numbers show in pt at one
