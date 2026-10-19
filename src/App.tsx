@@ -69,19 +69,21 @@ import {
   type TapeColor,
   type TextColor,
 } from 'obwat';
-import { printsAsInk, remapNodeInk, tapeColorCss, tapeIsClear, textColorCss } from './tapeColors';
+import { printsAsInk, remapNodeInk } from './tapeColors';
 import { labelRenderPlan, printableBandPt, renderLabelToRgba } from './labelRender';
 import { maskToRgba } from './printPreview';
 import { protectedRegions } from './ditherProtect';
 import { sliceRasterAtCuts } from './cutMarks';
-import { PREFS_SCHEMA, type EditorPrefValues } from './prefs';
+import { PREFS_SCHEMA } from './prefs';
 import { checkDocument, type CheckedNode, type Diagnostic } from './diagnostics';
 import { LabShell } from '@weasel-js/labkit';
 import { Toolbar } from './Toolbar';
 import { Inspector } from './Inspector';
 import { EditorStatusBar } from './EditorStatusBar';
 import { createCursorStore } from './cursorStore';
-import { usePersistedFlag } from './usePersistedFlag';
+import { useEditorPrefs } from './useEditorPrefs';
+import { usePrinterSession } from './usePrinterSession';
+import { useCassetteColors } from './useCassetteColors';
 import './app.css';
 import { cutGuides, printableMarginGuides } from './guides';
 import { snapNodePose } from './dotSnap';
@@ -100,22 +102,6 @@ const FIT_PADDING = 16;
 
 /** Set once a USB device grant exists; lets us distinguish "printer asleep" from "never granted". */
 const USB_GRANT_FLAG = 'lbx-editor.hasUsbGrant';
-const AUTOCUT_KEY = 'lbx-editor.autoCut';
-const CASSETTE_COLORS_KEY = 'lbx-editor.cassetteColors';
-const DOCUMENT_WARNINGS_KEY = 'lbx-editor.documentWarnings';
-const MARGIN_GUIDES_KEY = 'lbx-editor.marginGuides';
-const PREFLIGHT_CHECKS_KEY = 'lbx-editor.preflightChecks';
-const PRINT_PREVIEW_KEY = 'lbx-editor.printPreview';
-const DITHER_KEY = 'lbx-editor.dither';
-
-const DITHER_ALGORITHMS: readonly DitherAlgorithm[] = [
-  'threshold', 'floyd-steinberg', 'atkinson', 'bayer',
-];
-
-function savedDitherAlgorithm(): DitherAlgorithm {
-  const v = localStorage.getItem(DITHER_KEY) as DitherAlgorithm | null;
-  return v && DITHER_ALGORITHMS.includes(v) ? v : 'threshold';
-}
 
 interface CanvasSize {
   width: number;
@@ -331,28 +317,15 @@ export function App() {
 
   useAutosave(scene, sceneVersion, config);
 
-  // --- Cassette-driven canvas colors ---
-  // The printer's status replies (fed by keepalive ticks, see the printer
-  // session effect below) report the loaded cassette's tape + ink colors; the
-  // canvas previews that combination. Debug-panel overrides win over the live
-  // cassette; the toggle kills the whole behavior. Print is untouched — the
-  // printer lays down its one ink regardless of what the screen shows.
-  const [printerLastSeen, setPrinterLastSeen] = useState<{ status: PrinterStatus; at: number } | null>(null);
-  const [printerReachable, setPrinterReachable] = useState(false);
-  const [cassetteColorsEnabled, handleCassetteColorsChange] = usePersistedFlag(CASSETTE_COLORS_KEY, true);
-  const [documentWarnings, handleDocumentWarningsChange] = usePersistedFlag(DOCUMENT_WARNINGS_KEY, true);
-  const [marginGuides, handleMarginGuidesChange] = usePersistedFlag(MARGIN_GUIDES_KEY, false);
-  const [preflightChecks, handlePreflightChecksChange] = usePersistedFlag(PREFLIGHT_CHECKS_KEY, true);
-  const [tapeColorOverride, setTapeColorOverride] = useState<TapeColor | null>(null);
-  const [textColorOverride, setTextColorOverride] = useState<TextColor | null>(null);
-
+  const prefs = useEditorPrefs();
+  const {
+    autoCut, cassetteColorsEnabled, documentWarnings, marginGuides,
+    preflightChecks, printPreview, ditherAlgorithm,
+  } = prefs;
+  const { printerRef, printerLastSeen, printerReachable, handlePrinterRefresh } = usePrinterSession();
   const liveStatus = printerReachable ? (printerLastSeen?.status ?? null) : null;
-  const tapeCss =
-    (cassetteColorsEnabled ? tapeColorCss(tapeColorOverride ?? liveStatus?.tapeColor) : null) ?? '#ffffff';
-  const tapeClear =
-    cassetteColorsEnabled && tapeIsClear(tapeColorOverride ?? liveStatus?.tapeColor);
-  const inkCss =
-    (cassetteColorsEnabled ? textColorCss(textColorOverride ?? liveStatus?.textColor) : null) ?? '#000000';
+  const cassette = useCassetteColors(cassetteColorsEnabled, liveStatus);
+  const { tapeCss, tapeClear, inkCss } = cassette;
 
   // The printhead-reachable band of the current tape, in label points —
   // shared by the dim overlay, the print-preview bitmap, and its placement.
@@ -434,14 +407,6 @@ export function App() {
   // dots take the cassette ink color, everything else is transparent so the
   // tape face shows through. One long-lived GL context is reused across
   // renders; the debounce absorbs bursts of scene mutations.
-  const [printPreview, handlePrintPreviewChange] = usePersistedFlag(PRINT_PREVIEW_KEY, false);
-  // Dither algorithm — one setting drives both the preview and the real
-  // print job (rgbaToRaster), so what you see is what the head lays down.
-  const [ditherAlgorithm, setDitherAlgorithm] = useState<DitherAlgorithm>(savedDitherAlgorithm);
-  const handleDitherAlgorithmChange = useCallback((algorithm: DitherAlgorithm) => {
-    setDitherAlgorithm(algorithm);
-    localStorage.setItem(DITHER_KEY, algorithm);
-  }, []);
   const [previewBitmap, setPreviewBitmap] = useState<ImageBitmap | null>(null);
   const previewGlRef = useRef<{ canvas: OffscreenCanvas; gl: WebGL2RenderingContext } | null>(null);
   // While the preview is up the live scene draw is suppressed, so nothing
@@ -890,52 +855,9 @@ export function App() {
 
   // --- Print ---
   const [printing, setPrinting] = useState(false);
-  const [autoCut, handleAutoCutChange] = usePersistedFlag(AUTOCUT_KEY, true);
   const printingRef = useRef(false);
 
-  // --- Preferences modal ---
-  // A second view over the settings the sidebar panels edit: each leaf path
-  // dispatches to the same persisting setter, so both surfaces stay in sync.
   const [prefsOpen, setPrefsOpen] = useState(false);
-  const prefValues: EditorPrefValues = useMemo(() => ({
-    printing: { autoCut, printPreview, dithering: ditherAlgorithm, preflightChecks },
-    canvas: { cassetteColors: cassetteColorsEnabled, documentWarnings, marginGuides },
-  }), [autoCut, printPreview, ditherAlgorithm, preflightChecks, cassetteColorsEnabled, documentWarnings, marginGuides]);
-  const handlePrefChange = useCallback((path: string, value: unknown) => {
-    switch (path) {
-      case 'printing.autoCut': handleAutoCutChange(value as boolean); break;
-      case 'printing.printPreview': handlePrintPreviewChange(value as boolean); break;
-      case 'printing.dithering': handleDitherAlgorithmChange(value as DitherAlgorithm); break;
-      case 'canvas.cassetteColors': handleCassetteColorsChange(value as boolean); break;
-      case 'canvas.documentWarnings': handleDocumentWarningsChange(value as boolean); break;
-      case 'canvas.marginGuides': handleMarginGuidesChange(value as boolean); break;
-      case 'printing.preflightChecks': handlePreflightChecksChange(value as boolean); break;
-    }
-  }, [handleAutoCutChange, handlePrintPreviewChange, handleDitherAlgorithmChange, handleCassetteColorsChange, handleDocumentWarningsChange, handleMarginGuidesChange, handlePreflightChecksChange]);
-
-  // One connectionless printer session per mount. Its keepalive keeps the
-  // PT-P710BT awake (it auto-powers off after ~10 min idle); its status
-  // events — keepalive ticks and post-print statuses alike — feed the chip.
-  const printerRef = useRef<BrotherPrinter | null>(null);
-  useEffect(() => {
-    const printer = createBrotherPrinter();
-    printerRef.current = printer;
-    const off = printer.onStatus((status) => {
-      setPrinterReachable(status !== null);
-      if (status !== null) setPrinterLastSeen({ status, at: Date.now() });
-    });
-    return () => {
-      off();
-      printerRef.current = null;
-      printer.dispose();
-    };
-  }, []);
-
-  // Chip click: immediate status poll. The reply (or timeout) lands through
-  // the same onStatus stream the keepalive feeds, so the chip just updates.
-  const handlePrinterRefresh = useCallback(() => {
-    void printerRef.current?.queryStatus();
-  }, []);
 
   const handlePrint = useCallback(async () => {
     if (printingRef.current) return;
@@ -1190,8 +1112,8 @@ export function App() {
               isOpen={prefsOpen}
               onOpenChange={setPrefsOpen}
               schema={PREFS_SCHEMA}
-              values={prefValues}
-              onChange={handlePrefChange}
+              values={prefs.prefValues}
+              onChange={prefs.handlePrefChange}
             />
             {/* Results of things the user just did — a print that failed, a
                 file that wouldn't parse. Document problems get an anchored
@@ -1278,21 +1200,21 @@ export function App() {
                   printing,
                   onRefresh: handlePrinterRefresh,
                   autoCut,
-                  onAutoCutChange: handleAutoCutChange,
+                  onAutoCutChange: prefs.handleAutoCutChange,
                   printPreview,
-                  onPrintPreviewChange: handlePrintPreviewChange,
+                  onPrintPreviewChange: prefs.handlePrintPreviewChange,
                   marginGuides,
-                  onMarginGuidesChange: handleMarginGuidesChange,
+                  onMarginGuidesChange: prefs.handleMarginGuidesChange,
                   ditherAlgorithm,
-                  onDitherAlgorithmChange: handleDitherAlgorithmChange,
+                  onDitherAlgorithmChange: prefs.handleDitherAlgorithmChange,
                 }}
                 debug={{
                   cassetteColorsEnabled,
-                  onCassetteColorsEnabledChange: handleCassetteColorsChange,
-                  tapeColorOverride,
-                  onTapeColorOverrideChange: setTapeColorOverride,
-                  textColorOverride,
-                  onTextColorOverrideChange: setTextColorOverride,
+                  onCassetteColorsEnabledChange: prefs.handleCassetteColorsChange,
+                  tapeColorOverride: cassette.tapeColorOverride,
+                  onTapeColorOverrideChange: cassette.setTapeColorOverride,
+                  textColorOverride: cassette.textColorOverride,
+                  onTextColorOverrideChange: cassette.setTextColorOverride,
                   liveStatus,
                 }}
               />
