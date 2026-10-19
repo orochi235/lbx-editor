@@ -137,13 +137,14 @@ export function markFamilyRegistered(family: string): void {
   canvasFamilies.delete(family);
 }
 
-/** .lbx horizontal alignment → weasel text align. LEFT and JUSTIFY both
- *  render left (unchanged contract — weasel has no justify). */
-export function toWeaselAlign(h: LabelTextData['horizontalAlignment']): 'left' | 'center' | 'right' {
+/** .lbx horizontal alignment → weasel text align. weasel's `justify` spreads
+ *  each wrapped line across the box and sets a paragraph's last line left. */
+export function toWeaselAlign(h: LabelTextData['horizontalAlignment']): 'left' | 'center' | 'right' | 'justify' {
   switch (h) {
     case 'CENTER': return 'center';
     case 'RIGHT': return 'right';
-    case 'LEFT': case 'JUSTIFY': return 'left';
+    case 'LEFT': return 'left';
+    case 'JUSTIFY': return 'justify';
   }
 }
 

@@ -167,7 +167,10 @@ Key weasel APIs used:
   fonts" panel (uploaded .json+.png pair persisted in IndexedDB,
   `src/customFonts.ts`) or from gitignored `public/fonts/local/` +
   manifest — see docs/local-fonts.md. Text word-wraps at the box width;
-  `\n` forces breaks; JUSTIFY renders as LEFT.
+  `\n` forces breaks. JUSTIFY is weasel's own `justify` align: it widens
+  the word gaps of every line that wrapped so it spans the box, and sets a
+  paragraph's last line — and any line ending in `\n` or holding one
+  word — left.
 - The page is labkit's `LabShell`: header is labkit's `Toolbar`
   (`src/Toolbar.tsx`), footer is the kit `StatusBar` (`src/EditorStatusBar.tsx`:
   tool, selection count, pointer position in mm, printer, zoom), and the right

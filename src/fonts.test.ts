@@ -123,11 +123,11 @@ describe('registeredFamilies', () => {
 });
 
 describe('toWeaselAlign', () => {
-  it('maps each .lbx horizontal alignment, with JUSTIFY falling back to left', () => {
+  it('maps each .lbx horizontal alignment', () => {
     expect(toWeaselAlign('LEFT')).toBe('left');
     expect(toWeaselAlign('CENTER')).toBe('center');
     expect(toWeaselAlign('RIGHT')).toBe('right');
-    expect(toWeaselAlign('JUSTIFY')).toBe('left');
+    expect(toWeaselAlign('JUSTIFY')).toBe('justify');
   });
 });
 

@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest';
 import { asNodeId, isSolidPaint, type DrawCommand } from '@weasel-js/core';
 import { drawLabelNode } from './drawLabelNode';
 import { encodeBarcode, barcodeRequest, barcodeBackgroundRect } from './barcode';
-import type { LabelBarcodeData, LabelNode, LabelPose } from './label';
+import type { LabelBarcodeData, LabelNode, LabelPose, LabelTextData } from './label';
 
 const pose: LabelPose = { x: 20, y: 12, width: 60, height: 24 };
 
@@ -124,5 +124,36 @@ describe('drawLabelNode, barcode colors', () => {
 
     expect(painted[0]).toBe('#f7d117');
     expect(new Set(painted.slice(1))).toEqual(new Set(['#2149c0']));
+  });
+});
+
+describe('drawLabelNode text', () => {
+  const textNode = (horizontalAlignment: LabelTextData['horizontalAlignment']): LabelNode => ({
+    kind: 'leaf',
+    id: asNodeId('t1'),
+    layer: 'objects',
+    parent: null,
+    pose,
+    data: {
+      kind: 'text',
+      text: 'one two three four five six seven',
+      fontFamily: 'Inter',
+      fontSize: 8,
+      fontWeight: 400,
+      italic: false,
+      horizontalAlignment,
+      verticalAlignment: 'TOP',
+      color: '#000000',
+    },
+  });
+
+  it('asks the renderer to justify a JUSTIFY box, and only that one', () => {
+    const [justified] = drawLabelNode(textNode('JUSTIFY'), pose);
+    const [left] = drawLabelNode(textNode('LEFT'), pose);
+    if (justified?.kind !== 'text' || left?.kind !== 'text') throw new Error('expected text commands');
+
+    expect(justified.justify).toBe(true);
+    expect(justified.maxWidth).toBe(pose.width);
+    expect(left.justify).toBe(false);
   });
 });
