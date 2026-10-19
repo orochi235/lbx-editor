@@ -33,7 +33,6 @@ import {
 // duplicate-@types/react mismatch under this app's slightly newer React types.
 import { ToolPalette } from '@weasel-js/ui/components/ToolPalette';
 import { PrefsDialog } from '@weasel-js/ui/components/Prefs';
-import { Callout } from '@weasel-js/ui/components/Callout';
 import { ToastRegion, toast } from '@weasel-js/ui/components/Toast';
 import {
   TAPE_SIZES,
@@ -75,7 +74,8 @@ import { maskToRgba } from './printPreview';
 import { protectedRegions } from './ditherProtect';
 import { sliceRasterAtCuts } from './cutMarks';
 import { PREFS_SCHEMA } from './prefs';
-import { checkDocument, type CheckedNode, type Diagnostic } from './diagnostics';
+import { useDocumentChecks } from './useDocumentChecks';
+import { DiagnosticCallout } from './DiagnosticCallout';
 import { LabShell } from '@weasel-js/labkit';
 import { Toolbar } from './Toolbar';
 import { Inspector } from './Inspector';
@@ -337,67 +337,10 @@ export function App() {
     });
   }, [tapeSize, paperHeight]);
 
-  // --- Live document checks ---
-  // Conditions the canvas draws faithfully but the printer can't honor: a
-  // barcode too fine for the printhead, an object past the printable area.
-  // Recomputed on every committed scene change; the callout anchors to the
-  // offending node so the problem is attached to the thing that has it.
-  const diagnostics = useMemo(() => {
-    if (!documentWarnings) return [];
-    const media = Printers.ptP710bt.media(tapeWidthMm(tapeSize));
-    const nodes: CheckedNode[] = [];
-    for (const [id, node] of scene.nodes) {
-      nodes.push({ id: String(id), pose: node.pose, data: node.data });
-    }
-    return checkDocument(nodes, {
-      labelLengthPt: labelLength,
-      band: printableBand,
-      dpi: media.dpi,
-    });
-    // sceneVersion is the commit signal — scene mutates in place.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [documentWarnings, scene, sceneVersion, tapeSize, labelLength, printableBand]);
-
-  // Dismissed findings, keyed by node and check. Dismissal is per *problem*,
-  // not per callout: fixing an object and breaking it again re-raises it,
-  // because the key stops matching a live finding and gets pruned below.
-  const [dismissedDiagnostics, setDismissedDiagnostics] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
-  const diagnosticKey = (d: Diagnostic) => `${d.nodeId}:${d.code}`;
-
-  useEffect(() => {
-    const live = new Set(diagnostics.map(diagnosticKey));
-    setDismissedDiagnostics((prev) => {
-      const kept = [...prev].filter((k) => live.has(k));
-      return kept.length === prev.size ? prev : new Set(kept);
-    });
-  }, [diagnostics]);
-
-  // One callout at a time: a stack of popovers over the canvas would obscure
-  // the very objects they're about. Errors first — those block printing —
-  // then document order, so the remaining findings surface as each is fixed.
-  const activeDiagnostic = useMemo(() => {
-    const showing = diagnostics.filter((d) => !dismissedDiagnostics.has(diagnosticKey(d)));
-    return showing.find((d) => d.severity === 'error') ?? showing[0] ?? null;
-  }, [diagnostics, dismissedDiagnostics]);
-
-  // Client-space rect of the flagged node: the view is a camera, so world
-  // point minus view origin, scaled, offset by the canvas's own position.
-  const diagnosticAnchor = useMemo(() => {
-    if (!activeDiagnostic) return undefined;
-    const node = scene.get(activeDiagnostic.nodeId as NodeId);
-    const container = canvasContainerRef.current;
-    if (!node || !container) return undefined;
-    const r = container.getBoundingClientRect();
-    return {
-      x: r.left + (node.pose.x - view.x) * view.scale.x,
-      y: r.top + (node.pose.y - view.y) * view.scale.y,
-      width: node.pose.width * view.scale.x,
-      height: node.pose.height * view.scale.y,
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDiagnostic, scene, sceneVersion, view, canvasSize]);
+  const checks = useDocumentChecks({
+    enabled: documentWarnings, scene, sceneVersion, tapeSize, labelLength, printableBand,
+    view, canvasSize, canvasContainerRef,
+  });
 
   const previewBitmap = usePrintPreview({
     enabled: printPreview, scene, sceneVersion, tapeSize, labelLength, paperHeight, inkCss, ditherAlgorithm,
@@ -781,13 +724,12 @@ export function App() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [loadLbxFile]);
 
-  const reraiseDiagnostics = useCallback(() => setDismissedDiagnostics(new Set()), []);
   const { printing, handlePrint } = usePrintJob({
     printerRef, scene, tapeSize, labelLength, paperHeight, autoCut, ditherAlgorithm, cutMarks,
     preflightChecks,
     // Re-raise every dismissed callout: the job is being refused over a
     // problem the user may have waved away, so put it back on the object.
-    onBlocked: reraiseDiagnostics,
+    onBlocked: checks.reraiseAll,
   });
 
   const [prefsOpen, setPrefsOpen] = useState(false);
@@ -959,32 +901,13 @@ export function App() {
                 {/* Dismissable, but the dismissal only holds while the label
                     is being edited: a blocked print clears them all, so the
                     reason the job won't go is back in front of the user. */}
-                {activeDiagnostic && diagnosticAnchor && (
-                  <Callout
-                    isOpen
-                    className="diagnostic-callout"
-                    anchorRect={diagnosticAnchor}
-                    placement="top"
-                    stance={activeDiagnostic.severity === 'error' ? 'danger' : 'important'}
-                    title={activeDiagnostic.title}
-                    // Dismissal is ours: `isOpen` stays true while the finding
-                    // stands, and `onDismiss` — the × or Escape, never the
-                    // incidental close a non-modal popover does when a click
-                    // lands on the artwork — is what retires it.
-                    onDismiss={() => setDismissedDiagnostics((prev) =>
-                      new Set(prev).add(`${activeDiagnostic.nodeId}:${activeDiagnostic.code}`),
-                    )}
-                    shouldCloseOnInteractOutside={() => false}
-                    aria-label={activeDiagnostic.title}
-                  >
-                    <p>{activeDiagnostic.detail}</p>
-                    {diagnostics.length > 1 && (
-                      <p>
-                        {diagnostics.length - 1} other{' '}
-                        {diagnostics.length === 2 ? 'object needs' : 'objects need'} attention.
-                      </p>
-                    )}
-                  </Callout>
+                {checks.active && checks.anchor && (
+                  <DiagnosticCallout
+                    diagnostic={checks.active}
+                    anchorRect={checks.anchor}
+                    total={checks.diagnostics.length}
+                    onDismiss={checks.dismiss}
+                  />
                 )}
               </div>
               <Inspector

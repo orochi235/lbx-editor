@@ -7,7 +7,7 @@
  * reach. The screen can't show these failures, so they need saying out loud.
  *
  * Pure: geometry in, findings out. The presentation (anchored callouts) and the
- * preference gating it live in App.tsx.
+ * preference gating it live in useDocumentChecks and DiagnosticCallout.
  */
 import { encodeBarcode, barcodeRequest, barcodeModuleDots, moduleFitness } from './barcode';
 import type { LabelNodeData, LabelPose } from './label';

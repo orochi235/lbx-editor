@@ -31,13 +31,3 @@ body,
   background: var(--wzl-surface-sunken);
   line-height: 0;
 }
-
-/* The document-check callout floats over the canvas, so everything but its
-   close button lets presses through to the artwork and handles beneath it. */
-.diagnostic-callout {
-  pointer-events: none;
-}
-
-.diagnostic-callout button {
-  pointer-events: auto;
-}
