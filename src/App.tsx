@@ -719,7 +719,7 @@ export function App() {
   // a cluster the palette renders in registration order, and a built-in's slot
   // is the kit's own canonical one — `defaultTools` order does not move it. So
   // ids registered *by the patch* are the only ones whose order this app can
-  // choose, which is why `defaultTools` below is down to select alone.
+  // choose, which is why this app passes no `defaultTools` at all.
   const handTool = useHandTool();
   const lineTool = useLineTool();
   const rectTool = useRectTool();
