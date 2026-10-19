@@ -37,17 +37,15 @@ import { Callout } from '@weasel-js/ui/components/Callout';
 import { ToastRegion, toast } from '@weasel-js/ui/components/Toast';
 import {
   TAPE_SIZES,
-  DEFAULT_TAPE,
-  DEFAULT_LABEL_LENGTH,
   tapeWidthMm,
   type LabelNodeData,
   type LabelLayer,
   type LabelPose,
   type LabelNode,
-  type TapeSize,
 } from './label';
-import { fitLengthToContent } from './autoLength';
-import { migratePersistedScene } from './docMigrate';
+import { useLabelConfig } from './useLabelConfig';
+import { useAutosave } from './useAutosave';
+import { genNodeId } from './nodeIds';
 import { useLiveLength } from './useLiveLength';
 import { PALETTE_GROUP_ORDER, TOOL_GROUPS, inGroup } from './toolGroups';
 import { drawLabelNode, printDrawOne } from './drawLabelNode';
@@ -75,7 +73,7 @@ import { printsAsInk, remapNodeInk, tapeColorCss, tapeIsClear, textColorCss } fr
 import { labelRenderPlan, printableBandPt, renderLabelToRgba } from './labelRender';
 import { maskToRgba } from './printPreview';
 import { protectedRegions } from './ditherProtect';
-import { equalCutMarks, sliceRasterAtCuts } from './cutMarks';
+import { sliceRasterAtCuts } from './cutMarks';
 import { PREFS_SCHEMA, type EditorPrefValues } from './prefs';
 import { checkDocument, type CheckedNode, type Diagnostic } from './diagnostics';
 import { LabShell } from '@weasel-js/labkit';
@@ -98,20 +96,6 @@ import {
 } from './printPreflight';
 import { registerFonts, canvasFontsInUse } from './fonts';
 
-let nextNodeId = 1;
-function genNodeId(): NodeId {
-  return asNodeId(`node-${nextNodeId++}`);
-}
-
-/** After restoring a persisted scene, advance the id counter past every
- *  restored `node-N` id so new nodes can't collide with them. */
-function bumpNodeIdCounter(ids: Iterable<string>): void {
-  for (const id of ids) {
-    const m = /^node-(\d+)$/.exec(id);
-    if (m) nextNodeId = Math.max(nextNodeId, Number(m[1]) + 1);
-  }
-}
-
 const FIT_PADDING = 16;
 
 /** Set once a USB device grant exists; lets us distinguish "printer asleep" from "never granted". */
@@ -123,9 +107,6 @@ const MARGIN_GUIDES_KEY = 'lbx-editor.marginGuides';
 const PREFLIGHT_CHECKS_KEY = 'lbx-editor.preflightChecks';
 const PRINT_PREVIEW_KEY = 'lbx-editor.printPreview';
 const DITHER_KEY = 'lbx-editor.dither';
-/** Autosaved document (scene + tape config) — restored on load so a refresh
- *  doesn't lose the label being edited. */
-const DOC_KEY = 'lbx-editor.doc';
 
 const DITHER_ALGORITHMS: readonly DitherAlgorithm[] = [
   'threshold', 'floyd-steinberg', 'atkinson', 'bayer',
@@ -182,54 +163,17 @@ export function App() {
     systemLayers: [{ id: 'objects' as LabelLayer }],
   });
 
-  const [tapeSize, setTapeSize] = useState<TapeSize>(DEFAULT_TAPE);
-  const [autoLength, setAutoLength] = useState(false);
-  // The length the user typed. Under auto-length it's dormant — kept so that
-  // switching auto off doesn't teleport the label back to a stale value.
-  const [manualLength, setManualLength] = useState(DEFAULT_LABEL_LENGTH);
-  // Cut positions (pt along the label): the printer cuts here, splitting the
-  // document into a strip of labels. Round-trips .lbx via style:cutLine.
-  const [cutMarks, setCutMarks] = useState<number[]>([]);
-
-  const tape = TAPE_SIZES[tapeSize];
-
   const sceneVersion = useSyncExternalStore(
     useCallback((cb: () => void) => scene.subscribe(cb), [scene]),
     () => scene.getVersion(),
   );
 
-  // Auto-length: the label ends a margin past the rightmost object, refitting
-  // on every committed scene change. Everything downstream reads labelLength
-  // and so follows the fit for free.
-  const fittedLength = useMemo(
-    () => fitLengthToContent([...scene.nodes.values()].map((n) => n.pose)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- sceneVersion is the change signal; scene is mutable.
-    [scene, sceneVersion],
-  );
-  const labelLength = autoLength ? fittedLength : manualLength;
-
-  // Turning auto off pins the length where the fit left it, rather than
-  // snapping back to whatever was last typed.
-  const handleAutoLengthChange = useCallback((auto: boolean) => {
-    if (!auto) setManualLength(fittedLength);
-    setAutoLength(auto);
-  }, [fittedLength]);
-
-  // The Labels control: N equal segments ↔ N-1 evenly spaced cut marks.
-  // Setting it replaces any custom (imported) marks with the equal split.
-  const handleLabelsCountChange = useCallback((n: number) => {
-    const labels = Math.max(1, Math.min(50, Math.round(n)));
-    setCutMarks(equalCutMarks(labelLength, labels));
-  }, [labelLength]);
-
-  // Marks past the end of a shortened label are meaningless — drop them.
-  useEffect(() => {
-    setCutMarks((marks) =>
-      marks.every((x) => x > 0 && x < labelLength)
-        ? marks
-        : marks.filter((x) => x > 0 && x < labelLength),
-    );
-  }, [labelLength]);
+  const config = useLabelConfig(scene, sceneVersion);
+  const {
+    tapeSize, setTapeSize, autoLength, setAutoLength, handleAutoLengthChange,
+    setManualLength, cutMarks, setCutMarks, handleLabelsCountChange, labelLength,
+  } = config;
+  const tape = TAPE_SIZES[tapeSize];
 
   // The "paper" is the printable area of the tape.
   // P-touch labels are landscape: tape width is the short dimension (height visually).
@@ -385,59 +329,7 @@ export function App() {
   const selection = useSelection({ mode: 'multi' });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- Session persistence ---
-  // Restore the autosaved document once on mount (before the autosave effect
-  // below ever writes), then debounce-save scene + tape config on every
-  // committed change. Corrupt/stale snapshots are discarded, quota failures
-  // skipped — persistence must never take the editor down.
-  const restoredRef = useRef(false);
-  useEffect(() => {
-    if (restoredRef.current) return;
-    restoredRef.current = true;
-    const raw = localStorage.getItem(DOC_KEY);
-    if (!raw) return;
-    try {
-      const doc = JSON.parse(raw) as {
-        tapeSize?: TapeSize;
-        autoLength?: boolean;
-        labelLength?: number;
-        cutMarks?: number[];
-        scene?: Parameters<typeof scene.loadState>[0];
-      };
-      if (doc.tapeSize && doc.tapeSize in TAPE_SIZES) setTapeSize(doc.tapeSize);
-      if (typeof doc.labelLength === 'number' && Number.isFinite(doc.labelLength) && doc.labelLength > 0) {
-        setManualLength(doc.labelLength);
-      }
-      if (typeof doc.autoLength === 'boolean') setAutoLength(doc.autoLength);
-      if (Array.isArray(doc.cutMarks) && doc.cutMarks.every((x) => typeof x === 'number' && Number.isFinite(x))) {
-        setCutMarks(doc.cutMarks);
-      }
-      if (doc.scene) {
-        // `loadState` stores node data verbatim, so a field added since this
-        // snapshot was written arrives undefined and the compiler can't see it.
-        scene.loadState(migratePersistedScene(doc.scene));
-        bumpNodeIdCounter(scene.nodes.keys());
-      }
-    } catch {
-      localStorage.removeItem(DOC_KEY);
-    }
-  }, [scene]);
-
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      try {
-        localStorage.setItem(
-          DOC_KEY,
-          // labelLength persists the manual value: under auto-length the
-          // length is derived from the scene, so it restores itself.
-          JSON.stringify({ tapeSize, autoLength, labelLength: manualLength, cutMarks, scene: scene.toJSON() }),
-        );
-      } catch {
-        // Storage full (huge embedded images) or unavailable — skip this save.
-      }
-    }, 300);
-    return () => clearTimeout(handle);
-  }, [scene, sceneVersion, tapeSize, autoLength, manualLength, cutMarks]);
+  useAutosave(scene, sceneVersion, config);
 
   // --- Cassette-driven canvas colors ---
   // The printer's status replies (fed by keepalive ticks, see the printer
